@@ -1,0 +1,63 @@
+# Granjon — ARC
+
+The running story of the project, session by session, plus the backlog.
+Newest session at the bottom.
+
+---
+
+## Backlog
+
+(`Note.` items land here.)
+
+- **granjon-cli** (Scott, s01): a command-line tool for external processing on fonts. Links `granjon_core` (GTK-free), so it shares the model, verbs, checks and exporters. Open question: batch processing of font files, driving outside tools (ttfautohint, fontmake), or both.
+
+---
+
+## s00 — planning
+
+- Chose the project: a font editor, named for Robert Granjon (1513–1590), punchcutter.
+- Decisions: cubic internal model; UFO-style GLIF source; OTF/TTF/WOFF2 export via our own sfnt writer; FreeType import, HarfBuzz shaping; SVG single-glyph only.
+- Distinctive features: teach-as-you-correct checks, metrics keys, class-kerning audit, profile-based contact gap / optical area.
+- Full design: `ARCHITECTURE.md`.
+
+## s01 — spine (M1)
+
+- Project laid out: `granjon/{backups/Old,docs,fixes,scripts,granjon}`; Cairn code seeded into `granjon/granjon/` (not yet renamed).
+- Docs: RULES retitled for Granjon; CANON and the Cairn paradigm pages carried verbatim; Cairn's ARCHITECTURE kept in `docs/cairn/` for the rename.
+- `scripts/granjon_backup.sh` — allowlist-based, paths from the script's location, previous zips retire to `backups/Old/`.
+- Undo: adopted Cairn's `core::Journal` (before/after values by ID) over a command-class-per-verb stack. ARCHITECTURE §2 updated.
+- Curvz confirmed (s360 headers): `BezierNode` = anchor + in/out handles + type; `BezierPath` = nodes + closed. Granjon keeps that shape; GLIF point lists only at I/O. ARCHITECTURE §3 updated.
+- Boolean ops: Clipper2 1.5.4, as Curvz.
+- M1 built:
+  - Rename Cairn -> Granjon end to end (namespace, targets, app id `io.github.granjon.Granjon`, gresource, strings). New symbolic logo: a punch over its impression.
+  - `model/`: `Node` (Curvz BezierNode shape), `Contour`, `Component`, `Anchor`, `Glyph` (snap to integer units, AGL name check), `FontInfo`, `Metrics`, `Kerning`, `MetricsKeys`, `Features`, and `Font` -- the data and the journal's store (`@info` ... ids, glyphs by name, order in the value).
+  - `command/`: `Document` (font + journal, journal owned by the document), 13 verbs: add / remove / rename glyph, unicodes, status, note, advance, outline drag (gesture, snapped on release), family, style, UPM, metric, kern. Refusals say why.
+  - Rename carries components, kerning pairs and group members, and metrics keys in one step. Delete refuses a glyph used as a component.
+  - Window: header Undo/Redo, six views (Overview list, Glyph Editor, Spacing, Preview, Info, Report -- stubs except Overview and Info), status line. Info edits go through verbs, so Ctrl+Z works on them.
+  - Selftest 164 pass / 0 fail: the verb-table gate (no stray, one step, undo restores, redo re-applies) for all 13 verbs, plus rename / refusal / drag / merge cases.
+  - Cairn's `Stones` kept as the journal's own fixture, compiled into the selftest only.
+  - Cairn bug fixed in passing: recents loaded before its file path was set (always read "").
+- M1b (UI shell, Scott: "metadata panel right, navigator left, views as toggle buttons on the headerbar"; "our modern look has its roots in web and mac motifs"):
+  - Three panes: Navigator (source list grouped by Unicode block, search, status dots, +/- through verbs) | view stack | Inspector (rounded cards; font cards when nothing is selected -- the M1 Info view moved here). Both panels collapsible (F9, Ctrl+I).
+  - Header as a unified toolbar: logo, navigator toggle, linked undo/redo, a segmented view switcher (`win.view`, Ctrl+1..5), inspector toggle, menu.
+  - Overview: glyph cards drawn from the model (`views/GlyphPaint`), double-click -> editor.
+  - `resources/granjon.css`: Curvz's tokens verbatim (+ `--ok-fg`), `window.granjon-light` following the desktop, user `~/.config/granjon/styles.css` seeded with a stub. Needs GTK >= 4.16 for `var()`; the sandbox has 4.14, so it was eyeballed through a flattened copy.
+  - Core: `model/Bounds` (exact cubic extrema, components through the font) for LSB/RSB; `unicode/Blocks` (hand table until M3's UCD); codepoint parsing (U+0041 / 0041 / the character).
+  - Found and fixed: a GTK4 ToggleButton's CSS node is `button.toggle`, not `togglebutton`; a ListBox ignores `set_header` without a header func; a SpinButton's inner text eats Ctrl+Z even with its undo off -- a CAPTURE-phase controller hands Ctrl+Z to the journal when focus is in a spin (verified by scripted keypress: two + presses, one Ctrl+Z, back to 700).
+  - `GRANJON_SAMPLE=1` opens the fixture font, for looking at until M2 opens real ones.
+  - Selftest 175 / 0.
+- M1c (Scott: "an easy search for glyph on the headerbar ... name, char, unicode"; "I felt it was hard to find a glyph"):
+  - One search, in the header (Ctrl+F / Ctrl+K); the navigator's own field removed.
+  - `model::find_glyphs`: exact name (exact case first), codepoint (the character, U+, 0x, 4+ hex digits), prefix, substring, partial hex; `/name` exact. A codepoint nothing maps -> `missing` + a suggested name (the letter itself, else uniXXXX, made unique).
+  - Typing narrows navigator + overview; dropdown of eight hits with drawings; arrows move, Enter selects, Escape clears; "Create é as uni00E9" goes through add_glyph.
+  - Found and fixed: a shown popover kept its old height when the list shrank (pop down and up on rebuild); after Enter the keyboard stayed in the search field so Ctrl+Z undid its text -- clear() now unsets the window focus. Verified by scripted keys: type U+00E9, Down, Enter (created), Ctrl+Z (removed, "Undid: Add glyph").
+  - Selftest 190 / 0.
+- Logo: Scott's own `granjon-logo-symbolic.svg` (a G on a tilted slug with a hedera) replaces the punch. Cleaned for symbolic use: root `color="black"` removed (it would pin the mark black on the dark motif), zero-width strokes dropped. Rendered and checked at 16 / 32 / 128 px and in the header.
+- M2 (persist), on Scott's gtg in the same session:
+  - `io/Plist` (deterministic writer, libxml2 reader), `io/Glif` (GLIF 2 both ways; Node <-> point list; qcurve promotion; Cusp / Symmetric in the glyph lib), `io/Ufo` (UFO 3 folder; swap-in save; read-everything-then-replace load; UFO 3 file-name rule).
+  - `Journal::stamp()` (core/Undo.hpp): a unique id per state, so "modified" survives undo / redo / merge. `Document::new_font / open / save / modified`.
+  - File menu: New (Ctrl+N), Open (Ctrl+O, a folder), Open recent (now fonts), Save (Ctrl+S), Save as (Ctrl+Shift+S). Anything that would drop unsaved changes asks Save / Discard / Cancel -- including the window's X and Ctrl+Q. Title carries a dot while modified. "Remember a folder" removed.
+  - Cross-checked against fontTools 4.65: UFOReader(validate=True) reads every Granjon file; a fontTools-written UFO (curves, a qcurve, kerning, glyph order) loads and re-saves with the same point order.
+  - Scripted UI run: Ctrl+S -> save dialog (initial name Untitled-Regular.granjon) -> saved; edit -> Ctrl+Q -> Save / Discard / Cancel; Cancel, Ctrl+Z -> unmodified.
+  - Selftest 257 / 0.
+- Panel toggles combined into one linked widget [navigator | inspector] at the header's end, as in Folio and jot (Scott). Checked headless: Ctrl+I unchecks the right half.

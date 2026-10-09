@@ -1,0 +1,943 @@
+// granjon_selftest -- the headless core harness.
+//
+// A seed is only trustworthy if its paradigms are EXERCISED, not just described
+// (CANON: "a claim in the doc isn't a fact until a consumer exercises it"). This
+// runs the GTK-free core with no display, so a future you can trust the pump and
+// the mapping before wiring any widget on top:
+//   * Recents  -- move-to-front + trim + the JSON round-trip with stale-prune;
+//   * TextMap  -- forward(selection) -> inverse(map_range) round-trips byte-exact
+//                 across single-line / multi-line / cross-paragraph / UTF-8, and
+//                 chrome lines are never landed on.
+//
+//   cmake --build build --target granjon_selftest && ./build/granjon_selftest
+
+#include "core/Recents.hpp"
+#include "core/Shortcuts.hpp"
+#include "core/Stones.hpp"
+#include "core/Undo.hpp"
+#include "core/TextMap.hpp"
+#include "command/Document.hpp"
+#include "command/Verbs.hpp"
+#include "model/Bounds.hpp"
+#include "io/Glif.hpp"
+#include "io/Plist.hpp"
+#include "io/Ufo.hpp"
+#include "model/Find.hpp"
+#include "model/Font.hpp"
+#include "unicode/Blocks.hpp"
+#include <cmath>
+
+#include <algorithm>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <iostream>
+#include <string>
+#include <vector>
+
+namespace core = granjon::core;
+
+namespace {
+int g_pass = 0, g_fail = 0;
+void check(const std::string& name, bool ok, const std::string& detail = "") {
+    if (ok) { ++g_pass; std::cout << "  PASS  " << name; }
+    else    { ++g_fail; std::cout << "  FAIL  " << name; }
+    if (!detail.empty()) std::cout << "  (" << detail << ")";
+    std::cout << "\n";
+}
+
+// The FORWARD mapping, mirroring what a viewer's selection() would do: a
+// (al,ac)-(cl,cc) mark -> V byte endpoints -> codepoint range + quote. Returns
+// the byte endpoints too, so the round-trip through map_range can be exact.
+struct Fwd { int cp_start, cp_end, bstart, bend; std::string quote, V; };
+Fwd forward(const std::vector<core::FlatLine>& flat, int al, int ac, int cl, int cc) {
+    std::vector<int> off;
+    std::string V = core::visible_text(flat, off);
+    int bstart = off[static_cast<std::size_t>(al)] +
+                 std::min(ac, static_cast<int>(flat[static_cast<std::size_t>(al)].text.size()));
+    int bend   = off[static_cast<std::size_t>(cl)] +
+                 std::min(cc, static_cast<int>(flat[static_cast<std::size_t>(cl)].text.size()));
+    std::string quote = V.substr(static_cast<std::size_t>(bstart),
+                                 static_cast<std::size_t>(bend - bstart));
+    int cps = core::utf8_length(V.substr(0, static_cast<std::size_t>(bstart)));
+    int cpe = cps + core::utf8_length(quote);
+    return {cps, cpe, bstart, bend, quote, V};
+}
+
+// Assert map_range inverts forward(): endpoints mapped back through byte_off
+// reproduce the forward byte endpoints and reconstruct the same quote.
+void roundtrip(const std::vector<core::FlatLine>& flat,
+               int al, int ac, int cl, int cc, const std::string& what) {
+    Fwd f = forward(flat, al, ac, cl, cc);
+    std::vector<int> off;
+    (void)core::visible_text(flat, off);
+    core::LineCol s, e;
+    const bool ok = core::map_range(flat, f.cp_start, f.cp_end, s, e);
+    check("textmap: " + what + " maps", ok);
+    if (!ok) return;
+    const int rb0 = off[static_cast<std::size_t>(s.line)] + s.col;
+    const int rb1 = off[static_cast<std::size_t>(e.line)] + e.col;
+    check("textmap: " + what + " round-trips byte-exact",
+          rb0 == f.bstart && rb1 == f.bend,
+          std::to_string(rb0) + "," + std::to_string(rb1) +
+          " vs " + std::to_string(f.bstart) + "," + std::to_string(f.bend));
+    check("textmap: " + what + " reconstructs quote",
+          f.V.substr(static_cast<std::size_t>(rb0),
+                     static_cast<std::size_t>(rb1 - rb0)) == f.quote);
+}
+}  // namespace
+
+int main() {
+    std::cout << "granjon_selftest -- undo journal, font store + verbs, recents, textmap, shortcuts\n";
+
+    // ── Undo -- the one door, two pictures, gestures, merging (s046) ──────────
+    {
+        std::cout << "\n-- undo --\n";
+        using core::Stones;
+        using core::Stone;
+        using Clock = core::StoneJournal::Clock;
+        using SnapMap = std::vector<std::pair<std::string, Stone>>;
+        const auto snap = [](const Stones& s) {
+            SnapMap out;
+            for (const auto& id : s.ids()) out.emplace_back(id, *s.get(id));
+            return out;
+        };
+        const auto names = [](const Stones& s) {
+            std::string out;
+            for (const auto& id : s.ids()) out += s.get(id)->name + ",";
+            return out;
+        };
+        // A fixture: three stones, LOADED (not a user choice -- not undoable).
+        struct Fix {
+            Stones s;
+            core::StoneJournal j{s};
+            std::vector<std::string> sel;
+            Fix() {
+                s.set_door([this] { return j.open(); });
+                j.set_selection_source([this] { return sel; });
+                Stones::Loading load(s);
+                for (const char* n : {"Ruby", "Jade", "Onyx"}) {
+                    const auto id = s.fresh_id();
+                    s.put(id, Stone{n, 3, s.pos_after({})});
+                }
+            }
+        };
+
+        // THE GATE. Every verb the page offers, from a fresh fixture: nothing
+        // written with the door shut; at least one step; undoing them all puts
+        // the model back exactly; redoing them all reproduces the result.
+        for (const auto& v : core::stones::verbs()) {
+            Fix f;
+            const auto first = f.s.ids().front();
+            const auto before = snap(f.s);
+            v.run(f.j, f.s, first);
+            const auto after = snap(f.s);
+            const auto steps = f.j.size();
+            check("gate/" + v.name + ": through the one door", f.s.strays() == 0,
+                  std::to_string(f.s.strays()) + " stray write(s)");
+            check("gate/" + v.name + ": is a step", steps > 0 && !(after == before));
+            for (std::size_t i = 0; i < steps; ++i) f.j.undo();
+            check("gate/" + v.name + ": undo puts it back exactly", snap(f.s) == before);
+            for (std::size_t i = 0; i < steps; ++i) f.j.redo();
+            check("gate/" + v.name + ": redo reproduces it", snap(f.s) == after);
+        }
+        {   // ...and the gate bites: a write around the door is counted.
+            Fix f;
+            const auto id = f.s.ids().front();
+            f.s.put(id, Stone{"sneaky", 3, 0.5});
+            check("gate: a write around the door is a stray", f.s.strays() == 1);
+        }
+
+        {   // Delete comes back whole, in its place, under its id, selected.
+            Fix f;
+            const auto ids = f.s.ids();
+            f.sel = {ids[1]};
+            core::stones::remove(f.j, f.s, ids[1]);
+            f.sel = {ids[2]};      // the UI selects the neighbour...
+            f.j.reselect(f.sel);   // ...and tells the step
+            check("delete: gone", names(f.s) == "Ruby,Onyx,", names(f.s));
+            check("delete: the label names it", f.j.undo_label() == "Delete “Jade”", f.j.undo_label());
+            const auto r = f.j.undo();
+            check("delete: undo -- back in its place", names(f.s) == "Ruby,Jade,Onyx,", names(f.s));
+            check("delete: undo -- the same id", f.s.ids()[1] == ids[1]);
+            check("delete: undo hands back its selection", r.selection == std::vector<std::string>{ids[1]});
+            const auto r2 = f.j.redo();
+            check("delete: redo -- gone again, the neighbour selected",
+                  names(f.s) == "Ruby,Onyx," && r2.selection == std::vector<std::string>{ids[2]});
+        }
+
+        {   // Created records: undo removes, redo brings back the same id.
+            Fix f;
+            const auto first = f.s.ids()[0];
+            const auto made = core::stones::add(f.j, f.s, "Opal", first);
+            check("add: just after the one given", names(f.s) == "Ruby,Opal,Jade,Onyx,", names(f.s));
+            f.j.undo();
+            check("add: undone", !f.s.get(made));
+            f.j.redo();
+            check("add: redone, same id, same place", f.s.get(made) && names(f.s) == "Ruby,Opal,Jade,Onyx,");
+        }
+
+        {   // A no-op is not a step.
+            Fix f;
+            const auto id = f.s.ids()[0];
+            core::stones::rename(f.j, f.s, id, "Ruby");
+            core::stones::remove(f.j, f.s, "nope");
+            core::stones::move_up(f.j, f.s, id);   // already first
+            check("no-op: nothing kept", f.j.size() == 0 && !f.j.can_undo());
+        }
+
+        {   // Merging: arrows on the slider fold into one step inside the window.
+            Fix f;
+            const auto id = f.s.ids()[0];
+            const auto t0 = Clock::now();
+            core::stones::resize(f.j, f.s, id, 4);
+            f.j.run("Size", {id}, [&] { auto v = *f.s.get(id); v.size = 5; f.s.put(id, v); }, "size:" + id,
+                    t0 + std::chrono::milliseconds(400));
+            f.j.run("Size", {id}, [&] { auto v = *f.s.get(id); v.size = 6; f.s.put(id, v); }, "size:" + id,
+                    t0 + std::chrono::milliseconds(800));
+            check("merge: three presses, one step", f.j.size() == 1, std::to_string(f.j.size()));
+            f.j.run("Size", {id}, [&] { auto v = *f.s.get(id); v.size = 7; f.s.put(id, v); }, "size:" + id,
+                    t0 + std::chrono::seconds(10));
+            check("merge: after the window, a new step", f.j.size() == 2);
+            f.j.undo();
+            f.j.undo();
+            check("merge: two undos, back to the start", f.s.get(id)->size == 3);
+            // Another stone's key never merges into this one's step.
+            Fix g;
+            const auto a = g.s.ids()[0], b = g.s.ids()[1];
+            core::stones::resize(g.j, g.s, a, 5);
+            core::stones::resize(g.j, g.s, b, 5);
+            check("merge: a different key is a different step", g.j.size() == 2);
+            // Nor into a step that was undone.
+            core::stones::resize(g.j, g.s, b, 6);
+            g.j.undo();
+            core::stones::resize(g.j, g.s, b, 7);
+            check("merge: never into an undone step", g.j.size() == 2 && g.j.can_undo() && !g.j.can_redo());
+            // Back to where it started inside the window: the step goes away.
+            Fix h;
+            const auto c = h.s.ids()[0];
+            core::stones::resize(h.j, h.s, c, 4);
+            core::stones::resize(h.j, h.s, c, 3);
+            check("merge: there and back again is no step", h.j.size() == 0);
+        }
+
+        {   // A gesture is one step, however many writes the drag made.
+            Fix f;
+            const auto id = f.s.ids()[0];
+            core::stones::drag_begin(f.j, f.s, id);
+            for (int n = 4; n <= 9; ++n) core::stones::drag_to(f.j, f.s, id, n);
+            check("gesture: open while dragging", f.j.in_gesture() && f.j.size() == 0);
+            core::stones::drag_end(f.j);
+            check("gesture: a six-write drag is one step", f.j.size() == 1 && f.s.get(id)->size == 9);
+            f.j.undo();
+            check("gesture: one undo, back to the start", f.s.get(id)->size == 3);
+            // Escape mid-drag: back, and nothing kept.
+            core::stones::drag_begin(f.j, f.s, id);
+            core::stones::drag_to(f.j, f.s, id, 7);
+            f.j.cancel();
+            check("gesture: cancel puts it back and keeps nothing",
+                  f.s.get(id)->size == 3 && !f.j.in_gesture() && f.j.can_redo());
+            // Ctrl+Z mid-drag: the drag becomes a step, then is undone.
+            core::stones::drag_begin(f.j, f.s, id);
+            core::stones::drag_to(f.j, f.s, id, 2);
+            f.j.undo();
+            check("gesture: undo mid-drag closes the drag, then undoes it",
+                  !f.j.in_gesture() && f.s.get(id)->size == 3 && f.j.can_redo());
+            check("gesture: no stray writes", f.s.strays() == 0);
+        }
+
+        {   // A new step forgets the redo branch; Move keeps both stones in one step.
+            Fix f;
+            const auto ids = f.s.ids();
+            core::stones::move_down(f.j, f.s, ids[0]);
+            check("move: one step for both stones", f.j.size() == 1 && names(f.s) == "Jade,Ruby,Onyx,", names(f.s));
+            f.j.undo();
+            check("move: undone", names(f.s) == "Ruby,Jade,Onyx,");
+            core::stones::rename(f.j, f.s, ids[2], "Coal");
+            check("redo branch: a new step forgets it", !f.j.can_redo() && f.j.size() == 1);
+        }
+
+        {   // The cap: the oldest step falls off; the newest still undoes.
+            Fix f;
+            const auto id = f.s.ids()[0];
+            for (std::size_t i = 0; i < core::StoneJournal::kMax + 20; ++i)
+                core::stones::rename(f.j, f.s, id, "n" + std::to_string(i));
+            check("cap: kMax steps kept", f.j.size() == core::StoneJournal::kMax);
+            f.j.undo();
+            check("cap: the newest still undoes", f.s.get(id)->name == "n" + std::to_string(core::StoneJournal::kMax + 18));
+        }
+
+        {   // on_change: the UI hears every journal change (labels, greying).
+            Fix f;
+            int heard = 0;
+            f.j.set_on_change([&] { ++heard; });
+            core::stones::rename(f.j, f.s, f.s.ids()[0], "X");
+            f.j.undo();
+            f.j.redo();
+            f.j.clear();
+            check("on_change: step, undo, redo, clear -- four", heard == 4, std::to_string(heard));
+        }
+    }
+
+
+    // ── io -- plist, GLIF, UFO round trips (Granjon M2) ─────────────────────
+    {
+        std::cout << "\n-- io --\n";
+        namespace model = granjon::model;
+        namespace io    = granjon::io;
+        namespace fs    = std::filesystem;
+        using model::Node;
+
+        {   // plist: write -> read -> write is byte-identical, keys sorted.
+            io::PValue d = io::PValue::dictionary();
+            d.set("zeta", io::PValue::str("a < b & \"c\""));
+            d.set("alpha", io::PValue::integer(-250));
+            d.set("mid", io::PValue::real(12.5));
+            d.set("flag", io::PValue::boolean(true));
+            io::PValue arr = io::PValue::array();
+            arr.arr = {io::PValue::str("x"), io::PValue::dictionary()};
+            d.set("list", arr);
+            const std::string a = io::write_plist(d);
+            std::string err;
+            const auto back = io::read_plist(a, &err);
+            check("plist: reads back", back.has_value(), err);
+            check("plist: byte-identical rewrite", back && io::write_plist(*back) == a);
+            check("plist: keys sorted", a.find("<key>alpha</key>") < a.find("<key>zeta</key>"));
+            check("plist: escaping survives", back && back->get_string("zeta") == std::string("a < b & \"c\""));
+            check("plist: junk refused", !io::read_plist("<plist><dict><key>a</key></dict></plist>", &err));
+        }
+
+        // A glyph with every feature: curves, a smooth and a symmetric node,
+        // an open contour, a component, anchors, note, status, fractions.
+        model::Glyph rich;
+        rich.name = "Odieresis";
+        rich.unicodes = {0xD6, 0xF6};
+        rich.advance = 760;
+        rich.note = "check <the> overshoot & dots";
+        rich.status = model::GlyphStatus::Review;
+        rich.anchors = {{"top", 380, 720}, {"_bottom", 380.5, 0}};
+        rich.components = {{"dieresiscomb", 1, 0, 0, 1, 120, 0}, {"O", -1, 0, 0, 1, 760, 0}};
+        {
+            Node a = Node::corner(380, -12), b = Node::corner(700, 350), c = Node::corner(380, 712),
+                 d = Node::corner(60, 350);
+            a.cx1 = 200; a.cy1 = -12; a.cx2 = 560; a.cy2 = -12; a.type = Node::Type::Smooth;
+            b.cx1 = 700; b.cy1 = 150; b.cx2 = 700; b.cy2 = 550; b.type = Node::Type::Symmetric;
+            c.cx1 = 560; c.cy1 = 712; c.cx2 = 200; c.cy2 = 712; c.type = Node::Type::Smooth;
+            d.cx1 = 60;  d.cy1 = 550; d.cx2 = 60;  d.cy2 = 150.25; d.type = Node::Type::Cusp;
+            model::Contour outer{{a, b, c, d}, true};
+            model::Contour box{{Node::corner(10, 10), Node::corner(10, 20), Node::corner(20, 20)}, true};
+            model::Contour open{{Node::corner(0, 0), Node::corner(50, 0)}, false};
+            rich.contours = {outer, box, open};
+        }
+        {
+            const std::string x = io::write_glif(rich);
+            std::string err;
+            const auto back = io::read_glif(x, &err);
+            check("glif: reads back", back.has_value(), err);
+            check("glif: round trip is exact (types, handles, open, components, anchors, note, status)",
+                  back && *back == rich);
+            check("glif: rewrite is byte-identical", back && io::write_glif(*back) == x);
+            check("glif: start point first, closing off-curves last",
+                  x.find("<point x=\"380\" y=\"-12\" type=\"curve\" smooth=\"yes\"/>") <
+                  x.find("<point x=\"700\" y=\"350\""));
+        }
+        {   // Foreign GLIF: starts on off-curves; a TrueType qcurve.
+            const std::string q =
+                "<glyph name=\"q\" format=\"2\"><advance width=\"100\"/><outline><contour>"
+                "<point x=\"0\" y=\"100\"/>"
+                "<point x=\"0\" y=\"0\" type=\"qcurve\"/>"
+                "<point x=\"100\" y=\"0\" type=\"line\"/>"
+                "</contour></outline></glyph>";
+            std::string err;
+            const auto g = io::read_glif(q, &err);
+            check("glif: qcurve contour reads", g && g->contours.size() == 1 && g->contours[0].nodes.size() == 2, err);
+            if (g && g->contours[0].nodes.size() == 2) {
+                const auto& n0 = g->contours[0].nodes[0];   // (0,0), reached by the quadratic from (100,0)
+                const auto& n1 = g->contours[0].nodes[1];   // (100,0)
+                // Quadratic (100,0) -q(0,100)-> (0,0): cubic c1 = p0 + 2/3(q-p0), c2 = p1 + 2/3(q-p1).
+                check("glif: quadratic promoted to cubic exactly",
+                      std::abs(n1.cx2 - 100.0 / 3) < 1e-9 && std::abs(n1.cy2 - 200.0 / 3) < 1e-9 &&
+                      std::abs(n0.cx1 - 0) < 1e-9 && std::abs(n0.cy1 - 200.0 / 3) < 1e-9);
+            }
+            check("glif: not a glyph refused", !io::read_glif("<glyph format=\"2\"/>", &err) && !err.empty());
+        }
+        {   // File names (UFO 3 rule).
+            std::vector<std::string> taken;
+            check("names: uppercase marked", io::glif_file_name("A", taken) == "A_.glif");
+            check("names: leading dot", io::glif_file_name(".notdef", taken) == "_notdef.glif");
+            check("names: reserved", io::glif_file_name("con", taken) == "_con.glif");
+            check("names: illegal chars", io::glif_file_name("a/b", taken) == "a_b.glif");
+            taken = {"a_.glif"};
+            check("names: case-insensitive clash gets a number", io::glif_file_name("A", taken) == "A_1.glif");
+        }
+        {   // The whole font: save -> load -> equal; save twice -> byte-identical.
+            const fs::path dir = fs::temp_directory_path() / "granjon_selftest_io";
+            fs::remove_all(dir);
+            fs::create_directories(dir);
+            model::Font f;
+            granjon::command::make_fixture(f);
+            {
+                model::Font::Loading load(f);
+                model::Glyph g = rich;
+                g.order = 50;
+                f.put(g.name, model::Record{g});
+                model::Glyph dc;
+                dc.name = "dieresiscomb"; dc.unicodes = {0x308}; dc.order = 51;
+                f.put(dc.name, model::Record{dc});
+                auto info = f.info();
+                info.copyright = "(c) 2026 Scott"; info.license = "OFL"; info.vendor = "GRNJ";
+                f.put(model::Font::kInfo, model::Record{info});
+                f.put(model::Font::kFeatures, model::Record{model::Features{"feature liga { sub f i by fi; } liga;\n"}});
+            }
+            std::string err;
+            const auto a = dir / "Test.granjon";
+            check("ufo: saves", io::save_ufo(f, a.string(), &err), err);
+            model::Font g;
+            check("ufo: loads", io::load_ufo(a.string(), g, &err), err);
+            check("ufo: same glyph order", g.glyph_order() == f.glyph_order());
+            // Orders are renumbered 1..n on load; compare everything else.
+            const auto norm = [](const model::Font& x) {
+                auto s = x.snapshot();
+                for (auto& [id, r] : s)
+                    if (auto* gl = std::get_if<model::Glyph>(&r)) gl->order = 0;
+                return s;
+            };
+            check("ufo: every record survives", norm(g) == norm(f));
+            check("ufo: loading is not a stray", g.strays() == 0);
+            const auto b = dir / "Again.granjon";
+            io::save_ufo(g, b.string(), &err);
+            bool same = true;
+            std::string differ;
+            for (const auto& e : fs::recursive_directory_iterator(a)) {
+                if (!e.is_regular_file()) continue;
+                const auto rel = fs::relative(e.path(), a);
+                std::ifstream x(e.path(), std::ios::binary), y(b / rel, std::ios::binary);
+                std::string sx((std::istreambuf_iterator<char>(x)), {}), sy((std::istreambuf_iterator<char>(y)), {});
+                if (sx != sy) { same = false; differ = rel.string(); }
+            }
+            check("ufo: save -> load -> save is byte-identical", same, differ);
+            check("ufo: expected files", fs::exists(a / "metainfo.plist") && fs::exists(a / "layercontents.plist") &&
+                                         fs::exists(a / "glyphs" / "contents.plist") &&
+                                         fs::exists(a / "glyphs" / "_notdef.glif") && fs::exists(a / "features.fea"));
+            // Re-save after a delete: the stale .glif must go (the swap-in).
+            {
+                model::Font::Loading load(g);
+                g.put("H", std::nullopt);
+            }
+            io::save_ufo(g, a.string(), &err);
+            check("ufo: a deleted glyph's file is gone after save", !fs::exists(a / "glyphs" / "H_.glif"));
+            check("ufo: no temp folders left", !fs::exists(a.string() + ".saving") && !fs::exists(a.string() + ".previous"));
+            // A failed load leaves the open font alone.
+            model::Font keep;
+            granjon::command::make_fixture(keep);
+            const auto before = keep.snapshot();
+            check("ufo: not a folder is refused, with a reason", !io::load_ufo((dir / "nope").string(), keep, &err) && !err.empty(), err);
+            fs::create_directories(dir / "Broken.granjon");
+            check("ufo: no metainfo is refused", !io::load_ufo((dir / "Broken.granjon").string(), keep, &err), err);
+            check("ufo: a failed load changes nothing", keep.snapshot() == before);
+            fs::remove_all(dir);
+        }
+        {   // Document: modified tracks the saved state through undo / redo.
+            namespace fs = std::filesystem;
+            granjon::command::Document d;
+            check("doc: fresh is unmodified", !d.modified());
+            granjon::command::set_family(d.journal, d.font, "Pica");
+            check("doc: an edit modifies", d.modified());
+            d.journal.undo();
+            check("doc: undo back to the saved state is unmodified", !d.modified());
+            d.journal.redo();
+            const auto p = fs::temp_directory_path() / "granjon_selftest_doc.granjon";
+            std::string err;
+            check("doc: save", d.save(p.string(), &err) && !d.modified() && d.path == p.string(), err);
+            d.journal.undo();
+            check("doc: undo past the save is modified", d.modified());
+            d.journal.redo();
+            check("doc: redo to the save is unmodified", !d.modified());
+            granjon::command::set_metric(d.journal, d.font, granjon::model::Metrics::Field::XHeight, 480);
+            granjon::command::set_metric(d.journal, d.font, granjon::model::Metrics::Field::XHeight, 470);   // merges
+            d.save({}, &err);
+            granjon::command::set_metric(d.journal, d.font, granjon::model::Metrics::Field::XHeight, 460);   // merges into the saved step
+            check("doc: a merge into the saved step still modifies", d.modified());
+            granjon::command::Document e;
+            check("doc: open", e.open(p.string(), &err) && !e.modified() && e.journal.size() == 0 &&
+                               e.font.info().family == "Pica" && e.font.metrics().x_height == 470, err);
+            e.new_font();
+            check("doc: new font", e.path.empty() && !e.modified() && e.font.glyph_count() == 2);
+            fs::remove_all(p);
+        }
+    }
+
+    std::cout << "-----------------------------------------------\n";
+
+    // -- Recents: list ops + JSON round-trip with prune -----------------------
+    {
+        std::vector<std::string> l;
+        core::recents_add(l, "/a");
+        core::recents_add(l, "/b");
+        core::recents_add(l, "/c");
+        check("recents: newest first", l.size() == 3 && l.front() == "/c");
+        core::recents_add(l, "/a");
+        check("recents: re-add moves to front (no dup)",
+              l.size() == 3 && l.front() == "/a");
+        core::recents_add(l, "/x/");
+        check("recents: trailing slash normalised",
+              std::find(l.begin(), l.end(), "/x") != l.end() &&
+              std::find(l.begin(), l.end(), "/x/") == l.end());
+        std::vector<std::string> cap;
+        for (int i = 0; i < 20; ++i)
+            core::recents_add(cap, "/p" + std::to_string(i), 8);
+        check("recents: trim to max (8)", cap.size() == 8 && cap.front() == "/p19");
+
+        const std::string base =
+            (std::filesystem::temp_directory_path() / "granjon_selftest_recents").string();
+        std::error_code ec;
+        std::filesystem::remove_all(base, ec);
+        const std::string live = base + "/live";
+        std::filesystem::create_directories(live, ec);
+        const std::string file = base + "/recent.json";
+
+        std::vector<std::string> to_save = {live, base + "/GONE"};
+        check("recents: save ok", core::save_recents(file, to_save));
+        auto loaded = core::load_recents(file);
+        check("recents: load prunes the missing path",
+              loaded.size() == 1 && loaded.front() == live);
+        check("recents: missing file -> empty",
+              core::load_recents(base + "/nope.json").empty());
+    }
+
+    // -- TextMap: forward/inverse round-trip ----------------------------------
+    {
+        // A scene as a viewer flattens it:
+        //   0 "The Cellar"     title  (non-prose)
+        //   1 ""               gap    (non-prose)
+        //   2 "She opened the" prose, para_start   <- para 1, wrap 1
+        //   3 "old iron door." prose               <- para 1, wrap 2
+        //   4 "Caf\u00e9 dust." prose, para_start  <- para 2 (UTF-8: é)
+        std::vector<core::FlatLine> flat = {
+            {"The Cellar",     false, false},
+            {"",               false, false},
+            {"She opened the", true,  true },
+            {"old iron door.", true,  false},
+            {"Caf\xC3\xA9 dust.", true, true },
+        };
+        roundtrip(flat, 2, 0, 2, 14, "single line");
+        roundtrip(flat, 2, 4, 3, 8,  "multi-line (soft wrap)");
+        roundtrip(flat, 2, 0, 4, 10, "cross-paragraph");
+        roundtrip(flat, 4, 0, 4, 6,  "UTF-8 span (accented)");
+
+        // Chrome is never landed on: a range covering all prose starts on line 2.
+        std::vector<int> off;
+        (void)core::visible_text(flat, off);
+        core::LineCol s, e;
+        core::map_range(flat, 0, 3, s, e);
+        check("textmap: start snaps to prose, never chrome", s.line == 2);
+
+        // Degenerate / empty inputs fail cleanly.
+        check("textmap: empty range rejected", !core::map_range(flat, 5, 5, s, e));
+        std::vector<core::FlatLine> no_prose = {{"Title", false, false}};
+        check("textmap: no prose -> false", !core::map_range(no_prose, 0, 3, s, e));
+    }
+    // -- Shortcuts: the registry paradigm, exercised ---------------------------
+    // A seed's claim isn't a fact until a consumer exercises it. The registry's
+    // whole promise is that a key and its advertised row can't drift, because
+    // both read one list -- so the guard that matters is pure and lives here:
+    // no two chords may collide. (App wires from this same list; ShortcutsDialog
+    // renders from it.)
+    {
+        namespace sc = granjon::core;
+
+        check("shortcuts: format_accel renders modifiers + key",
+              sc::format_accel("<Ctrl><Shift>n") == "Ctrl+Shift+N",
+              sc::format_accel("<Ctrl><Shift>n"));
+        check("shortcuts: format_accel maps a named key to its glyph",
+              sc::format_accel("<Ctrl>question") == "Ctrl+?",
+              sc::format_accel("<Ctrl>question"));
+
+        {
+            sc::ShortcutSpec derived; derived.accels = {"<Ctrl>question", "<Ctrl>slash"};
+            check("shortcuts: display_keys derives + joins accels",
+                  derived.display_keys() == "Ctrl+?  /  Ctrl+/",
+                  derived.display_keys());
+            sc::ShortcutSpec doc; doc.keys = "Click a recent";
+            check("shortcuts: display_keys prefers an explicit key string",
+                  doc.display_keys() == "Click a recent");
+        }
+
+        check("shortcuts: registry is populated",
+              !sc::shortcut_registry().empty(),
+              std::to_string(sc::shortcut_registry().size()) + " specs");
+        check("shortcuts: registry is accel-collision-free",
+              sc::find_accel_collisions().empty(),
+              sc::find_accel_collisions().empty()
+                  ? "clean" : sc::find_accel_collisions().front());
+
+        // Sections authored A-Z + contiguous: the dialog walks linearly and
+        // starts a heading on change, so a stray out-of-order row would split a
+        // section into two headings.
+        {
+            std::vector<std::string> secs;
+            for (const auto& r : sc::shortcut_registry())
+                if (secs.empty() || secs.back() != r.section) secs.push_back(r.section);
+            std::vector<std::string> sorted = secs;
+            std::sort(sorted.begin(), sorted.end());
+            check("shortcuts: sections are contiguous and A-Z ordered", secs == sorted);
+        }
+
+        // The doc-only half of the paradigm: a gesture row documents without
+        // binding (no accels), but must still show keys.
+        {
+            bool ok = true, saw_doc_only = false;
+            for (const auto& r : sc::shortcut_registry())
+                if (r.action.empty()) {
+                    saw_doc_only = true;
+                    if (!r.accels.empty() || r.keys.empty()) ok = false;
+                }
+            check("shortcuts: a doc-only row binds nothing but still displays keys",
+                  ok && saw_doc_only);
+        }
+    }
+
+
+    // ── Font -- the store, the verbs, the one-door gate (Granjon M1) ─────────
+    {
+        std::cout << "\n-- font --\n";
+        namespace model = granjon::model;
+        namespace cmd   = granjon::command;
+        using model::Font;
+        using model::FontJournal;
+        struct Fix {
+            Font        f;
+            FontJournal j{f};
+            Fix() { f.set_door([this] { return j.open(); }); cmd::make_fixture(f); }
+        };
+
+        {   // A new font: .notdef and space, nothing undoable, no strays.
+            cmd::Document d;
+            check("new font: .notdef + space", d.font.glyph_order() == std::vector<std::string>{".notdef", "space"});
+            check("new font: loading is not a step", d.journal.size() == 0 && !d.journal.can_undo());
+            check("new font: loading is not a stray", d.font.strays() == 0);
+            check("new font: space maps U+0020", d.font.glyph_for(U' ') && d.font.glyph_for(U' ')->name == "space");
+        }
+
+        // THE GATE: every verb in the table, on a fresh fixture -- through the
+        // door, one step, undo restores exactly, redo re-applies exactly.
+        for (const auto& v : cmd::verbs()) {
+            Fix x;
+            const auto before = x.f.snapshot();
+            v.run(x.j, x.f);
+            const auto after = x.f.snapshot();
+            check("verb " + v.name + ": no stray write", x.f.strays() == 0, std::to_string(x.f.strays()));
+            check("verb " + v.name + ": changed something, as one step", after != before && x.j.size() == 1,
+                  std::to_string(x.j.size()) + " step(s)");
+            x.j.undo();
+            check("verb " + v.name + ": undo restores", x.f.snapshot() == before);
+            x.j.redo();
+            check("verb " + v.name + ": redo re-applies", x.f.snapshot() == after);
+        }
+
+        {   // The gate catches a write that skips the door.
+            Fix x;
+            model::Glyph g = *x.f.glyph("H");
+            g.advance = 1;
+            x.f.put("H", model::Record{g});
+            check("gate: a write outside the door is a stray", x.f.strays() == 1);
+        }
+
+        {   // Rename carries references: component, kerning pair, group member.
+            Fix x;
+            cmd::rename_glyph(x.j, x.f, "O", "O.alt");
+            const auto& k = x.f.kerning();
+            check("rename: component follows", x.f.glyph("Odotbelow")->components[0].base == "O.alt");
+            check("rename: kerning pair follows", k.pairs.count({"H", "O.alt"}) == 1 && k.pairs.count({"H", "O"}) == 0);
+            const auto& grp = k.groups.at("public.kern1.O");
+            check("rename: group member follows", std::find(grp.begin(), grp.end(), "O.alt") != grp.end());
+            check("rename: keeps its place in the order", x.f.glyph_order()[3] == "O.alt", x.f.glyph_order()[3]);
+            x.j.undo();
+            check("rename: undo brings every reference back",
+                  x.f.glyph("O") && !x.f.glyph("O.alt") && x.f.glyph("Odotbelow")->components[0].base == "O");
+        }
+
+        {   // Refusals are not steps, and they say why.
+            Fix x;
+            std::string why;
+            check("refuse: delete a glyph used as a component",
+                  !cmd::remove_glyph(x.j, x.f, "O", &why) && x.j.size() == 0 && !why.empty(), why);
+            why.clear();
+            check("refuse: a bad glyph name", !cmd::add_glyph(x.j, x.f, "9lives", {}, {}, &why) && !why.empty());
+            check("refuse: a duplicate glyph name", !cmd::add_glyph(x.j, x.f, "H") && x.j.size() == 0);
+            check("refuse: a value set to itself is not a step", !cmd::set_advance(x.j, x.f, "H", 700) && x.j.size() == 0);
+        }
+
+        {   // Delete + undo: back in the same slot.
+            Fix x;
+            const auto order = x.f.glyph_order();
+            cmd::remove_glyph(x.j, x.f, "n");
+            x.j.undo();
+            check("delete/undo: same slot in the glyph order", x.f.glyph_order() == order);
+        }
+
+        {   // A drag is one step, and lands on whole units.
+            Fix x;
+            cmd::drag_begin(x.j, x.f, {"o"});
+            for (int i = 1; i <= 10; ++i) cmd::drag_translate(x.j, x.f, i * 1.37, -i * 0.61);
+            check("drag: mid-drag coordinates are fractional", !x.f.glyph("o")->is_integral());
+            cmd::drag_end(x.j, x.f);
+            check("drag: one step for the whole drag", x.j.size() == 1);
+            check("drag: snapped to integer units on release", x.f.glyph("o")->is_integral());
+            const auto& n0 = x.f.glyph("o")->contours[0].nodes[0];
+            check("drag: moved by the rounded total", n0.x == 64 && n0.y == -16,
+                  std::to_string(n0.x) + "," + std::to_string(n0.y));
+            cmd::drag_begin(x.j, x.f, {"o"});
+            cmd::drag_translate(x.j, x.f, 50, 50);
+            cmd::drag_cancel(x.j);
+            check("drag: Escape puts it back, keeps nothing", x.j.size() == 1 && x.f.glyph("o")->contours[0].nodes[0].x == 64);
+        }
+
+        {   // Field edits merge inside the window; a different field does not.
+            Fix x;
+            using Clock = FontJournal::Clock;
+            using F = model::Metrics::Field;
+            const auto t0 = Clock::now();
+            x.j.run("x", {Font::kMetrics}, [&] { auto m = x.f.metrics(); m.x_height = 490; x.f.put(Font::kMetrics, model::Record{m}); }, "metric:x-height", t0);
+            x.j.run("x", {Font::kMetrics}, [&] { auto m = x.f.metrics(); m.x_height = 480; x.f.put(Font::kMetrics, model::Record{m}); }, "metric:x-height", t0 + std::chrono::milliseconds(300));
+            check("merge: two x-height presses are one step", x.j.size() == 1);
+            cmd::set_metric(x.j, x.f, F::CapHeight, 690);
+            check("merge: another field is its own step", x.j.size() == 2);
+            x.j.undo(); x.j.undo();
+            check("merge: one undo takes both presses back", x.f.metrics().x_height == 500);
+        }
+
+        {   // Bounds: exact cubic extrema, components resolved through the font.
+            Fix x;
+            const auto b = model::bounds(x.f, *x.f.glyph("o"));
+            check("bounds: a box", b && *b == (model::Rect{50, -10, 490, 510}));
+            const auto sb = model::sidebearings(x.f, *x.f.glyph("o"));
+            check("bounds: sidebearings", sb && sb->left == 50 && sb->right == 50);
+            const auto bc = model::bounds(x.f, *x.f.glyph("Odotbelow"));
+            check("bounds: through a component", bc && *bc == (model::Rect{60, -12, 700, 712}));
+            check("bounds: empty drawing", !model::bounds(x.f, *x.f.glyph("space")));
+            model::Glyph arc;   // one cubic bulging right: extremum at t=0.5, x = 75
+            model::Node a = model::Node::corner(0, 0), c = model::Node::corner(0, 100);
+            a.cx2 = 100; a.cy2 = 0;
+            c.cx1 = 100; c.cy1 = 100;
+            arc.contours = {{{a, c}, true}};
+            const auto ba = model::bounds(x.f, arc);
+            check("bounds: cubic extremum solved, not the handle", ba && std::abs(ba->x1 - 75) < 1e-9,
+                  ba ? std::to_string(ba->x1) : "none");
+        }
+
+        {   // Unicode helpers.
+            namespace uni = granjon::unicode;
+            std::vector<char32_t> v;
+            check("cps: U+ list", uni::parse_cps("U+0041 U+00C1", v) && v == std::vector<char32_t>{0x41, 0xC1});
+            check("cps: bare hex, commas", uni::parse_cps("0416,1e0c", v) && v == std::vector<char32_t>{0x416, 0x1E0C});
+            check("cps: a literal character", uni::parse_cps("\xC3\xA9", v) && v == std::vector<char32_t>{0xE9});
+            check("cps: empty is none", uni::parse_cps("  ", v) && v.empty());
+            check("cps: junk refused", !uni::parse_cps("U+ZZZZ", v) && !uni::parse_cps("D800", v));
+            check("blocks: sections", uni::section_of({0x416}) == "Cyrillic" && uni::section_of({}) == "Unencoded" &&
+                                      uni::section_rank("Basic Latin") < uni::section_rank("Cyrillic"));
+        }
+
+        {   // Find: one query, any reference, ranked.
+            Fix x;
+            const auto top = [&](const std::string& q) {
+                const auto r = model::find_glyphs(x.f, q);
+                return r.hits.empty() ? std::string("(none)") : r.hits.front().name;
+            };
+            check("find: exact name", top("H") == "H");
+            check("find: exact case first ('o' before 'O')", top("o") == "o", top("o"));
+            check("find: prefix", top("Odot") == "Odotbelow");
+            check("find: substring", top("dotbel") == "Odotbelow");
+            check("find: the character", top("\xE1\xBB\x8C") == "Odotbelow");   // U+1ECC
+            check("find: U+ form", top("U+006E") == "n");
+            check("find: 0x form", top("0x48") == "H");
+            check("find: bare hex (4+)", top("1ecc") == "Odotbelow");
+            check("find: /escape is exact", top("/O") == "O" && model::find_glyphs(x.f, "/Od").hits.empty());
+            check("find: empty query", model::find_glyphs(x.f, "  ").empty_query);
+            check("find: no match", model::find_glyphs(x.f, "zzz").hits.empty());
+            const auto miss = model::find_glyphs(x.f, "\xC3\xA9");   // é
+            check("find: a missing character is offered", miss.missing && *miss.missing == 0xE9 &&
+                                                         miss.suggested == "uni00E9", miss.suggested);
+            const auto letter = model::find_glyphs(x.f, "A");
+            check("find: a missing letter is named for itself", letter.missing && letter.suggested == "A");
+            check("find: a mapped codepoint is not missing", !model::find_glyphs(x.f, "U+0048").missing);
+            check("find: 'ff' is a name, not a codepoint", !model::find_glyphs(x.f, "ff").missing);
+        }
+
+        {   // Glyph helpers.
+            model::Glyph g;
+            g.advance = 500.4;
+            g.contours = {{{model::Node::corner(1.5, -2.5)}}};
+            g.snap();
+            check("snap: rounds half away from zero, no negative zero",
+                  g.advance == 500 && g.contours[0].nodes[0].x == 2 && g.contours[0].nodes[0].y == -3);
+            check("names: AGL-safe", model::valid_glyph_name("uni0416") && model::valid_glyph_name(".notdef") &&
+                                     model::valid_glyph_name("a.sc") && !model::valid_glyph_name(".hidden") &&
+                                     !model::valid_glyph_name("a b") && !model::valid_glyph_name("@info"));
+        }
+    }
+
+
+    // ── io -- plist, GLIF, UFO round trips (Granjon M2) ─────────────────────
+    {
+        std::cout << "\n-- io --\n";
+        namespace model = granjon::model;
+        namespace io    = granjon::io;
+        namespace fs    = std::filesystem;
+        using model::Node;
+
+        {   // plist: write -> read -> write is byte-identical, keys sorted.
+            io::PValue d = io::PValue::dictionary();
+            d.set("zeta", io::PValue::str("a < b & \"c\""));
+            d.set("alpha", io::PValue::integer(-250));
+            d.set("mid", io::PValue::real(12.5));
+            d.set("flag", io::PValue::boolean(true));
+            io::PValue arr = io::PValue::array();
+            arr.arr = {io::PValue::str("x"), io::PValue::dictionary()};
+            d.set("list", arr);
+            const std::string a = io::write_plist(d);
+            std::string err;
+            const auto back = io::read_plist(a, &err);
+            check("plist: reads back", back.has_value(), err);
+            check("plist: byte-identical rewrite", back && io::write_plist(*back) == a);
+            check("plist: keys sorted", a.find("<key>alpha</key>") < a.find("<key>zeta</key>"));
+            check("plist: escaping survives", back && back->get_string("zeta") == std::string("a < b & \"c\""));
+            check("plist: junk refused", !io::read_plist("<plist><dict><key>a</key></dict></plist>", &err));
+        }
+
+        // A glyph with every feature: curves, a smooth and a symmetric node,
+        // an open contour, a component, anchors, note, status, fractions.
+        model::Glyph rich;
+        rich.name = "Odieresis";
+        rich.unicodes = {0xD6, 0xF6};
+        rich.advance = 760;
+        rich.note = "check <the> overshoot & dots";
+        rich.status = model::GlyphStatus::Review;
+        rich.anchors = {{"top", 380, 720}, {"_bottom", 380.5, 0}};
+        rich.components = {{"dieresiscomb", 1, 0, 0, 1, 120, 0}, {"O", -1, 0, 0, 1, 760, 0}};
+        {
+            Node a = Node::corner(380, -12), b = Node::corner(700, 350), c = Node::corner(380, 712),
+                 d = Node::corner(60, 350);
+            a.cx1 = 200; a.cy1 = -12; a.cx2 = 560; a.cy2 = -12; a.type = Node::Type::Smooth;
+            b.cx1 = 700; b.cy1 = 150; b.cx2 = 700; b.cy2 = 550; b.type = Node::Type::Symmetric;
+            c.cx1 = 560; c.cy1 = 712; c.cx2 = 200; c.cy2 = 712; c.type = Node::Type::Smooth;
+            d.cx1 = 60;  d.cy1 = 550; d.cx2 = 60;  d.cy2 = 150.25; d.type = Node::Type::Cusp;
+            model::Contour outer{{a, b, c, d}, true};
+            model::Contour box{{Node::corner(10, 10), Node::corner(10, 20), Node::corner(20, 20)}, true};
+            model::Contour open{{Node::corner(0, 0), Node::corner(50, 0)}, false};
+            rich.contours = {outer, box, open};
+        }
+        {
+            const std::string x = io::write_glif(rich);
+            std::string err;
+            const auto back = io::read_glif(x, &err);
+            check("glif: reads back", back.has_value(), err);
+            check("glif: round trip is exact (types, handles, open, components, anchors, note, status)",
+                  back && *back == rich);
+            check("glif: rewrite is byte-identical", back && io::write_glif(*back) == x);
+            check("glif: start point first, closing off-curves last",
+                  x.find("<point x=\"380\" y=\"-12\" type=\"curve\" smooth=\"yes\"/>") <
+                  x.find("<point x=\"700\" y=\"350\""));
+        }
+        {   // Foreign GLIF: starts on off-curves; a TrueType qcurve.
+            const std::string q =
+                "<glyph name=\"q\" format=\"2\"><advance width=\"100\"/><outline><contour>"
+                "<point x=\"0\" y=\"100\"/>"
+                "<point x=\"0\" y=\"0\" type=\"qcurve\"/>"
+                "<point x=\"100\" y=\"0\" type=\"line\"/>"
+                "</contour></outline></glyph>";
+            std::string err;
+            const auto g = io::read_glif(q, &err);
+            check("glif: qcurve contour reads", g && g->contours.size() == 1 && g->contours[0].nodes.size() == 2, err);
+            if (g && g->contours[0].nodes.size() == 2) {
+                const auto& n0 = g->contours[0].nodes[0];   // (0,0), reached by the quadratic from (100,0)
+                const auto& n1 = g->contours[0].nodes[1];   // (100,0)
+                // Quadratic (100,0) -q(0,100)-> (0,0): cubic c1 = p0 + 2/3(q-p0), c2 = p1 + 2/3(q-p1).
+                check("glif: quadratic promoted to cubic exactly",
+                      std::abs(n1.cx2 - 100.0 / 3) < 1e-9 && std::abs(n1.cy2 - 200.0 / 3) < 1e-9 &&
+                      std::abs(n0.cx1 - 0) < 1e-9 && std::abs(n0.cy1 - 200.0 / 3) < 1e-9);
+            }
+            check("glif: not a glyph refused", !io::read_glif("<glyph format=\"2\"/>", &err) && !err.empty());
+        }
+        {   // File names (UFO 3 rule).
+            std::vector<std::string> taken;
+            check("names: uppercase marked", io::glif_file_name("A", taken) == "A_.glif");
+            check("names: leading dot", io::glif_file_name(".notdef", taken) == "_notdef.glif");
+            check("names: reserved", io::glif_file_name("con", taken) == "_con.glif");
+            check("names: illegal chars", io::glif_file_name("a/b", taken) == "a_b.glif");
+            taken = {"a_.glif"};
+            check("names: case-insensitive clash gets a number", io::glif_file_name("A", taken) == "A_1.glif");
+        }
+        {   // The whole font: save -> load -> equal; save twice -> byte-identical.
+            const fs::path dir = fs::temp_directory_path() / "granjon_selftest_io";
+            fs::remove_all(dir);
+            fs::create_directories(dir);
+            model::Font f;
+            granjon::command::make_fixture(f);
+            {
+                model::Font::Loading load(f);
+                model::Glyph g = rich;
+                g.order = 50;
+                f.put(g.name, model::Record{g});
+                model::Glyph dc;
+                dc.name = "dieresiscomb"; dc.unicodes = {0x308}; dc.order = 51;
+                f.put(dc.name, model::Record{dc});
+                auto info = f.info();
+                info.copyright = "(c) 2026 Scott"; info.license = "OFL"; info.vendor = "GRNJ";
+                f.put(model::Font::kInfo, model::Record{info});
+                f.put(model::Font::kFeatures, model::Record{model::Features{"feature liga { sub f i by fi; } liga;\n"}});
+            }
+            std::string err;
+            const auto a = dir / "Test.granjon";
+            check("ufo: saves", io::save_ufo(f, a.string(), &err), err);
+            model::Font g;
+            check("ufo: loads", io::load_ufo(a.string(), g, &err), err);
+            check("ufo: same glyph order", g.glyph_order() == f.glyph_order());
+            // Orders are renumbered 1..n on load; compare everything else.
+            const auto norm = [](const model::Font& x) {
+                auto s = x.snapshot();
+                for (auto& [id, r] : s)
+                    if (auto* gl = std::get_if<model::Glyph>(&r)) gl->order = 0;
+                return s;
+            };
+            check("ufo: every record survives", norm(g) == norm(f));
+            check("ufo: loading is not a stray", g.strays() == 0);
+            const auto b = dir / "Again.granjon";
+            io::save_ufo(g, b.string(), &err);
+            bool same = true;
+            std::string differ;
+            for (const auto& e : fs::recursive_directory_iterator(a)) {
+                if (!e.is_regular_file()) continue;
+                const auto rel = fs::relative(e.path(), a);
+                std::ifstream x(e.path(), std::ios::binary), y(b / rel, std::ios::binary);
+                std::string sx((std::istreambuf_iterator<char>(x)), {}), sy((std::istreambuf_iterator<char>(y)), {});
+                if (sx != sy) { same = false; differ = rel.string(); }
+            }
+            check("ufo: save -> load -> save is byte-identical", same, differ);
+            check("ufo: expected files", fs::exists(a / "metainfo.plist") && fs::exists(a / "layercontents.plist") &&
+                                         fs::exists(a / "glyphs" / "contents.plist") &&
+                                         fs::exists(a / "glyphs" / "_notdef.glif") && fs::exists(a / "features.fea"));
+            // Re-save after a delete: the stale .glif must go (the swap-in).
+            {
+                model::Font::Loading load(g);
+                g.put("H", std::nullopt);
+            }
+            io::save_ufo(g, a.string(), &err);
+            check("ufo: a deleted glyph's file is gone after save", !fs::exists(a / "glyphs" / "H_.glif"));
+            check("ufo: no temp folders left", !fs::exists(a.string() + ".saving") && !fs::exists(a.string() + ".previous"));
+            // A failed load leaves the open font alone.
+            model::Font keep;
+            granjon::command::make_fixture(keep);
+            const auto before = keep.snapshot();
+            check("ufo: not a folder is refused, with a reason", !io::load_ufo((dir / "nope").string(), keep, &err) && !err.empty(), err);
+            fs::create_directories(dir / "Broken.granjon");
+            check("ufo: no metainfo is refused", !io::load_ufo((dir / "Broken.granjon").string(), keep, &err), err);
+            check("ufo: a failed load changes nothing", keep.snapshot() == before);
+            fs::remove_all(dir);
+        }
+    }
+
+    std::cout << "-----------------------------------------------\n";
+    std::cout << g_pass << " pass / " << g_fail << " fail\n";
+    return g_fail == 0 ? 0 : 1;
+}

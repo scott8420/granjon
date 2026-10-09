@@ -1,0 +1,298 @@
+/* Granjon -- the house stylesheet.
+ *
+ * Two phases, as Curvz (include/css.hpp there):
+ *   1. `window` defines the design TOKENS (custom properties). The dark motif
+ *      is the default; `window.granjon-light` redefines the same tokens.
+ *      The Shell puts that class on when the desktop is not dark.
+ *   2. Every rule below uses var(--token). No raw hex outside the two token
+ *      blocks.
+ * Token values are Curvz's, verbatim (S124 light ramp), plus --ok-fg.
+ *
+ * The look: Mac/web roots. A unified toolbar (flat header on the panel
+ * surface), a segmented view switcher, a source-list navigator, an
+ * inspector of rounded cards, glyph cells as cards.
+ *
+ * User overrides: ~/.config/granjon/styles.css loads after this file.
+ * Needs GTK >= 4.16 for var().
+ */
+
+/* ── Tokens: dark (default) ───────────────────────────────────────────── */
+window {
+    --bg-deepest:    #141414;
+    --bg-base:       #1e1e1e;
+    --bg-surface:    #252525;
+    --bg-raised:     #2e2e2e;
+    --bg-edge:       #383838;
+
+    --fg-primary:    #e0e0e0;
+    --fg-secondary:  #cccccc;
+    --fg-muted:      #999999;
+    --fg-dim:        #555555;
+
+    --accent:        #3584e4;
+    --accent-fg:     #ffffff;
+    --accent-hover:  #5aa3f0;
+    --accent-deep:   #2e6da8;
+    --accent-dim:    #305581;
+    --accent-bg:     #1e3a5c;
+
+    --selection-bg:  #305581;
+    --hover-bg:      #444444;
+    --focus-ring:    #3584e4;
+
+    --warn-fg:       #e8a838;
+    --error-fg:      #f5b5b5;
+    --error-bg:      #6a2a2a;
+    --ok-fg:         #57c785;
+
+    --white-pure:    #ffffff;
+}
+
+/* ── Tokens: light motif ──────────────────────────────────────────────── */
+window.granjon-light {
+    --bg-deepest:    #b4b4b4;
+    --bg-edge:       #c0c0c0;
+    --hover-bg:      #cccccc;
+    --bg-base:       #d6d6d6;
+    --bg-surface:    #dddddd;
+    --bg-raised:     #e5e5e5;
+
+    --fg-primary:    #0a0a0a;
+    --fg-secondary:  #1a1a1a;
+    --fg-muted:      #222222;
+    --fg-dim:        #333333;
+
+    --accent:        #3584e4;
+    --accent-fg:     #ffffff;
+    --accent-hover:  #2671d6;
+    --accent-deep:   #1e5cb8;
+    --accent-dim:    #6ba4e8;
+    --accent-bg:     #d6e6f8;
+
+    --selection-bg:  #b8d4f4;
+    --focus-ring:    #3584e4;
+
+    --warn-fg:       #b87000;
+    --error-fg:      #8a1a1a;
+    --error-bg:      #f5d0d0;
+    --ok-fg:         #1f8a4c;
+
+    --white-pure:    #ffffff;
+}
+
+/* ── Window base ──────────────────────────────────────────────────────── */
+window, .background {
+    background-color: var(--bg-base);
+    color: var(--fg-primary);
+}
+/* GTK4's CSD wrapper box would otherwise paint black behind the chrome
+   (Curvz S117 m2). */
+window.csd > box.vertical { background-color: var(--bg-base); }
+
+/* ── Header: the unified toolbar ──────────────────────────────────────── */
+headerbar.titlebar {
+    background-color: var(--bg-surface);
+    border-bottom: 1px solid var(--bg-deepest);
+    box-shadow: none;
+    color: var(--fg-primary);
+    min-height: 44px;
+}
+headerbar button {
+    background: none;
+    border: none;
+    box-shadow: none;
+    border-radius: 6px;
+    color: var(--fg-secondary);
+    min-height: 26px;
+    min-width: 26px;
+}
+headerbar button:hover   { background-color: var(--hover-bg); }
+headerbar button:active  { background-color: var(--bg-edge); }
+headerbar button:disabled { color: var(--fg-dim); }
+/* GTK4 names a ToggleButton's CSS node "button" (class .toggle), not "togglebutton". */
+headerbar button.toggle:checked { background-color: var(--bg-edge); color: var(--fg-primary); }
+
+/* The panel toggles: one linked pair, framed like the switcher. */
+headerbar .panel-toggles {
+    background-color: var(--bg-raised);
+    border: 1px solid var(--bg-edge);
+    border-radius: 8px;
+    padding: 2px;
+}
+headerbar .panel-toggles > button.toggle { border-radius: 6px; min-height: 22px; min-width: 28px; }
+headerbar .panel-toggles > button.toggle:checked { background-color: var(--bg-edge); color: var(--fg-primary); }
+
+/* The segmented view switcher. */
+.segmented {
+    background-color: var(--bg-raised);
+    border: 1px solid var(--bg-edge);
+    border-radius: 8px;
+    padding: 2px;
+}
+headerbar .segmented > button.toggle {
+    background: none;
+    border: none;
+    box-shadow: none;
+    border-radius: 6px;
+    padding: 2px 14px;
+    min-height: 24px;
+    color: var(--fg-secondary);
+    font-weight: 500;
+}
+headerbar .segmented > button.toggle:hover   { background-color: var(--hover-bg); }
+headerbar .segmented > button.toggle:checked {
+    background-color: var(--accent);
+    color: var(--accent-fg);
+}
+
+/* ── Panes ────────────────────────────────────────────────────────────── */
+paned > separator {
+    background-color: var(--bg-deepest);
+    min-width: 1px;
+    min-height: 1px;
+    background-image: none;
+}
+
+/* ── Navigator: the source list ───────────────────────────────────────── */
+.navigator { background-color: var(--bg-surface); }
+.navigator list, .navigator scrolledwindow { background: transparent; }
+.navigator row {
+    border-radius: 6px;
+    margin: 0 8px;
+    padding: 4px 8px;
+    min-height: 24px;
+}
+.navigator row:hover    { background-color: var(--hover-bg); }
+.navigator row:selected { background-color: var(--accent); color: var(--accent-fg); }
+.navigator row:selected .cp { color: var(--accent-fg); }
+.navigator .section-header {
+    padding: 12px 16px 4px 16px;
+    font-size: 0.78em;
+    font-weight: bold;
+    letter-spacing: 0.06em;
+    color: var(--fg-muted);
+}
+.navigator .nav-bar { padding: 3px 6px; }
+.navigator .nav-bar button { min-height: 24px; min-width: 24px; border-radius: 6px; }
+
+.badge {
+    background-color: var(--bg-edge);
+    color: var(--fg-muted);
+    border-radius: 9px;
+    padding: 0 7px;
+    font-size: 0.85em;
+    font-weight: normal;
+    letter-spacing: 0;
+}
+.cp {
+    color: var(--fg-muted);
+    font-family: monospace;
+    font-size: 0.85em;
+}
+
+/* Status dots: empty is a ring; drafted amber; done green; review blue. */
+.status-dot {
+    min-width: 8px;
+    min-height: 8px;
+    border-radius: 4px;
+    background-color: var(--fg-dim);
+}
+.status-dot.empty   { background-color: transparent; border: 1px solid var(--fg-muted); min-width: 6px; min-height: 6px; }
+.status-dot.drafted { background-color: var(--warn-fg); }
+.status-dot.done    { background-color: var(--ok-fg); }
+.status-dot.review  { background-color: var(--accent); }
+
+/* ── Header search + its dropdown ─────────────────────────────────────── */
+.glyph-search entry, .glyph-search searchentry {
+    border-radius: 8px;
+    min-height: 26px;
+    background-color: var(--bg-raised);
+}
+popover.search-results > contents {
+    background-color: var(--bg-raised);
+    border: 1px solid var(--bg-edge);
+    border-radius: 10px;
+    padding: 6px;
+}
+popover.search-results list { background: transparent; }
+popover.search-results row { border-radius: 6px; padding: 4px 8px; }
+popover.search-results row:selected { background-color: var(--accent); color: var(--accent-fg); }
+popover.search-results row:selected .cp { color: var(--accent-fg); }
+
+/* ── Inspector: cards ─────────────────────────────────────────────────── */
+.inspector { background-color: var(--bg-surface); }
+.inspector > viewport { background: transparent; }
+.inspector-title {
+    font-size: 1.25em;
+    font-weight: bold;
+    padding: 14px 16px 2px 16px;
+}
+.card {
+    background-color: var(--bg-raised);
+    border: 1px solid var(--bg-edge);
+    border-radius: 10px;
+    padding: 10px 12px 12px 12px;
+    margin: 8px 12px 4px 12px;
+}
+.card-title {
+    font-size: 0.75em;
+    font-weight: bold;
+    letter-spacing: 0.06em;
+    color: var(--fg-muted);
+}
+.field-label { color: var(--fg-muted); }
+.hint        { color: var(--fg-muted); font-size: 0.9em; }
+.preview {
+    background-color: var(--bg-base);
+    border-radius: 8px;
+}
+
+/* Fields share one look across panels. */
+entry, spinbutton, searchentry {
+    background-color: var(--bg-base);
+    color: var(--fg-primary);
+    border: 1px solid var(--bg-edge);
+    border-radius: 6px;
+    box-shadow: none;
+    min-height: 28px;
+}
+entry:focus-within, spinbutton:focus-within {
+    border-color: var(--focus-ring);
+    box-shadow: 0 0 0 1px var(--focus-ring);
+}
+spinbutton button { background: none; border: none; box-shadow: none; color: var(--fg-muted); }
+spinbutton button:hover { color: var(--fg-primary); background-color: var(--hover-bg); }
+
+/* ── Overview: glyph cells as cards ───────────────────────────────────── */
+.overview { background-color: var(--bg-base); }
+.overview flowbox { padding: 16px; }
+.overview flowboxchild { padding: 0; border-radius: 10px; background: none; }
+.overview flowboxchild:focus-visible { outline: none; }
+.glyph-cell {
+    background-color: var(--bg-raised);
+    border: 1px solid var(--bg-edge);
+    border-radius: 10px;
+    padding: 6px 6px 8px 6px;
+    color: var(--fg-primary);
+}
+.overview flowboxchild:hover .glyph-cell { background-color: var(--hover-bg); }
+.overview flowboxchild:selected .glyph-cell {
+    background-color: var(--accent-bg);
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
+}
+.glyph-cell .cell-name { font-size: 0.85em; }
+.glyph-cell.empty { color: var(--fg-dim); }
+
+/* ── Empty states (views not built yet) ───────────────────────────────── */
+.empty-state { padding: 32px; }
+.empty-title { font-size: 1.6em; font-weight: bold; color: var(--fg-secondary); }
+
+/* ── Status strip ─────────────────────────────────────────────────────── */
+.statusbar {
+    background-color: var(--bg-deepest);
+    color: var(--fg-muted);
+    padding: 3px 12px;
+    font-size: 0.85em;
+}
+.statusbar.warn { color: var(--warn-fg); }

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gresources>
+  <gresource prefix="/granjon.curvz/icons/scalable/apps">
+    <file preprocess="xml-stripblanks">granjon-logo-symbolic.svg</file>
+  </gresource>
+  <gresource prefix="/granjon.curvz/icons/16x16/apps">
+    <file>granjon-logo-symbolic.png</file>
+  </gresource>
+</gresources>
