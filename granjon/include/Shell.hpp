@@ -87,6 +87,7 @@ private:
     void on_dump_registry();                     // category: handler: print the live widget tree
     void on_about();                             // category: handler: open the About window (dialog-lifetime exemplar)
     void on_shortcuts();   // handler: open the keyboard reference (renders from core::shortcut_registry)
+    void on_other_case();                        // category: handler: A <-> a (Alt+C)
     void on_undo();                              // category: handler: Ctrl+Z / menu / button
     void on_redo();                              // category: handler: Ctrl+Shift+Z, Ctrl+Y / menu / button
     void on_view(const Glib::ustring& id);       // category: handler: the view switcher (Ctrl+1..5)

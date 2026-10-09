@@ -1,38 +1,51 @@
 #include "unicode/Blocks.hpp"
 
+#include "unicode/Embedded.hpp"
+
+#include <algorithm>
 #include <cctype>
+#include <charconv>
 #include <cstdio>
+#include <map>
+#include <string_view>
 
 namespace granjon::unicode {
 
 namespace {
-const Block kBlocks[] = {
-    {0x0000, 0x007F, "Basic Latin",               10},
-    {0x0080, 0x00FF, "Latin-1 Supplement",        11},
-    {0x0100, 0x017F, "Latin Extended-A",          12},
-    {0x0180, 0x024F, "Latin Extended-B",          13},
-    {0x0250, 0x02AF, "IPA Extensions",            14},
-    {0x02B0, 0x02FF, "Spacing Modifiers",         15},
-    {0x0300, 0x036F, "Combining Diacritics",      16},
-    {0x0370, 0x03FF, "Greek and Coptic",          20},
-    {0x0400, 0x04FF, "Cyrillic",                  30},
-    {0x0500, 0x052F, "Cyrillic Supplement",       31},
-    {0x1E00, 0x1EFF, "Latin Extended Additional", 17},
-    {0x1F00, 0x1FFF, "Greek Extended",            21},
-    {0x2000, 0x206F, "General Punctuation",       40},
-    {0x20A0, 0x20CF, "Currency Symbols",          41},
-    {0x2100, 0x214F, "Letterlike Symbols",        42},
-    {0x2190, 0x21FF, "Arrows",                    43},
-    {0x2200, 0x22FF, "Mathematical Operators",    44},
-    {0xFB00, 0xFB4F, "Alphabetic Presentation",   45},
-};
-const Block kOther{0, 0, "Other", 90};
+const Block kNone{0, 0, "No Block", 100000};
 }  // namespace
 
+const std::vector<Block>& blocks() {
+    static const std::vector<Block> all = [] {
+        std::vector<Block> v;
+        const std::string_view data = embedded::get("ucd/blocks.txt");
+        std::size_t a = 0;
+        while (a < data.size()) {
+            std::size_t b = data.find('\n', a);
+            if (b == std::string_view::npos) b = data.size();
+            const std::string_view line = data.substr(a, b - a);
+            a = b + 1;
+            if (line.empty() || line[0] == '#') continue;
+            const auto dots = line.find(".."), semi = line.find(';');
+            if (dots == std::string_view::npos || semi == std::string_view::npos) continue;
+            const auto num = [](std::string_view h) {
+                unsigned x = 0;
+                std::from_chars(h.data(), h.data() + h.size(), x, 16);
+                return static_cast<char32_t>(x);
+            };
+            v.push_back({num(line.substr(0, dots)), num(line.substr(dots + 2, semi - dots - 2)),
+                         std::string(line.substr(semi + 1)), static_cast<int>(v.size())});
+        }
+        return v;
+    }();
+    return all;
+}
+
 const Block& block_of(char32_t cp) {
-    for (const auto& b : kBlocks)
-        if (cp >= b.first && cp <= b.last) return b;
-    return kOther;
+    const auto& v = blocks();
+    const auto it = std::upper_bound(v.begin(), v.end(), cp, [](char32_t c, const Block& b) { return c < b.first; });
+    if (it != v.begin() && cp <= std::prev(it)->last) return *std::prev(it);
+    return kNone;
 }
 
 std::string section_of(const std::vector<char32_t>& cps) {
@@ -40,9 +53,14 @@ std::string section_of(const std::vector<char32_t>& cps) {
 }
 
 int section_rank(const std::string& section) {
-    if (section == "Unencoded") return 99;
-    for (const auto& b : kBlocks) if (section == b.name) return b.rank;
-    return kOther.rank;
+    static const std::map<std::string, int> rank = [] {
+        std::map<std::string, int> m;
+        for (const auto& b : blocks()) m[b.name] = b.rank;
+        return m;
+    }();
+    if (section == "Unencoded") return 200000;
+    const auto it = rank.find(section);
+    return it == rank.end() ? kNone.rank : it->second;
 }
 
 std::string format_cp(char32_t cp) {

@@ -114,7 +114,8 @@ MyFont.granjon/
 
 ## 5. Unicode subsystem
 
-- **Data:** GLib (`Glib::Unicode` / `g_unichar_*`) supplies category, script, and case mapping. A trimmed UCD table is bundled at build time and adds names, blocks, and decompositions.
+- **Data (M3, s02):** one source of truth, compiled into `granjon_core`: a trimmed UCD 17.0 (`resources/ucd/ucd.txt` -- name, general category, decomposition, simple upper / lower; algorithmic ranges for CJK / Hangul / Tangut), `blocks.txt`, the AGL and AGLFN, and the char sets. `scripts/ucd_trim.py` regenerates them from upstream (checked in, no network at build); `tools/embed.cpp` turns them into `granjon-data.cpp` at build time. Category and case come from the same table rather than GLib, so the GTK-free core (selftest, granjon-cli) sees exactly what the app sees. Script (sc) is not bundled yet -- add when grouping by script is wanted.
+- **Modules:** `unicode/UcdTable` (name_of, category, decomposition, upper / lower / other_case, find_by_name), `unicode/Blocks` (block_of, sections in code point order), `unicode/Agl` (nice_name, codepoints_for_name), `unicode/CharSet` (Latin-1 191, GF Latin Core 319, Adobe Latin 2 250 / 3 331, WGL4 651 -- less its two PUA points), `model/Coverage` (mapped, missing_from, glyphs_for).
 - **Uses:**
   - Overview grouping by block or script.
   - Search by character name ("cedilla").
@@ -180,11 +181,12 @@ Window layout (M1b, Mac/web roots -- the Curvz house look):
 
 - **One selection** (`views::ViewContext`): a glyph name or "" for the font, shared by every view. Undo hands it back.
 - **View switcher:** a segmented pill in the header, radio targets of `win.view` (Ctrl+1..5). Panel toggles are one linked pair [◧|◨] (navigator | inspector), as Folio / jot: F9, Ctrl+I.
-- **Find glyph** (M1c, header, Ctrl+F / Ctrl+K): one field takes a name, the character, U+00E9 / 0xE9 / 00E9, or /name (`model::find_glyphs`, ranked). While typing, the navigator and overview narrow to the hits (`ViewContext::filter`) and a dropdown shows the top eight; Enter selects, Escape clears; a character with no glyph offers "Create é as uni00E9" (the add verb). M3 adds Unicode-name search ("cedilla") and AGL names (eacute).
+- **Find glyph** (M1c, header, Ctrl+F / Ctrl+K): one field takes a name, the character, U+00E9 / 0xE9 / 00E9, or /name (`model::find_glyphs`, ranked). While typing, the navigator and overview narrow to the hits (`ViewContext::filter`) and a dropdown shows the top eight; Enter selects, Escape clears. M3: also an AGL name (`eacute` finds the glyph mapping é whatever it is called) and a Unicode name, 3+ letters ("cedilla", "cyrillic zhe": every word starts a word of the name). Characters asked for that no glyph maps come back as up to four "Create é as eacute" rows (the add verb). New glyphs are named AGLFN-first, else uniXXXX / uXXXXX.
+- **Case navigation** (M3): Alt+C, or the inspector's Unicode card: A <-> a by code point; unencoded suffixed glyphs go to their partner (a.sc -> A.sc). The Unicode card also shows the character's name and category.
 - **Styling:** `resources/granjon.css` -- Curvz's tokens (dark default, `window.granjon-light` motif following the desktop) and the rules; user overrides in `~/.config/granjon/styles.css`. Needs GTK >= 4.16 (CSS `var()`).
 
 Views:
-1. **Overview:** glyph cards (drawing, name, codepoint), status-tinted. Click selects; double-click opens the editor. M3 adds block grouping, coverage gaps, cell size.
+1. **Overview (M3):** glyph cards (drawing, name, codepoint), status-tinted, grouped by Unicode block under section headers (code point order within a block; Unencoded last). Toolbar: **Coverage** menu (the char sets as a checklist: have / total, missing count, tick on the chosen one), **Create N missing** (`add_glyphs`, ONE undo step), cell-size slider (40-200 px; captions hide below 56). The chosen set's gaps are dashed cells showing the character; click says what it is, double-click creates it. Gaps hide while the search narrows. Click selects; double-click opens the editor.
 2. **Editor:** Curvz canvas plus metric guides, draggable sidebearings, ghosted neighbor glyphs, components, and anchors. (M4)
 3. **Spacing / kerning:** a live HarfBuzz-shaped text strip. Click a pair and drag to kern; profile readouts are shown. (M6, M8)
 4. **Preview:** waterfall sizes, sample text, light/dark. (M6)
@@ -244,11 +246,12 @@ granjon/                        project root (not a git repo)
  │   │                          + Cairn paradigm pages (undo, two-layer-seam, ...)
  │   └─ cairn/                  Cairn's own ARCHITECTURE, for the M1 rename
  ├─ fixes/                      drop-in fix files between sessions
- ├─ scripts/                    granjon_backup.sh
+ ├─ scripts/                    granjon_backup.sh, ucd_trim.py
  └─ granjon/                    the code (git repo)
      ├─ include/        model/  command/  core/  widgets/
      ├─ src/            model/  command/  core/  Shell_*.cpp
-     ├─ resources/              ucd tables, char sets, proof strings
+     ├─ resources/              ucd/ (trimmed UCD, AGL), charsets/, css, icons
+     ├─ tools/                  embed.cpp (data -> C++ at build time)
      ├─ third_party/
      ├─ build.sh
      ├─ CMakeLists.txt
@@ -260,7 +263,7 @@ granjon/                        project root (not a git repo)
 model/      Find [M1c], Bounds [M1b], Font (= undo store), Glyph, Outline (Node, Contour, Component, Anchor), FontRecords (FontInfo, Metrics, Kerning, MetricsKeys, Features)   [M1: built]
 command/    Document (font + journal), Verbs + verb table   [M1: built]
 io/         Plist, Glif, Ufo (save_ufo / load_ufo)   [M2: built]
-unicode/    Blocks [M1b: hand table], UcdTable, CharSet, GlyphNaming
+unicode/    Embedded, UcdTable, Blocks, Agl, CharSet   [M3: built]  (model/Coverage)
 views/      ViewContext, Navigator, Inspector, OverviewGrid, GlyphPaint, GlyphSearch   [M1b/c: built]; GlyphCanvas, SpacingStrip, PreviewPane, ReportList to come
 check/      Check, Report, concrete checks
 geom/       Profile, BooleanOps, CubicToQuad, Direction
@@ -278,7 +281,7 @@ Work stops at each milestone for a compile/run report before continuing.
 1c. **M1c Find glyph:** header search, filter, create-missing.
 1b. **M1b UI shell:** three-pane layout, segmented view switcher, navigator, inspector cards, overview cards, house CSS.
 2. **M2 Persist:** UFO read/write round-trip (save, reload, byte-compare).   [s01: done]
-3. **M3 Overview:** glyph grid, Unicode data, char-set coverage.
+3. **M3 Overview:** glyph grid, Unicode data, char-set coverage.   [s02: built, awaiting run report]
 4. **M4 Editor:** Curvz canvas port with metric guides and sidebearings.
 5. **M5 Components & anchors:** auto-build composites from decomposition.
 6. **M6 Spacing:** HarfBuzz strip, metrics keys, class kerning.

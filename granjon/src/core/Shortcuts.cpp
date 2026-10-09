@@ -140,6 +140,7 @@ const std::vector<ShortcutSpec>& shortcut_registry() {
         {"View", "win.view::report",   {"<Ctrl>5"}, "", "Report"},
         {"View", "win.show-navigator", {"F9"}, "", "Show / hide the navigator"},
         {"View", "win.show-inspector", {"<Ctrl>i"}, "", "Show / hide the inspector"},
+        {"View", "win.other-case",     {"<Alt>c"}, "", "Go to the other case of the glyph (A \u2194 a)"},
         {"View", "win.find",           {"<Ctrl>f", "<Ctrl>k"}, "", "Find a glyph: name, character, U+code, /name"},
 
 

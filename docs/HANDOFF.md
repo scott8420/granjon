@@ -1,49 +1,48 @@
-# Granjon handoff — s01 -> s02
+# Granjon handoff — s02 -> s03
 
-# s02_overview_unicode
+# s03_editor_canvas
 
 ## Files to upload
-- `s01_persist.zip` (made by `scripts/granjon_backup.sh -o s01_persist`)
+- `s02_overview_unicode.zip` (made by `scripts/granjon_backup.sh -o s02_overview_unicode`)
 - `RULES.md`, `HANDOFF.md`, `ARCHITECTURE.md`, `ARC.md`, `CANON.md`
-- Curvz `include/math/` + `include/SceneNode.hpp`, only when we reach M4 (canvas port)
+- Curvz `include/math/` + `include/SceneNode.hpp` (M4 is the canvas port), plus whatever Curvz canvas source you want carried over
 
 ---
 
-## Status — s01 ends at M2 (awaiting Scott's compile/run report)
-crc from Scott: M1, M1b, M1c, logo. M2 (persist) built here against Ubuntu 24.04, g++ 13.3, gtkmm 4.10 / GTK 4.14, libxml2 2.9.14. Clean, no warnings. Selftest 257 / 0.
+## Status — s02 ends at M3 (awaiting Scott's compile/run report)
+M2's run report was never received -- if M2 had problems, they come first.
 
-**New dependency:** `libxml2-devel` (Fedora).
+M3 built here against Ubuntu 24.04, g++ 13.3, gtkmm 4.10 / GTK 4.14, libxml2 2.9.14, spdlog 1.12. Clean, no warnings. Selftest 301 / 0. **No new package dependency.** The build now compiles a small host tool first (`tools/embed.cpp`) and a ~1.6 MB generated data source -- the first build takes a little longer.
 
-What to look at:
-- File menu (hamburger): New, Open…, Open recent, Save, Save as…  Keys Ctrl+N / O / S / Shift+S.
-- `GRANJON_SAMPLE=1 ./build/granjon` -> Ctrl+S -> save somewhere -> look inside the `.granjon` folder (plists, glyphs/*.glif).
-- Change something: the title gets a leading dot. Ctrl+Z back: the dot goes. Change again, then close the window: Save / Discard / Cancel.
-- Open a UFO from another tool, if you have one (a `.ufo` folder): glyph outlines draw in the overview / inspector; quadratic (TrueType-flavoured) UFOs are converted to cubic on load.
-- Open something that isn't a font: the status strip says why, the open font is untouched.
+What to look at (`GRANJON_SAMPLE=1 ./build/granjon` is handy, or open a real UFO):
+- Overview: glyphs under block headers (BASIC LATIN, LATIN-1 SUPPLEMENT ...), counts on each.
+- Toolbar **Coverage** menu: pick Latin-1 / GF Latin Core / Adobe Latin 2 / 3 / WGL4. Each row shows have / total and a missing count. The grid grows dashed cells for the gaps, showing the missing character; click one (status line names it), double-click creates it.
+- **Create N missing**: all of them in one step; Ctrl+Z takes them all back.
+- Cell-size slider (right of the toolbar): captions hide when small.
+- Header search: `cedilla`, `cyrillic zhe`, `eacute`, `é` -- glyphs found by Unicode name / AGL name; "Create ... as eacute" rows for what the font lacks.
+- Alt+C on a glyph: the other case (A <-> a). Inspector's Unicode card: Name, Category, a Case button.
+- Fonts with hundreds of glyphs: tell me if the overview feels slow to rebuild after an edit (it rebuilds every cell on each change, as before -- now with more cells when a set's gaps show).
 
-## Decisions made in s01
-- Undo: Cairn's `core::Journal`; `model::Font` is the store. Journal gained `stamp()` for "modified". ARCHITECTURE §2.
-- Model: Curvz's anchor-with-handles `Node`; GLIF points only at I/O. ARCHITECTURE §3-4.
-- Store ids: `@info @metrics @kerning @metricskeys @features`, glyphs by name.
-- App id `io.github.granjon.Granjon`; gresource prefix matches.
-- UI: three panes, one shared selection, segmented view switcher, header find-glyph, Curvz tokens. ARCHITECTURE §7.
-- Source format: UFO 3 folder named `.granjon`; libxml2; deterministic, swap-in saves. ARCHITECTURE §4.
-- Logo: Scott's G-on-slug with hedera.
+## Decisions made in s02
+- Unicode data is ours, compiled into the core (UCD 17.0 + AGL + char sets), category and case included -- not GLib. ARCHITECTURE §5.
+- New glyph names: AGLFN first (eacute), else uniXXXX / uXXXXX. Production names stay an export decision.
+- Char sets are code point lists; WGL4 drops its two Private Use points.
+- Case navigation key: Alt+C (my pick -- easy to change in `core/Shortcuts.cpp`).
+- Overview sections sort in code point order; gaps hide while searching.
 
-## s02 goal — Milestone M3: Overview + Unicode
-- Bundle a trimmed UCD at build time (names, blocks, decompositions, categories) -> `unicode/UcdTable`; replace the hand block table.
-- AGL glyph names (`eacute`, `uni0416`, `u1F600`): name_for_codepoint uses them; production names later at export.
-- Find glyph by Unicode name ("cedilla", "cyrillic zhe").
-- Overview grid grouped by block (section headers like the navigator), cell-size slider, coverage gaps shown as empty cells for a chosen char set.
-- Char sets (resources/): Latin-1, Adobe Latin 2/3, WGL4, GF Latin Core -- checklist with a missing count; "create missing" as one undo step.
-- Case navigation (A <-> a).
+## s03 goal — Milestone M4: Editor
+- Port the Curvz canvas: draw the glyph's contours with on-curve / off-curve points, select / drag nodes and handles through a gesture (`drag_begin .. drag_end` shape already in the verbs), snapped on release.
+- Metric guides (baseline, x-height, cap height, ascender, descender, overshoot zones), draggable sidebearings (set_advance / LSB through verbs).
+- Ghosted neighbour glyphs; components drawn; anchors shown.
+- Zoom / pan; Ctrl+2 / double-click from the overview opens it on the selected glyph.
 
-**Stop at M3** for a compile/run report.
+**Stop at M4** for a compile/run report.
 
 ## Still open
 - Packages, Fedora (confirm): later `freetype-devel harfbuzz-devel brotli-devel`; Clipper2 via FetchContent.
 - granjon-cli scope (ARC backlog).
-- `GRANJON_SAMPLE` env still there -- handy for looking; drop when it stops earning its keep.
+- Overview follow-ons in the ARC backlog (persist coverage set / cell size, user char sets, scroll-to-selection, a.sc beside a).
+- `GRANJON_SAMPLE` env still there.
 
 ---
 

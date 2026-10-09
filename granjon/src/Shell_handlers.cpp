@@ -1,4 +1,8 @@
 #include "Shell.hpp"
+
+#include "model/Find.hpp"
+#include "unicode/Blocks.hpp"
+#include "unicode/UcdTable.hpp"
 #include "AboutWindow.hpp"
 #include "ShortcutsDialog.hpp"
 #include "Log.hpp"
@@ -122,6 +126,16 @@ void Shell::on_redo() {  // handler: put the undone step back
     m_ctx.select(r.selection.empty() ? std::string{} : r.selection.front());
     say("Redid: " + r.label, false);
     if (auto lg = log::get(log::Area::Shell)) lg->info("redo: {}", r.label);
+}
+
+void Shell::on_other_case() {  // handler: case navigation, A <-> a
+    if (m_ctx.selected.empty()) { say("Select a glyph to go to its other case.", false); return; }
+    char32_t other = 0;
+    const std::string to = model::other_case_glyph(m_doc.font, m_ctx.selected, &other);
+    if (!to.empty())  m_ctx.select(to);
+    else if (other)   say("No glyph for " + unicode::utf8(other) + " (" + unicode::format_cp(other) +
+                          ") yet -- type it in the search to create it.", true);
+    else              say(m_ctx.selected + " has no other case.", false);
 }
 
 void Shell::on_view(const Glib::ustring& id) {  // handler: the view switcher

@@ -61,6 +61,7 @@ void Shell::bind_actions() {  // bindings: actions + recents group
     m_act_nav  = add_action_bool("show-navigator", sigc::mem_fun(*this, &Shell::on_toggle_navigator), true);
     m_act_insp = add_action_bool("show-inspector", sigc::mem_fun(*this, &Shell::on_toggle_inspector), true);
     add_action("find", [this] { m_search.focus(); });
+    add_action("other-case", sigc::mem_fun(*this, &Shell::on_other_case));
 
     // ── the model <-> journal <-> UI wiring ─────────────────────────────────
     // The document told the font to ask its journal whether the door is open

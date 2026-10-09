@@ -7,9 +7,10 @@
 //   ↑ ↓       move in the dropdown
 //   Enter     select the highlighted hit in every view, clear the search
 //   Escape    clear the search, nothing selected changes
-//   no glyph  for a character / codepoint: "Create é as uni00E9" -- the add
-//             verb, so it undoes
+//   no glyph  for a character / codepoint / AGL name / Unicode name: up to
+//             four "Create é as eacute" rows -- the add verb, so it undoes
 // Ctrl+F (win.find) puts the keyboard here from anywhere.
+#include "model/Find.hpp"
 #include "views/ViewContext.hpp"
 #include "widgets/Widgets.hpp"
 
@@ -36,8 +37,7 @@ private:
     widgets::SearchEntry  m_entry;
     Gtk::Popover          m_pop;
     widgets::ListBox      m_list;
-    std::optional<char32_t> m_missing;
-    std::string           m_suggested;
+    std::vector<model::FindCreate> m_create;
     bool                  m_clearing = false;
 };
 

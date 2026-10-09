@@ -56,6 +56,9 @@ private:
     widgets::Label       m_rsb;
     widgets::Entry       m_unicodes;
     widgets::Label       m_section;
+    widgets::Label       m_uname;      // UCD name of the first code point
+    widgets::Label       m_category;
+    widgets::Button      m_case;       // "Go to a" -- case navigation
     widgets::Entry       m_note;
 };
 

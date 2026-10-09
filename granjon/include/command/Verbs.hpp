@@ -11,6 +11,7 @@
 // restores, redo re-applies. A verb the UI offers and the table lacks is the
 // gap the gate cannot see -- add it here in the same change that adds the
 // button. (CANON: "Undo is foundation, not a feature".)
+#include "model/Coverage.hpp"
 #include "model/Font.hpp"
 
 #include <functional>
@@ -26,6 +27,11 @@ using model::FontJournal;
 bool add_glyph(FontJournal& j, Font& f, const std::string& name,
                const std::vector<char32_t>& unicodes = {}, const std::string& after = {},
                std::string* why = nullptr);
+// Many new glyphs as ONE step (a char set's "create missing"), appended to
+// the glyph order as given. Refuses -- writing nothing -- if any name is bad
+// or taken. `label` names the step ("Create 17 missing (Adobe Latin 2)").
+bool add_glyphs(FontJournal& j, Font& f, const std::vector<model::NewGlyph>& glyphs,
+                const std::string& label = {}, std::string* why = nullptr);
 bool remove_glyph(FontJournal& j, Font& f, const std::string& name, std::string* why = nullptr);
 // Rename carries every reference with it: components in other glyphs, kerning
 // pairs and group members, metrics keys. One step.

@@ -1,11 +1,14 @@
 #include "model/Find.hpp"
 
+#include "unicode/Agl.hpp"
 #include "unicode/Blocks.hpp"
+#include "unicode/UcdTable.hpp"
 
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
 #include <map>
+#include <set>
 
 namespace granjon::model {
 
@@ -54,18 +57,29 @@ std::optional<char32_t> as_codepoint(const std::string& q) {
 }  // namespace
 
 std::string name_for_codepoint(const Font& f, char32_t cp) {
-    std::string base;
-    if ((cp >= U'A' && cp <= U'Z') || (cp >= U'a' && cp <= U'z')) {
-        base = std::string(1, static_cast<char>(cp));
-    } else {
-        char buf[16];
-        if (cp <= 0xFFFF) std::snprintf(buf, sizeof buf, "uni%04X", static_cast<unsigned>(cp));
-        else              std::snprintf(buf, sizeof buf, "u%05X", static_cast<unsigned>(cp));
-        base = buf;
-    }
+    const std::string base = unicode::nice_name(cp);
     std::string name = base;
     for (int i = 1; f.glyph(name); ++i) name = base + "." + std::to_string(i);
     return name;
+}
+
+std::string other_case_glyph(const Font& f, const std::string& name, char32_t* other) {
+    if (other) *other = 0;
+    const Glyph* g = f.glyph(name);
+    if (!g) return {};
+    std::vector<char32_t> cps = g->unicodes;
+    if (cps.empty()) cps = unicode::codepoints_for_name(name);
+    if (cps.size() != 1) return {};
+    const char32_t o = unicode::other_case(cps[0]);
+    if (other) *other = o;
+    if (!o) return {};
+    const Glyph* target = f.glyph_for(o);
+    if (!target) return {};
+    // A suffixed, unencoded glyph (a.sc) goes to its suffixed partner (A.sc).
+    if (g->unicodes.empty())
+        if (const auto dot = name.find('.'); dot != std::string::npos)
+            if (f.glyph(target->name + name.substr(dot))) return target->name + name.substr(dot);
+    return target->name;
 }
 
 FindResult find_glyphs(const Font& f, const std::string& raw) {
@@ -92,8 +106,10 @@ FindResult find_glyphs(const Font& f, const std::string& raw) {
 
     const auto cp = as_codepoint(q);
     const std::string lq = lower(q);
+    std::map<char32_t, std::vector<std::string>> by_cp;    // who maps what
     for (const auto& name : order) {
         const Glyph& g = *f.glyph(name);
+        for (char32_t c : g.unicodes) by_cp[c].push_back(name);
         if (cp && std::find(g.unicodes.begin(), g.unicodes.end(), *cp) != g.unicodes.end())
             offer(name, 1, "codepoint");
         const std::string ln = lower(name);
@@ -107,16 +123,47 @@ FindResult find_glyphs(const Font& f, const std::string& raw) {
             if (lower(unicode::format_cp(c)).find(lq) != std::string::npos) { offer(name, 5, "codepoint"); break; }
     }
 
+    std::set<char32_t> offered;
+    const auto creatable = [&](char32_t c, const std::string& name) {
+        if (r.create.size() >= FindResult::kMaxCreate || by_cp.count(c) || !offered.insert(c).second) return;
+        if (!unicode::is_assigned(c) && !(c >= 0xE000 && c <= 0xF8FF)) return;
+        r.create.push_back({c, name});
+    };
+
+    // 1. A codepoint nothing maps.
+    if (cp) creatable(*cp, name_for_codepoint(f, *cp));
+
+    // 2. An AGL name for one character ("eacute", "uni0416", "u1F600"): the
+    //    glyph mapping it, or create it under the name as typed.
+    if (!cp && !f.glyph(q) && valid_glyph_name(q)) {
+        const auto named = unicode::codepoints_for_name(q);
+        if (named.size() == 1) {
+            if (const auto it = by_cp.find(named[0]); it != by_cp.end())
+                for (const auto& n : it->second) offer(n, 2, "codepoint");
+            else
+                creatable(named[0], q);
+        }
+    }
+
+    // 3. A Unicode character name: "cedilla", "cyrillic zhe".
+    const bool wordy = !cp && q[0] != '/' && q.size() >= 3 &&
+                       std::any_of(q.begin(), q.end(), [](unsigned char c) { return std::isalpha(c); });
+    if (wordy) {
+        bool named_exactly = false;
+        for (const auto& [n, h] : best) named_exactly = named_exactly || h.rank <= 2;
+        for (char32_t c : unicode::find_by_name(q, 400)) {
+            if (const auto it = by_cp.find(c); it != by_cp.end())
+                for (const auto& n : it->second) offer(n, 6, "unicode name");
+            else if (!named_exactly)
+                creatable(c, name_for_codepoint(f, c));
+        }
+    }
+
     for (auto& [n, h] : best) r.hits.push_back(h);
     std::stable_sort(r.hits.begin(), r.hits.end(), [&](const FindHit& a, const FindHit& b) {
         if (a.rank != b.rank) return a.rank < b.rank;
         return pos[a.name] < pos[b.name];
     });
-
-    if (cp && !f.glyph_for(*cp)) {
-        r.missing   = *cp;
-        r.suggested = name_for_codepoint(f, *cp);
-    }
     return r;
 }
 

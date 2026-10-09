@@ -33,6 +33,7 @@ include=(
     granjon/src
     granjon/resources
     granjon/third_party
+    granjon/tools
     granjon/CMakeLists.txt
     granjon/build.sh
     granjon/README.md

@@ -24,7 +24,11 @@
 #include "io/Ufo.hpp"
 #include "model/Find.hpp"
 #include "model/Font.hpp"
+#include "model/Coverage.hpp"
+#include "unicode/Agl.hpp"
 #include "unicode/Blocks.hpp"
+#include "unicode/CharSet.hpp"
+#include "unicode/UcdTable.hpp"
 #include <cmath>
 
 #include <algorithm>
@@ -755,13 +759,124 @@ int main() {
             check("find: /escape is exact", top("/O") == "O" && model::find_glyphs(x.f, "/Od").hits.empty());
             check("find: empty query", model::find_glyphs(x.f, "  ").empty_query);
             check("find: no match", model::find_glyphs(x.f, "zzz").hits.empty());
-            const auto miss = model::find_glyphs(x.f, "\xC3\xA9");   // é
-            check("find: a missing character is offered", miss.missing && *miss.missing == 0xE9 &&
-                                                         miss.suggested == "uni00E9", miss.suggested);
-            const auto letter = model::find_glyphs(x.f, "A");
-            check("find: a missing letter is named for itself", letter.missing && letter.suggested == "A");
-            check("find: a mapped codepoint is not missing", !model::find_glyphs(x.f, "U+0048").missing);
-            check("find: 'ff' is a name, not a codepoint", !model::find_glyphs(x.f, "ff").missing);
+            const auto creates = [&](const std::string& q, char32_t cp, const std::string& name) {
+                const auto r = model::find_glyphs(x.f, q);
+                return !r.create.empty() && r.create.front().cp == cp && r.create.front().name == name;
+            };
+            check("find: a missing character is offered under its AGL name", creates("\xC3\xA9", 0xE9, "eacute"));
+            check("find: a missing letter is named for itself", creates("A", U'A', "A"));
+            check("find: no AGL name -> uniXXXX", creates("U+0416", 0x416, "uni0416"));
+            check("find: a mapped codepoint is not offered", model::find_glyphs(x.f, "U+0048").create.empty());
+            check("find: 'ff' is a name, not a codepoint", model::find_glyphs(x.f, "ff").create.empty() ||
+                                                           model::find_glyphs(x.f, "ff").create.front().cp != 0xFF);
+            check("find: an AGL name nothing has is offered as typed", creates("eacute", 0xE9, "eacute"));
+            check("find: uni name offered as typed", creates("uni0436", 0x436, "uni0436"));
+            check("find: an AGL name finds the glyph mapping it", top("Ocircumflexdotbelow") != "(none)" ||
+                                                                  top("uni1ECC") == "Odotbelow", top("uni1ECC"));
+            const auto dot = model::find_glyphs(x.f, "dot below");
+            bool by_name = false;
+            for (const auto& h : dot.hits) by_name = by_name || (h.name == "Odotbelow" && std::string(h.why) == "unicode name");
+            check("find: by Unicode name ('dot below' -> Odotbelow)", by_name);
+            const auto zhe = model::find_glyphs(x.f, "cyrillic zhe");
+            check("find: Unicode name offers characters to create",
+                  !zhe.create.empty() && (zhe.create.front().cp == 0x416 || zhe.create.front().cp == 0x436) &&
+                  zhe.create.size() <= model::FindResult::kMaxCreate);
+        }
+
+        {   // M3: the bundled UCD, AGL names, char sets, coverage.
+            namespace uni = granjon::unicode;
+            check("ucd: a name", uni::name_of(0xE9) == "LATIN SMALL LETTER E WITH ACUTE", uni::name_of(0xE9));
+            check("ucd: a control takes its Unicode 1 name", uni::name_of(0x0A) == "LINE FEED (LF)", uni::name_of(0x0A));
+            check("ucd: CJK names are algorithmic", uni::name_of(0x4E00) == "CJK UNIFIED IDEOGRAPH-4E00");
+            check("ucd: Hangul names are composed", uni::name_of(0xAC00) == "HANGUL SYLLABLE GA" &&
+                                                    uni::name_of(0xD7A3) == "HANGUL SYLLABLE HIH", uni::name_of(0xD7A3));
+            check("ucd: unassigned has no name", uni::name_of(0x0378).empty() && !uni::is_assigned(0x0378));
+            check("ucd: a Unicode 17 character is known", uni::is_assigned(0x1CEDD) || uni::is_assigned(0x20C1),
+                  uni::name_of(0x20C1));
+            check("ucd: categories", uni::category(U'A') == "Lu" && uni::category(0x301) == "Mn" &&
+                                     uni::category(0x378) == "Cn" && uni::category(0x4E01) == "Lo");
+            bool compat = true;
+            check("ucd: canonical decomposition", uni::decomposition(0xE9, &compat) == std::vector<char32_t>{U'e', 0x301} && !compat);
+            check("ucd: compatibility decomposition", uni::decomposition(0xFB01, &compat) == std::vector<char32_t>{U'f', U'i'} && compat);
+            check("ucd: no decomposition", uni::decomposition(U'A').empty());
+            check("ucd: case", uni::other_case(U'A') == U'a' && uni::other_case(U'a') == U'A' &&
+                               uni::other_case(0x416) == 0x436 && uni::other_case(U'1') == 0);
+            const auto ced = uni::find_by_name("cedilla", 500);
+            check("ucd: find 'cedilla'", std::find(ced.begin(), ced.end(), 0xE7) != ced.end() &&
+                                         std::find(ced.begin(), ced.end(), 0x15F) != ced.end(), std::to_string(ced.size()));
+            const auto zhe = uni::find_by_name("cyrillic zhe", 10);
+            check("ucd: 'cyrillic zhe' ranks the letters first", zhe.size() >= 2 &&
+                  ((zhe[0] == 0x416 && zhe[1] == 0x436) || (zhe[0] == 0x436 && zhe[1] == 0x416)));
+            const auto exact = uni::find_by_name("latin small letter a", 3);
+            check("ucd: an exact name ranks first", !exact.empty() && exact[0] == U'a');
+            check("blocks: from the UCD", uni::block_of(0x1F600).name == "Emoticons" &&
+                                          uni::block_of(0x2C60).name == "Latin Extended-C" &&
+                                          uni::blocks().size() > 300, std::to_string(uni::blocks().size()));
+            check("blocks: sections sort in code point order", uni::section_rank("Latin-1 Supplement") <
+                  uni::section_rank("Greek and Coptic") && uni::section_rank("Emoticons") < uni::section_rank("Unencoded"));
+
+            check("agl: nice names", uni::nice_name(0xE9) == "eacute" && uni::nice_name(U'A') == "A" &&
+                                     uni::nice_name(0x416) == "uni0416" && uni::nice_name(0x1F600) == "u1F600");
+            check("agl: names -> characters",
+                  uni::codepoints_for_name("eacute") == std::vector<char32_t>{0xE9} &&
+                  uni::codepoints_for_name("eacute.sc") == std::vector<char32_t>{0xE9} &&
+                  uni::codepoints_for_name("f_i") == std::vector<char32_t>{U'f', U'i'} &&
+                  uni::codepoints_for_name("uni0416") == std::vector<char32_t>{0x416} &&
+                  uni::codepoints_for_name("uni00410042") == std::vector<char32_t>{0x41, 0x42} &&
+                  uni::codepoints_for_name("u1F600") == std::vector<char32_t>{0x1F600} &&
+                  uni::codepoints_for_name("uni0416abc").empty() && uni::codepoints_for_name("foo").empty() &&
+                  uni::codepoints_for_name("uniD800").empty());
+
+            check("charsets: five bundled", uni::charsets().size() == 5);
+            const auto* l1 = uni::charset("latin-1");
+            check("charsets: Latin-1 is 191", l1 && l1->cps.size() == 191 && l1->name == "Latin-1");
+            const auto* al2 = uni::charset("adobe-latin-2");
+            const auto* al3 = uni::charset("adobe-latin-3");
+            check("charsets: Adobe Latin 2 within 3", al2 && al3 && al2->cps.size() < al3->cps.size() &&
+                  std::includes(al3->cps.begin(), al3->cps.end(), al2->cps.begin(), al2->cps.end()));
+            check("charsets: GF Latin Core / WGL4 loaded", uni::charset("gf-latin-core") && uni::charset("wgl4") &&
+                  uni::charset("wgl4")->cps.size() == 651);
+            bool named = true;
+            for (const auto& cs : uni::charsets())
+                for (char32_t c : cs.cps) named = named && uni::is_assigned(c);
+            check("charsets: every member is an assigned character", named);
+
+            Fix x;
+            const auto miss = model::missing_from(x.f, l1->cps);
+            check("coverage: the fixture's mapped letters are not missing",
+                  std::find(miss.begin(), miss.end(), U'H') == miss.end() &&
+                  std::find(miss.begin(), miss.end(), U'A') != miss.end() && miss.size() + std::count_if(l1->cps.begin(), l1->cps.end(), [&](char32_t c) {
+                      return model::mapped(x.f).count(c) > 0; }) == 191,
+                  std::to_string(miss.size()));
+            auto todo = model::glyphs_for(x.f, miss);
+            check("coverage: new glyphs get AGL names", std::any_of(todo.begin(), todo.end(), [](const model::NewGlyph& g) {
+                      return g.name == "eacute" && g.unicodes == std::vector<char32_t>{0xE9}; }));
+            const std::size_t before = x.f.glyph_order().size();
+            check("coverage: create missing is one step",
+                  granjon::command::add_glyphs(x.j, x.f, todo, "Create missing") &&
+                  x.f.glyph_order().size() == before + todo.size() && x.j.undo_label() == "Create missing");
+            check("coverage: then nothing is missing", model::missing_from(x.f, l1->cps).empty());
+            x.j.undo();
+            check("coverage: one undo takes them all back", x.f.glyph_order().size() == before &&
+                  model::missing_from(x.f, l1->cps).size() == miss.size());
+            granjon::command::add_glyph(x.j, x.f, "A", {U'A'});
+            granjon::command::add_glyph(x.j, x.f, "h.sc");
+            granjon::command::add_glyph(x.j, x.f, "H.sc");
+            char32_t oc = 1;
+            check("case: n -> nothing (no N)", model::other_case_glyph(x.f, "n", &oc).empty() && oc == U'N');
+            check("case: H <-> h? none; o <-> O", model::other_case_glyph(x.f, "o") == "O" &&
+                                                  model::other_case_glyph(x.f, "O") == "o");
+            check("case: A -> a missing, A from a", model::other_case_glyph(x.f, "A").empty());
+            granjon::command::add_glyph(x.j, x.f, "h", {U'h'});
+            check("case: suffixed partners", model::other_case_glyph(x.f, "h.sc") == "H.sc" &&
+                                             model::other_case_glyph(x.f, "H.sc") == "h.sc" &&
+                                             model::other_case_glyph(x.f, "H") == "h");
+            check("case: no case", model::other_case_glyph(x.f, "Odotbelow") == "" &&
+                                   (model::other_case_glyph(x.f, "Odotbelow", &oc), oc == 0x1ECD));
+            std::string why;
+            check("coverage: a taken name refuses the whole batch",
+                  !granjon::command::add_glyphs(x.j, x.f, {{"H", {0x10}}, {"zz", {}}}, "", &why) && !why.empty() &&
+                  !x.f.glyph("zz"));
         }
 
         {   // Glyph helpers.

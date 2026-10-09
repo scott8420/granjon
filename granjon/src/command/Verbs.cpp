@@ -57,6 +57,39 @@ bool add_glyph(FontJournal& j, Font& f, const std::string& name,
     });
 }
 
+bool add_glyphs(FontJournal& j, Font& f, const std::vector<model::NewGlyph>& glyphs,
+                const std::string& label, std::string* why) {
+    if (glyphs.empty()) { say(why, "Nothing to add."); return false; }
+    std::vector<std::string> ids;
+    for (const auto& ng : glyphs) {
+        if (!model::valid_glyph_name(ng.name)) {
+            say(why, q(ng.name) + " is not a usable glyph name: names use A-Z a-z 0-9 . _ - and start "
+                     "with a letter or underscore.");
+            return false;
+        }
+        if (f.glyph(ng.name) || std::find(ids.begin(), ids.end(), ng.name) != ids.end()) {
+            say(why, "There is already a glyph named " + q(ng.name) + ".");
+            return false;
+        }
+        ids.push_back(ng.name);
+    }
+    const std::string l = !label.empty() ? label
+                        : glyphs.size() == 1 ? "Add glyph " + q(glyphs[0].name)
+                                             : "Add " + std::to_string(glyphs.size()) + " glyphs";
+    return j.run(l, ids, [&] {
+        double order = f.order_after("");
+        for (const auto& ng : glyphs) {
+            Glyph g;
+            g.name     = ng.name;
+            g.unicodes = ng.unicodes;
+            g.advance  = 500;
+            g.order    = order;
+            order += 1.0;
+            f.put(ng.name, Record{g});
+        }
+    });
+}
+
 bool remove_glyph(FontJournal& j, Font& f, const std::string& name, std::string* why) {
     if (!f.glyph(name)) return false;
     for (const auto& other : f.glyph_order())
@@ -296,6 +329,8 @@ const std::vector<Verb>& verbs() {
     using model::Metrics;
     static const std::vector<Verb> table = {
         {"add_glyph",    [](FontJournal& j, Font& f) { add_glyph(j, f, "A", {U'A'}, "H"); }},
+        {"add_glyphs",   [](FontJournal& j, Font& f) {
+             add_glyphs(j, f, model::glyphs_for(f, {U'A', U'\u00E9', U'\u0416'}), "Create 3 missing"); }},
         {"remove_glyph", [](FontJournal& j, Font& f) { remove_glyph(j, f, "H"); }},
         {"rename_glyph", [](FontJournal& j, Font& f) { rename_glyph(j, f, "O", "O.alt"); }},
         {"set_unicodes", [](FontJournal& j, Font& f) { set_unicodes(j, f, "o", {U'o', U'о'}); }},

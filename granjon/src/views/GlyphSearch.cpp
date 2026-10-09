@@ -3,6 +3,7 @@
 #include "command/Verbs.hpp"
 #include "model/Find.hpp"
 #include "unicode/Blocks.hpp"
+#include "unicode/UcdTable.hpp"
 #include "views/GlyphPaint.hpp"
 
 #include <gtkmm/drawingarea.h>
@@ -85,8 +86,7 @@ void GlyphSearch::on_changed() {
     // its old height when the list shrinks.
     m_pop.popdown();
     while (auto* c = m_list.get_first_child()) m_list.remove(*c);
-    m_missing   = r.missing;
-    m_suggested = r.suggested;
+    m_create = r.create;
 
     if (r.empty_query) {
         m_ctx.set_filter(std::nullopt);
@@ -140,9 +140,11 @@ void GlyphSearch::on_changed() {
         more->set_child(*l);
         m_list.append(*more);
     }
-    if (m_missing) {
+    for (std::size_t i = 0; i < m_create.size(); ++i) {
+        const auto& c = m_create[i];
         auto row = Gtk::make_managed<Gtk::ListBoxRow>();
-        row->set_name(kCreateId);
+        row->set_name(std::string(kCreateId) + std::to_string(i));
+        row->set_tooltip_text(unicode::name_of(c.cp));
         auto box = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::HORIZONTAL, 10);
         auto icon = Gtk::make_managed<Gtk::Image>();
         icon->set_from_icon_name("list-add-symbolic");
@@ -150,16 +152,17 @@ void GlyphSearch::on_changed() {
         auto l = Gtk::make_managed<Gtk::Label>();
         l->set_xalign(0.0f);
         l->set_hexpand(true);
-        l->set_markup("Create <b>" + Glib::Markup::escape_text(utf8(*m_missing)) + "</b> as " +
-                      Glib::Markup::escape_text(m_suggested));
+        l->set_ellipsize(Pango::EllipsizeMode::END);
+        l->set_markup("Create <b>" + Glib::Markup::escape_text(utf8(c.cp)) + "</b> as " +
+                      Glib::Markup::escape_text(c.name));
         box->append(*l);
-        auto cp = Gtk::make_managed<Gtk::Label>(unicode::format_cp(*m_missing));
+        auto cp = Gtk::make_managed<Gtk::Label>(unicode::format_cp(c.cp));
         cp->add_css_class("cp");
         box->append(*cp);
         row->set_child(*box);
         m_list.append(*row);
     }
-    if (r.hits.empty() && !m_missing) {
+    if (r.hits.empty() && m_create.empty()) {
         auto none = Gtk::make_managed<Gtk::ListBoxRow>();
         none->set_selectable(false);
         none->set_activatable(false);
@@ -187,15 +190,16 @@ void GlyphSearch::on_activate_row(Gtk::ListBoxRow* row) {
     if (!row) return;
     const std::string id = row->get_name();
     auto& d = m_ctx.doc;
-    if (id == kCreateId && m_missing) {
-        const std::string name = m_suggested;
-        const char32_t cp = *m_missing;
+    if (id.rfind(kCreateId, 0) == 0) {
+        const std::size_t i = std::stoul(id.substr(std::string(kCreateId).size()));
+        if (i >= m_create.size()) return;
+        const model::FindCreate c = m_create[i];
         std::string why;
         clear();
-        if (command::add_glyph(d.journal, d.font, name, {cp}, m_ctx.selected, &why)) {
-            m_ctx.select(name);
-            d.journal.reselect({name});
-            m_ctx.say("Created " + name + " for " + unicode::format_cp(cp) + ".", false);
+        if (command::add_glyph(d.journal, d.font, c.name, {c.cp}, m_ctx.selected, &why)) {
+            m_ctx.select(c.name);
+            d.journal.reselect({c.name});
+            m_ctx.say("Created " + c.name + " for " + unicode::format_cp(c.cp) + ".", false);
         } else if (!why.empty()) {
             m_ctx.say(why, true);
         }
@@ -214,7 +218,7 @@ void GlyphSearch::clear() {
     m_entry.set_text("");
     m_clearing = false;
     while (auto* c = m_list.get_first_child()) m_list.remove(*c);
-    m_missing.reset();
+    m_create.clear();
     m_pop.popdown();
     m_ctx.set_filter(std::nullopt);
 }

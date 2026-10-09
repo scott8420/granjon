@@ -2,7 +2,9 @@
 
 #include "command/Verbs.hpp"
 #include "model/Bounds.hpp"
+#include "model/Find.hpp"
 #include "unicode/Blocks.hpp"
+#include "unicode/UcdTable.hpp"
 #include "views/GlyphPaint.hpp"
 
 #include <gtkmm/eventcontrollerfocus.h>
@@ -17,6 +19,23 @@ namespace granjon::views {
 namespace {
 
 // A card: a rounded group with a small heading and label/value rows.
+// "Lu" -> "Letter, uppercase (Lu)".
+std::string category_label(std::string_view gc) {
+    static const std::pair<const char*, const char*> k[] = {
+        {"Lu", "Letter, uppercase"}, {"Ll", "Letter, lowercase"}, {"Lt", "Letter, titlecase"},
+        {"Lm", "Letter, modifier"}, {"Lo", "Letter, other"}, {"Mn", "Mark, nonspacing"},
+        {"Mc", "Mark, spacing"}, {"Me", "Mark, enclosing"}, {"Nd", "Number, decimal"},
+        {"Nl", "Number, letter"}, {"No", "Number, other"}, {"Pc", "Punctuation, connector"},
+        {"Pd", "Punctuation, dash"}, {"Ps", "Punctuation, open"}, {"Pe", "Punctuation, close"},
+        {"Pi", "Punctuation, initial quote"}, {"Pf", "Punctuation, final quote"}, {"Po", "Punctuation, other"},
+        {"Sm", "Symbol, math"}, {"Sc", "Symbol, currency"}, {"Sk", "Symbol, modifier"}, {"So", "Symbol, other"},
+        {"Zs", "Separator, space"}, {"Zl", "Separator, line"}, {"Zp", "Separator, paragraph"},
+        {"Cc", "Control"}, {"Cf", "Format"}, {"Cs", "Surrogate"}, {"Co", "Private use"}, {"Cn", "Unassigned"}};
+    for (const auto& [code, label] : k)
+        if (gc == code) return std::string(label) + " (" + code + ")";
+    return std::string(gc);
+}
+
 struct Card {
     Gtk::Box*  box;
     Gtk::Grid* grid;
@@ -92,6 +111,9 @@ Inspector::Inspector(ViewContext& ctx)
       m_rsb("inspector.rsb"),
       m_unicodes("inspector.unicodes"),
       m_section("inspector.section"),
+      m_uname("inspector.uname"),
+      m_category("inspector.category"),
+      m_case("inspector.case"),
       m_note("inspector.note") {
     add_css_class("inspector");
     set_policy(Gtk::PolicyType::NEVER, Gtk::PolicyType::AUTOMATIC);
@@ -199,6 +221,20 @@ void Inspector::build_glyph_page() {
     m_section.set_xalign(0.0f);
     m_section.add_css_class("hint");
     uni.field("Block", m_section);
+    m_uname.set_xalign(0.0f);
+    m_uname.set_wrap(true);
+    m_uname.set_max_width_chars(24);
+    m_uname.add_css_class("hint");
+    uni.field("Name", m_uname);
+    m_category.set_xalign(0.0f);
+    m_category.add_css_class("hint");
+    uni.field("Category", m_category);
+    m_case.set_halign(Gtk::Align::START);
+    m_case.set_tooltip_text("Go to the other case (Alt+C)");
+    m_case.signal_clicked().connect([this] {
+        if (auto* w = dynamic_cast<Gtk::Widget*>(this)) w->activate_action("win.other-case");
+    });
+    uni.field("Case", m_case);
 
     Card note(*page, "NOTE");
     m_note.set_placeholder_text("A note to yourself");
@@ -238,6 +274,15 @@ void Inspector::refresh() {
             m_unicodes.set_text(t);
         }
         m_section.set_text(unicode::section_of(g->unicodes));
+        const char32_t first = g->unicodes.empty() ? 0 : g->unicodes.front();
+        m_uname.set_text(first ? unicode::name_of(first) : std::string("\u2014"));
+        m_category.set_text(first ? category_label(unicode::category(first)) : std::string("\u2014"));
+        char32_t other = 0;
+        const std::string to = model::other_case_glyph(f, g->name, &other);
+        m_case.set_sensitive(other != 0);
+        m_case.set_label(!other ? std::string("No case")
+                         : !to.empty() ? "Go to " + to
+                                       : unicode::utf8(other) + "  " + unicode::format_cp(other) + "  (none yet)");
         if (!m_note.has_focus()) m_note.set_text(g->note);
         m_preview.queue_draw();
     }

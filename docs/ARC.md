@@ -11,6 +11,8 @@ Newest session at the bottom.
 
 - **granjon-cli** (Scott, s01): a command-line tool for external processing on fonts. Links `granjon_core` (GTK-free), so it shares the model, verbs, checks and exporters. Open question: batch processing of font files, driving outside tools (ttfautohint, fontmake), or both.
 
+- **Overview follow-ons** (s02, mine -- not acted on): remember the coverage set and cell size (per font in lib.plist, or app settings); user char sets from `~/.config/granjon/charsets/*.txt` (same file shape as the bundled ones); scroll the overview to a glyph picked elsewhere; file suffixed glyphs (a.sc) beside their base instead of under Unencoded; GF Latin Core's unencoded members (.notdef, periodcentered.loclCAT ...) as a name checklist; group by script (needs Scripts.txt in the trim).
+
 ---
 
 ## s00 — planning
@@ -61,3 +63,16 @@ Newest session at the bottom.
   - Scripted UI run: Ctrl+S -> save dialog (initial name Untitled-Regular.granjon) -> saved; edit -> Ctrl+Q -> Save / Discard / Cancel; Cancel, Ctrl+Z -> unmodified.
   - Selftest 257 / 0.
 - Panel toggles combined into one linked widget [navigator | inspector] at the header's end, as in Folio and jot (Scott). Checked headless: Ctrl+I unchecks the right half.
+
+## s02 — overview + Unicode (M3)
+
+- M2 run report not received at session open; took the s02 upload as go-ahead.
+- Unicode data, one source of truth, compiled into `granjon_core`: `scripts/ucd_trim.py` trims UCD 17.0 (`UnicodeData.txt`, `Blocks.txt` from unicode.org) to `resources/ucd/ucd.txt` (name, category, decomposition, simple case; 40,535 named code points + 20 algorithmic ranges) and copies the AGL / AGLFN (adobe-type-tools, BSD-3). `tools/embed.cpp` (a host tool CMake builds first) turns the data into `granjon-data.cpp`. Category and case come from this table, not GLib, so the GTK-free core needs no new dependency and the selftest sees what the app sees.
+- `unicode/UcdTable`: name_of (Hangul names composed; controls take their Unicode 1 name), category, decomposition (canonical vs compat), upper / lower / other_case, find_by_name (every query word starts a word of the name; exact name first, then fewest extra words). `unicode/Blocks` now reads the UCD's 300+ blocks (the M1b hand table is gone; sections sort in code point order). `unicode/Agl`: nice_name (AGLFN, else uniXXXX / uXXXXX), codepoints_for_name (the AGL spec: suffix, ligature, uni / u forms).
+- Char sets (`resources/charsets/`): Latin-1 191, GF Latin Core 319 (googlefonts/glyphsets, encoded members), Adobe Latin 2 250 / 3 331 (adobe-type-tools, MIT), WGL4 651 (from alanwood.net's table of the WGL4.0 spec, less its two Private Use points). `model/Coverage`: mapped, missing_from, glyphs_for (AGL-named, unique).
+- Verb `add_glyphs`: many glyphs as ONE step ("Create 186 missing (Latin-1)"); refuses the whole batch on a bad / taken name. In the verb table.
+- Find: AGL names ("eacute" finds the glyph mapping é; offers to create it under that name), Unicode names ("cedilla", "cyrillic zhe"; 3+ letters). `FindResult::create` replaces missing / suggested: up to four "Create é as eacute" rows. New glyphs are named AGLFN-first (`name_for_codepoint`).
+- Overview rebuilt: toolbar (Coverage checklist menu, Create N missing, cell-size slider), block sections with counts and "N missing" badges, dashed gap cells showing the character (click: its name in the status line; double-click: create). One selection across the section boxes.
+- Case navigation: `model::other_case_glyph` (code point, or the AGL reading for unencoded names: a.sc -> A.sc), Alt+C (`win.other-case`, in the shortcuts registry) and a button on the inspector's Unicode card, which also shows Name and Category now.
+- Looked at under Xvfb with the CSS flattened (sandbox GTK 4.14 has no `var()`): sections, gap cells and toolbar render; Latin-1 on the sample font reads 186 missing.
+- Selftest 301 / 0.
