@@ -137,6 +137,8 @@ const std::vector<ShortcutSpec>& shortcut_registry() {
         {"Editor", "", {}, "Alt+drag the left line", "Slide the drawing inside the width"},
         {"Editor", "", {}, "Drag the right line", "Change the width"},
         {"Editor", "", {}, "Arrows / Shift+arrows", "Nudge 1 / 10 units"},
+        {"Editor", "", {}, "P", "The pen: click a corner, drag a curve (Alt: out-handle alone, Shift: 45 degrees), click the first node to close, click an open end to go on"},
+        {"Editor", "", {}, "Enter  /  Escape (pen)", "End the path; Escape again leaves the pen"},
         {"Editor", "", {}, "Delete  /  Backspace", "Delete the picked nodes (the curve is refit -- the shape holds), retract picked handles, delete anchors / components"},
         {"Editor", "", {}, "Double-click a segment", "Add a node there (the shape does not change)"},
         {"Editor", "", {}, "L  /  C", "Make the segments between picked nodes lines / curves"},

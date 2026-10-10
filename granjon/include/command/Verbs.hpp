@@ -139,6 +139,17 @@ bool set_segments(FontJournal& j, Font& f, const std::string& glyph, const geom:
                   std::string* why = nullptr);
 // The segments both of whose end nodes are picked: (contour, segment).
 std::vector<std::pair<int, int>> picked_segments(const model::Glyph& g, const geom::Points& pts);
+// ── the pen (M5g): each node is one step -- press, drag, release ──
+// pen_press opens the step (a gesture) and puts the node in: a new open
+// contour (contour = -1), the next node of `contour`, or -- `close` -- closes
+// `contour` (the press on its first node). `from_start` continues `contour`
+// from its first node (the contour is reversed first, in the same step).
+// pen_drag shapes the node's handles while the button is down (`cusp` = Alt).
+// drag_end() commits (snapped to units), drag_cancel() takes it back.
+struct PenAt { int contour = -1; int node = -1; bool closed = false; };
+PenAt pen_press(FontJournal& j, Font& f, const std::string& glyph, int contour, geom::Vec2 p, bool close = false,
+                bool from_start = false);
+void  pen_drag(FontJournal& j, Font& f, const std::string& glyph, const PenAt& at, geom::Vec2 d, bool cusp);
 // Make this node its contour's start (M5e). ONE step. Refused on an open
 // contour, on the start itself, on a bad index; `why` says which.
 bool make_first(FontJournal& j, Font& f, const std::string& glyph, int contour, int index,

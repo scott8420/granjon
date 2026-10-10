@@ -255,3 +255,9 @@ Newest session at the bottom.
   - Canvas: double-click a segment -> insert + pick the new node; L / C -> lines / curves; Delete reports the step on the status line. Shortcuts registry: three Editor rows.
   - Fixed on the way: the old "nodes are not deleted (yet)" test rewritten for the new contract (delete + undo), which also keeps eacute's component pick test valid.
   - Selftest 744 / 0 (new file `src/selftest_edit.cpp`). Headless shots on Termes O: insert, delete, status line.
+- M5f: crc (Scott).
+- M5g the pen.
+  - `geom/NodeEdit`: `pen_add` (a corner at the end of an open contour, or a new open contour), `pen_drag_handles` (out = node + d, in mirrored -> Symmetric; cusp: out alone -> Corner), `pen_close_handles` (the first node's in-handle = node - d; Smooth if in line with its out-handle), `reverse_open`, `constrain45`.
+  - Verbs: `pen_press` (opens a gesture: new path / next node / close / continue-from-start with the reversal in the same step; refuses a closed contour) + `pen_drag`; `drag_end` commits snapped, `drag_cancel` takes it back. `pen_new_path` in the verb table (one step); add / close / continue / undo covered in selftest_edit.
+  - Canvas: Pen toggle (P), Mode::Pen press / drag / release, Shift 45 degrees (click position and drag), Alt cusp, click the first node to close, click an open end to pick the path up, Enter / Escape end, Escape again leaves; rubber band + closing ring (`draw_pen`); crosshair. Shortcuts registry: P, Enter / Escape rows.
+  - Selftest 757 / 0. Headless: drawn and closed beside Termes O.

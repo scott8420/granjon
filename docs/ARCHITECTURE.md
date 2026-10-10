@@ -290,8 +290,8 @@ Work stops at each milestone for a compile/run report before continuing.
 5c. **M5c Guides:** rulers, glyph + font guidelines, snap to guides, align / distribute, measure.   [s03: done]
 5d. **M5d Direction:** contour arrows, wrong-way tint, correct / reverse.   [s03: done]
 5e. **M5e Node navigation:** amber start node, open-end bar, Make first, Tab / Ctrl+Tab / ` traversal.   [s04: done]
-5f. **M5f Node editing:** delete nodes keeping the shape (refit), insert a node on a segment, line <-> curve.   [s05: built, awaiting crc]
-5g. **M5g Pen tool:** draw new contours.
+5f. **M5f Node editing:** delete nodes keeping the shape (refit), insert a node on a segment, line <-> curve.   [s05: done]
+5g. **M5g Pen tool:** draw new contours.   [s05: built, awaiting crc]
 6. **M6 Spacing:** spacing strip (own layout; HarfBuzz with export), metrics keys, class kerning.   [s04: done]
 7. **M7 Checks:** report framework plus first checks (origin, zones, overshoot, direction).   [s04: done]
 8. **M8 Profiles:** contact gap, optical area, kern-to-gap.   [s04: built, awaiting crc]

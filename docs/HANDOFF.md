@@ -1,12 +1,12 @@
 # Granjon handoff — s05 -> s06
 
-# s06_pen_tool
+# s06_woff2_overlaps
 
 ## Files to upload
-- `s06_pen_tool.zip` (made by `scripts/granjon_backup.sh -o s06_pen_tool`)
+- `s06_woff2_overlaps.zip` (made by `scripts/granjon_backup.sh -o s06_woff2_overlaps`)
 - `RULES.md`, `HANDOFF.md`, `ARCHITECTURE.md`, `ARC.md`, `CANON.md`
 - `My-Termes-Regular.granjon` from the project's `fonts/` folder (not in the s05 upload; s05 rebuilt Termes in the sandbox from TeX Gyre the same way, but the M7 / M8 readouts on your copy are still unseen).
-- **Curvz source**: its pen tool (M5g follows Curvz's pen conventions) and `BooleanOpsClipper` (M10b, overlap removal).
+- **Curvz source**: `BooleanOpsClipper` (M10b, overlap removal); its pen code too if M5g's conventions should be brought in line with Curvz's.
 
 ---
 
@@ -14,7 +14,10 @@
 - **M8 profiles:** crc (s05 open).
 - **M9 export OTF: crc** (Scott, on r2: export via the dialog, GNOME Fonts reads the file, the Preview renders and follows the desktop's dark mode).
 - **M10a export TTF: crc** (Scott). He noticed the OTF is slightly smaller than the TTF: same outline size (CFF 152 KB vs glyf 156 KB on Termes); the gap is post 2's stored names (~10 KB) and loca (~4 KB). CFF subroutines would shrink the OTF further (follow-on).
-- **M5f node editing: built, shipped (`s05_m5f_node_editing.zip` -- the one to install; every earlier s05 zip is superseded), awaiting Scott's crc.** Scott chose the editor's drawing tools as next (s05: "gtg"); M5f is the node half, the pen tool is M5g.
+- **M5g pen tool: built, shipped (`s05_m5g_pen.zip` -- the one to install; every earlier s05 zip is superseded), awaiting Scott's crc.**
+- M5g: **Pen** button in the editor bar / **P**. Click = corner node; click-drag = Symmetric node, handles along the drag (Alt: out-handle alone -> corner; Shift: 45-degree drags, and a plain click Shift-constrained to 45 degrees from the last node); click the first node = close (a drag there shapes the closing curve's arrival); click an open path's end node = go on from it (from the first node: the path is reversed in the next step); Enter / Escape end the path, Escape again leaves the pen. Each node one undo step (press-drag-release is a gesture). Dashed rubber band from the last node to the pointer (a curve when the last node has a handle); the first node rings when a click would close. Crosshair cursor. Status line guides each step. Conventions are the common ones (Illustrator / Glyphs) -- Curvz's source wasn't in hand.
+- Selftest 757 / 0 (9 pen tests in `selftest_edit.cpp`, `pen_new_path` in the verb table). Headless: a triangle-with-a-curve drawn beside Termes O, open (rubber band) and closed.
+- **M5f node editing: crc** (Scott). Scott chose the editor's drawing tools as next (s05: "gtg"); M5f is the node half, the pen tool is M5g.
 - M5f: **Delete** removes picked nodes and refits the curve through them (end tangents kept, handle lengths least-squares fitted to the old outline with Schneider's reparameterisation -- deleting a just-inserted node gives the curve back within a unit), retracts picked handles, still deletes anchors / components; **double-click a segment** adds a node there (de Casteljau, the shape unchanged; smooth on a curve, corner on a line); **L / C** make the segments between picked nodes lines / curves (handles at 1/3, 2/3). All one undo step each, all in the verb table. Status line names the step.
 - Selftest 744 / 0 (14 new in `src/selftest_edit.cpp`; one old test rewritten: "nodes are not deleted (yet)" -> "a node goes, in one step" + undo). Headless: double-click on Termes O's bowl -> node 5 of 7, smooth, outline unchanged; Delete -> back to 6, handles where they were.
 - **M9c drawing codes + Export SVG: crc** (Scott, on r2 -- `s05_m9c_codes_svg_r2.zip`, the last s05 ship). r2 (Scott): the listing wraps long lines, and the SVG listing puts each contour on its own line (the exported file keeps one line). Scott asked (s05) whether a font's drawing data can be seen, and for both a code view and outline export.
@@ -24,7 +27,13 @@
 - Outside validation (`scripts/otf_check.py`, now OTF or TTF; TrueType outlines compared with fontTools' own cu2qu of the source, i.e. what fontmake would ship): Termes + groups and Termes at 2048 UPM as TTF, and a TTF exported through the app's dialog, pass OTS, fontTools, outlines (1090 glyphs), FreeType, HarfBuzz (25,579 pairs). OTF vs TTF rendered by FreeType at 160 px overlay with no visible difference. Termes TTF: ~55 ms, 217 KB, 52,715 points.
 - Before M10a: Scott ran M9 r1 and asked that the Preview page follow the desktop's dark mode -> r2 (see decisions).
 
-What to look at in M5f:
+What to look at in M5g:
+- Editor, **P** (or the Pen button). Draw a box with clicks; close it on the first node. Draw a bowl with click-drags; try Alt mid-drag for a cusp, Shift for 45 degrees.
+- End a path open (Enter), then click its end to go on; click its START to go on from there.
+- Ctrl+Z after each node takes one node off. Escape twice: back to picking.
+- Whether the pen's habits match Curvz's (if not, say what differs, or bring Curvz's pen code).
+
+What to look at in M5f (crc):
 - Editor (Ctrl+2): double-click any segment -> a node, picked. Drag it, or Delete it -> the curve closes up as it was.
 - Pick a run of nodes on a curve and press **L** -> straight segments; **C** -> curves again (handles at thirds). Delete on a picked handle retracts it.
 - Delete a real node of a round (an O extreme) -> the neighbours keep their tangents and the bowl stays close. Ctrl+Z undoes each in one step.
@@ -45,6 +54,7 @@ What to look at in M9:
 - On Termes: whether the Preview's kerning matches the Spacing strip on the same pairs (it should, exactly -- the GPOS is built from the strip's lookup).
 
 ## Decisions made in s05
+- M5g: one undo step per node (not per path) -- a slip costs one Ctrl+Z. The pen draws open paths and closes them; it never adds to a closed contour (insert a node with a double-click instead). A new path starts Drafted on an Empty glyph. No auto-direction: the Checks report / Correct directions handle a path drawn clockwise.
 - M5f: Delete keeps the shape by default (the refit), as Glyphs does; a "delete without refit" modifier can follow if wanted. Double-click a segment = add node (double-click a node still flips corner / smooth). L / C act on segments whose BOTH end nodes are picked. A contour left with fewer than two nodes is removed. Results snap to whole units like every edit.
 - M9c: the code view shows what the FILES carry (production name noted beside yours; the CFF width written absolute for reading; the TTF after conversion), read-only. SVG export is outlines only (no <text>, no font, no transforms) -- the logo hand-off; em = 100 px by default (a setting can follow). Two menu items (glyph / Spacing text) rather than guessing from the front view.
 - TTF (M10a): cu2qu at 1/1000 em (fontmake's default); contours all reversed (consistent, so nonzero fill is unchanged -- not the depth-based direction fix); OVERLAP_SIMPLE on every glyph's first point (overlaps kept until M10b); components decomposed (TrueType composites are a size follow-on); no hints, gasp = smooth at all sizes; loca short when the glyf fits; post 2 carries the production names. The Preview stays on the OTF.
@@ -61,10 +71,7 @@ What to look at in M9:
 - No CFF hints, no BlueValues (none in the model; M10's ttfautohint covers TTF).
 - head.created / modified honour SOURCE_DATE_EPOCH (reproducible builds); the selftest fixes the time.
 
-## s06 goal — Milestone M5g: the pen tool
-P (or a toolbar toggle) for the pen: click = corner node, click-drag = smooth node with symmetric handles (Alt breaks them), click the first node to close, click an open contour's end to continue it, Escape / Enter ends the path. Each node one undo step (or the whole path one step -- settle and record). Curvz's pen conventions if Scott brings the source. Shift constrains to 45 degrees (the Shift-constrained drags follow-on comes with it). **Stop at M5g.**
-
-## Then — Milestone M10b: WOFF2 + overlap removal
+## s06 goal — Milestone M10b: WOFF2 + overlap removal (or Scott's pick)
 WOFF2 (brotli; the glyf / loca transform is optional -- start without), overlap removal on export (Clipper2 via Curvz's BooleanOpsClipper; curves flattened -> rebuilt, or kept by a curve-aware pass -- a fork to settle and surface), the ttfautohint hook. Needs the package answer first. **Stop at M10b.**
 
 ## s05 goal (done) — Milestone M9: Export OTF
@@ -76,7 +83,7 @@ WOFF2 (brotli; the glyf / loca transform is optional -- start without), overlap 
 - A RULES.md addition proposed in s05, answer pending: "One zip to install" (the final message names the single zip to install; checkpoint zips carry `_wip`).
 - M10b: WOFF2, overlap removal (Clipper2, from Curvz's BooleanOpsClipper), ttfautohint hook (optional external tool).
 - granjon-cli scope (ARC backlog). `export_otf` is its first ready-made command.
-- Editor follow-ons (pen = M5g; Shift-constrained drags; node type change by key), composite follow-ons (Greek tonos, stacking, ogonek anchor, rebuild), overview follow-ons -- all in the ARC backlog.
+- Editor follow-ons: Shift-constrained point drags (the pen has 45 degrees; picking-mode drags don't yet), node type by key, a delete-without-refit modifier, pen snapping to metrics / nodes, composite follow-ons (Greek tonos, stacking, ogonek anchor, rebuild), overview follow-ons -- all in the ARC backlog.
 - Profiles follow-ons: a profile cache + font-wide kern-to-gap over a pair list, per-class targets, collision check on proof strings.
 - Spacing follow-ons: kerning groups editor (create / assign public.kern1 / kern2 from the UI), a strip text history / presets.
 - Checks follow-ons (ARCHITECTURE §6): missing extreme points, overlaps, sidebearing consistency, stem drift, kerning class audit and outliers, collisions.

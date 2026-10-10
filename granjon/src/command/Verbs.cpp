@@ -479,6 +479,45 @@ bool delete_points(FontJournal& j, Font& f, const std::string& glyph, const geom
     });
 }
 
+PenAt pen_press(FontJournal& j, Font& f, const std::string& glyph, int contour, geom::Vec2 p, bool close,
+                bool from_start) {
+    PenAt at;
+    const Glyph* was = f.glyph(glyph);
+    if (!was) return at;
+    const bool have = contour >= 0 && contour < static_cast<int>(was->contours.size());
+    if ((close || from_start) && !have) return at;
+    if (have && was->contours[static_cast<std::size_t>(contour)].closed) return at;   // the pen draws open paths only
+    drag_begin(j, f, {glyph}, close ? "Close path" : have ? "Add node" : "New path");
+    if (!j.in_gesture()) return at;
+    j.run("Pen", {glyph}, [&] {
+        Glyph g = glyph_copy(f, glyph);
+        if (close) {
+            auto& c = g.contours[static_cast<std::size_t>(contour)];
+            c.closed = true;
+            at = {contour, 0, true};
+        } else {
+            if (from_start) geom::reverse_open(g.contours[static_cast<std::size_t>(contour)]);
+            const int ci = geom::pen_add(g, have ? contour : -1, p);
+            at = {ci, static_cast<int>(g.contours[static_cast<std::size_t>(ci)].nodes.size()) - 1, false};
+        }
+        if (g.status == model::GlyphStatus::Empty) g.status = model::GlyphStatus::Drafted;
+        f.put(glyph, Record{g});
+    });
+    return at;
+}
+
+void pen_drag(FontJournal& j, Font& f, const std::string& glyph, const PenAt& at, geom::Vec2 d, bool cusp) {
+    if (!j.in_gesture() || at.contour < 0) return;
+    j.run("Pen", {glyph}, [&] {
+        Glyph g = glyph_copy(f, glyph);
+        if (at.contour >= static_cast<int>(g.contours.size())) return;
+        auto& c = g.contours[static_cast<std::size_t>(at.contour)];
+        if (at.closed) geom::pen_close_handles(c, d);
+        else geom::pen_drag_handles(c, at.node, d, cusp);
+        f.put(glyph, Record{g});
+    });
+}
+
 bool insert_node(FontJournal& j, Font& f, const std::string& glyph, int contour, int segment, double t, int* index) {
     const Glyph* was = f.glyph(glyph);
     if (!was || contour < 0 || contour >= static_cast<int>(was->contours.size())) return false;
@@ -1018,6 +1057,11 @@ const std::vector<Verb>& verbs() {
         {"delete_nodes", [](FontJournal& j, Font& f) {
              delete_points(j, f, "H", {{2, 1, geom::PointRef::Part::Node}, {0, 0, geom::PointRef::Part::In}}); }},
         {"insert_node",  [](FontJournal& j, Font& f) { insert_node(j, f, "o", 0, 1, 0.37); }},
+        {"pen_new_path", [](FontJournal& j, Font& f) {
+             const auto at = pen_press(j, f, "n", -1, {250.4, 600.2});
+             pen_drag(j, f, "n", at, {30.2, 10.1}, false);
+             pen_drag(j, f, "n", at, {60.4, 20.3}, false);
+             drag_end(j, f); }},
         {"set_segments", [](FontJournal& j, Font& f) {
              set_segments(j, f, "n", {{0, 0, geom::PointRef::Part::Node}, {0, 1, geom::PointRef::Part::Node}}, true); }},
         {"set_position", [](FontJournal& j, Font& f) {

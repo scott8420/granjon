@@ -178,4 +178,60 @@ void segment_to_curve(Contour& c, int segment) {
     b.cx1 = i.x; b.cy1 = i.y;
 }
 
+// ── the pen (M5g) ──────────────────────────────────────────────────────────
+
+int pen_add(model::Glyph& g, int contour, Vec2 p) {
+    if (contour < 0 || contour >= static_cast<int>(g.contours.size())) {
+        Contour c;
+        c.closed = false;
+        c.nodes.push_back(Node::corner(p.x, p.y));
+        g.contours.push_back(c);
+        return static_cast<int>(g.contours.size()) - 1;
+    }
+    g.contours[static_cast<std::size_t>(contour)].nodes.push_back(Node::corner(p.x, p.y));
+    return contour;
+}
+
+void pen_drag_handles(Contour& c, int node, Vec2 d, bool cusp) {
+    if (node < 0 || node >= static_cast<int>(c.nodes.size())) return;
+    Node& n = c.nodes[static_cast<std::size_t>(node)];
+    n.cx2 = n.x + d.x; n.cy2 = n.y + d.y;
+    if (cusp) {
+        n.cx1 = n.x; n.cy1 = n.y;
+        n.type = Node::Type::Corner;
+    } else {
+        n.cx1 = n.x - d.x; n.cy1 = n.y - d.y;
+        n.type = Node::Type::Symmetric;
+    }
+    tidy_type(n);
+}
+
+void pen_close_handles(Contour& c, Vec2 d) {
+    if (c.nodes.empty()) return;
+    Node& n = c.nodes.front();
+    n.cx1 = n.x - d.x; n.cy1 = n.y - d.y;
+    // Smooth when the out-handle it has lies on the same line, else a corner.
+    const Vec2 in = hin(n) - anchor(n), out = hout(n) - anchor(n);
+    const double cross = in.x * out.y - in.y * out.x;
+    if (!n.has_out()) n.type = Node::Type::Corner;
+    else if (std::abs(cross) <= 1e-6 * std::max(1.0, in.length() * out.length()) && in.dot(out) < 0) n.type = Node::Type::Smooth;
+    else n.type = Node::Type::Corner;
+    tidy_type(n);
+}
+
+void reverse_open(Contour& c) {
+    std::reverse(c.nodes.begin(), c.nodes.end());
+    for (auto& n : c.nodes) { std::swap(n.cx1, n.cx2); std::swap(n.cy1, n.cy2); }
+}
+
+Vec2 constrain45(Vec2 d) {
+    const double len = d.length();
+    if (len < 1e-12) return d;
+    const double step = 3.14159265358979323846 / 4;
+    const double a = std::round(std::atan2(d.y, d.x) / step) * step;
+    const Vec2 u{std::cos(a), std::sin(a)};
+    const double along = d.dot(u);
+    return u * along;
+}
+
 }  // namespace granjon::geom

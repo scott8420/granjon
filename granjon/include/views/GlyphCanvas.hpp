@@ -71,7 +71,7 @@ private:
     std::string context_glyph(const model::Glyph& g) const;   // "H" / "n" or "" if the font lacks it
 
     // ── input ──────────────────────────────────────────────────────────────
-    enum class Mode { None, Points, Sidebearing, Marquee, Pan, Guide, Measure };
+    enum class Mode { None, Points, Sidebearing, Marquee, Pan, Guide, Measure, Pen };
     int  sidebearing_at(double sx, double sy) const;   // -1 none, 0 left, 1 right
     void on_press(double x, double y);
     void on_drag(double dx, double dy);
@@ -101,6 +101,7 @@ private:
     widgets::ToggleButton m_fill;
     widgets::ToggleButton m_grid;           // the zoom-adaptive grid (a preference)
     widgets::ToggleButton m_snap;           // snapping (a preference)
+    widgets::ToggleButton m_pen;            // M5g: the pen tool (P)
     widgets::Button      m_fit_button;
     widgets::Button      m_anchors;          // default anchors for this glyph
     widgets::Label       m_readout;          // pointer x, y -- or the drag's delta
@@ -147,6 +148,16 @@ private:
     std::optional<std::pair<double, double>> m_stem_h, m_stem_v;   // stems at the click
     geom::Vec2  m_stem_at;
     void update_readout(double sx, double sy);
+    // the pen (M5g)
+    std::string m_pen_glyph;                // the path being drawn belongs to this glyph
+    int         m_pen_contour = -1;         // ... and is this open contour (-1: none)
+    bool        m_pen_from_start = false;   // the next node continues it from its first node
+    int         m_pen_at_contour = -1, m_pen_at_node = -1;   // the node the press put in
+    bool        m_pen_at_closed = false;
+    void set_pen(bool on);
+    void end_path(bool say_it = true);
+    bool pen_path_live() const;             // a path is being drawn in the glyph shown
+    void draw_pen(const Cairo::RefPtr<Cairo::Context>& cr, const model::Glyph& g);
 };
 
 }  // namespace granjon::views

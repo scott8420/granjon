@@ -1,4 +1,5 @@
 // selftest_edit -- M5f: node editing geometry (insert / delete / line <-> curve).
+#include "command/Document.hpp"
 #include "command/Verbs.hpp"
 #include "geom/CubicSegment.hpp"
 #include "geom/Edit.hpp"
@@ -124,5 +125,65 @@ void selftest_edit(const Check& check_) {
         const auto segs = granjon::command::picked_segments(g, {{0, 3, P::Node}, {0, 0, P::Node}, {0, 1, P::Node}});
         check("segments: both ends picked, the closing segment included",
               segs.size() == 2 && segs[0] == std::pair{0, 0} && segs[1] == std::pair{0, 3});
+    }
+
+    // ── M5g: the pen ──
+    std::cout << "M5g pen\n";
+    {
+        namespace cmd = granjon::command;
+        granjon::command::Document doc;
+        cmd::make_fixture(doc.font);
+        auto& j = doc.journal;
+        auto& f = doc.font;
+        const auto before = f.snapshot();
+        const std::size_t n0 = f.glyph("n")->contours.size();
+        auto at = cmd::pen_press(j, f, "n", -1, {100, 0});
+        cmd::drag_end(j, f);
+        const int ci = at.contour;
+        check("pen: a click starts a new open path -- one node, one step", ci == static_cast<int>(n0) &&
+              f.glyph("n")->contours[ci].nodes.size() == 1 && !f.glyph("n")->contours[ci].closed && j.size() == 1);
+        at = cmd::pen_press(j, f, "n", ci, {100, 100});
+        cmd::pen_drag(j, f, "n", at, {20.4, 0}, false);
+        cmd::pen_drag(j, f, "n", at, {50.2, 0}, false);
+        cmd::drag_end(j, f);
+        const auto& nd = f.glyph("n")->contours[ci].nodes[1];
+        check("pen: click-drag -- symmetric handles along the drag, snapped", nd.type == model::Node::Type::Symmetric &&
+              nd.cx2 == 150 && nd.cy2 == 100 && nd.cx1 == 50 && nd.cy1 == 100 && j.size() == 2);
+        at = cmd::pen_press(j, f, "n", ci, {0, 100});
+        cmd::pen_drag(j, f, "n", at, {0, -40}, true);
+        cmd::drag_end(j, f);
+        const auto& nc = f.glyph("n")->contours[ci].nodes[2];
+        check("pen: Alt-drag -- the out-handle alone, a corner", nc.type == model::Node::Type::Corner &&
+              nc.cx2 == 0 && nc.cy2 == 60 && !nc.has_in());
+        at = cmd::pen_press(j, f, "n", ci, {}, true);
+        cmd::pen_drag(j, f, "n", at, {0, -30}, false);
+        cmd::drag_end(j, f);
+        const auto& c = f.glyph("n")->contours[ci];
+        check("pen: a click on the first node closes the path; its drag shapes the arrival", c.closed && c.nodes.size() == 3 &&
+              c.nodes[0].cx1 == 100 && c.nodes[0].cy1 == 30 && j.size() == 4);
+        check("pen: a closed path takes no more nodes", cmd::pen_press(j, f, "n", ci, {5, 5}).contour < 0 && !j.in_gesture());
+        for (int i = 0; i < 4; ++i) j.undo();
+        check("pen: four steps undo to the start", f.snapshot() == before);
+
+        // Continue an open path from its first node: reversed, then appended.
+        at = cmd::pen_press(j, f, "o", -1, {10, 10});
+        cmd::drag_end(j, f);
+        const int oc = at.contour;
+        at = cmd::pen_press(j, f, "o", oc, {90, 10});
+        cmd::drag_end(j, f);
+        at = cmd::pen_press(j, f, "o", oc, {10, 90}, false, true);
+        cmd::drag_end(j, f);
+        const auto& oo = f.glyph("o")->contours[oc];
+        check("pen: continuing from the first node -- the path reversed, the node at its new end",
+              oo.nodes.size() == 3 && oo.nodes[0].x == 90 && oo.nodes[1].x == 10 && oo.nodes[1].y == 10 &&
+              oo.nodes[2].x == 10 && oo.nodes[2].y == 90 && at.node == 2);
+        at = cmd::pen_press(j, f, "o", oc, {50, 50});
+        cmd::drag_cancel(j);
+        check("pen: Escape mid-press (cancel) leaves no node", f.glyph("o")->contours[oc].nodes.size() == 3);
+    }
+    {
+        const auto a = geom::constrain45({100, 10});
+        const auto b = geom::constrain45({70, 75});
+        check("pen: Shift -- 45-degree steps", std::abs(a.y) < 1e-9 && a.x > 99 && std::abs(b.x - b.y) < 1e-9);
     }
 }

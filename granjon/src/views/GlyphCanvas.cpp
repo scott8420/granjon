@@ -1,4 +1,5 @@
 #include "views/GlyphCanvas.hpp"
+#include "geom/NodeEdit.hpp"
 
 #include "command/Verbs.hpp"
 #include "model/Bounds.hpp"
@@ -75,6 +76,7 @@ GlyphCanvas::GlyphCanvas(ViewContext& ctx)
       m_fill("editor.fill"),
       m_grid("editor.grid"),
       m_snap("editor.snap"),
+      m_pen("editor.pen"),
       m_fit_button("editor.fit"),
       m_anchors("editor.anchors"),
       m_readout("editor.readout"),
@@ -109,6 +111,18 @@ GlyphCanvas::GlyphCanvas(ViewContext& ctx)
     m_zoom.set_width_chars(16);
     m_zoom.set_xalign(1.0f);
     m_bar.append(m_title);
+    m_pen.set_label("Pen");
+    m_pen.set_tooltip_text("The pen (P). Click: a corner node. Drag: a smooth node (Alt: the out-handle alone; "
+                           "Shift: 45 degrees). Click the first node: close. Click an open path's end: continue it. "
+                           "Enter / Escape: end the path; Escape again: back to picking.");
+    m_pen.signal_toggled().connect([this] {
+        if (!m_pen.get_active()) end_path(false);
+        m_area.set_cursor(m_pen.get_active() ? "crosshair" : "default");
+        if (m_ctx.say) m_ctx.say(m_pen.get_active() ? "Pen: click for a corner, drag for a curve; P or Escape leaves the pen."
+                                                    : "Picking.", false);
+        m_area.grab_focus();
+    });
+    m_bar.append(m_pen);
     m_anchors.set_label("Anchors");
     m_anchors.set_tooltip_text("Add default anchors to this glyph (top / bottom; _top / _bottom on a mark) -- one undo step");
     m_anchors.signal_clicked().connect([this] {
@@ -507,6 +521,7 @@ void GlyphCanvas::on_draw(const Cairo::RefPtr<Cairo::Context>& cr, int w, int h)
     }
 
     draw_measure(cr, *g);
+    if (m_pen.get_active()) draw_pen(cr, *g);
     if (m_mode == Mode::Marquee) {
         const double x0 = std::min(m_press_x, m_mx), y0 = std::min(m_press_y, m_my);
         cr->rectangle(std::round(x0) + 0.5, std::round(y0) + 0.5, std::round(std::abs(m_mx - m_press_x)),
@@ -1094,6 +1109,57 @@ void GlyphCanvas::on_press(double x, double y) {
     }
     m_guide_new = false;
 
+    // The pen (M5g): every press puts a node in (or closes / picks up a path).
+    if (m_pen.get_active()) {
+        const auto pst = m_drag->get_current_event_state();
+        const bool pshift = (pst & Gdk::ModifierType::SHIFT_MASK) == Gdk::ModifierType::SHIFT_MASK;
+        geom::Vec2 p = to_font(x, y);
+        const double tol = kHitPx / m_s;
+        auto& doc = m_ctx.doc;
+        if (pen_path_live()) {
+            const auto& c = g->contours[static_cast<std::size_t>(m_pen_contour)];
+            const auto& first = m_pen_from_start ? c.nodes.back() : c.nodes.front();
+            const auto& last = m_pen_from_start ? c.nodes.front() : c.nodes.back();
+            const bool on_first = c.nodes.size() >= 2 && (geom::Vec2{first.x, first.y} - p).length() <= tol;
+            if (on_first && !m_pen_from_start) {
+                const auto at = command::pen_press(doc.journal, doc.font, m_shown, m_pen_contour, p, true);
+                m_pen_at_contour = at.contour; m_pen_at_node = at.node; m_pen_at_closed = at.closed;
+            } else {
+                if (pshift) p = geom::Vec2{last.x, last.y} + geom::constrain45(p - geom::Vec2{last.x, last.y});
+                const auto at = command::pen_press(doc.journal, doc.font, m_shown, m_pen_contour, p, false, m_pen_from_start);
+                m_pen_from_start = false;
+                m_pen_at_contour = at.contour; m_pen_at_node = at.node; m_pen_at_closed = at.closed;
+            }
+        } else {
+            // On an open path's end: pick it up and go on from there (no node yet).
+            const geom::Hit hit = geom::hit_test(*g, p, tol, false);
+            if (hit.kind == geom::Hit::Kind::Node && !g->contours[static_cast<std::size_t>(hit.contour)].closed) {
+                const int n = static_cast<int>(g->contours[static_cast<std::size_t>(hit.contour)].nodes.size());
+                if (hit.index == n - 1 || hit.index == 0) {
+                    m_pen_glyph = m_shown;
+                    m_pen_contour = hit.contour;
+                    m_pen_from_start = hit.index == 0 && n > 1;
+                    m_pick = {{hit.contour, hit.index, Part::Node}};
+                    m_mode = Mode::None;
+                    if (m_ctx.say) m_ctx.say("Pen: going on from this end.", false);
+                    say_pick();
+                    m_area.queue_draw();
+                    return;
+                }
+            }
+            const auto at = command::pen_press(doc.journal, doc.font, m_shown, -1, p);
+            m_pen_at_contour = at.contour; m_pen_at_node = at.node; m_pen_at_closed = at.closed;
+        }
+        m_began = doc.journal.in_gesture();
+        if (!m_began) { m_mode = Mode::None; return; }
+        m_mode = Mode::Pen;
+        m_pen_glyph = m_shown;
+        m_pen_contour = m_pen_at_closed ? -1 : m_pen_at_contour;
+        m_pick = {{m_pen_at_contour, m_pen_at_node, Part::Node}};
+        m_area.queue_draw();
+        return;
+    }
+
     const auto st = m_drag->get_current_event_state();
     const bool shift = (st & Gdk::ModifierType::SHIFT_MASK) == Gdk::ModifierType::SHIFT_MASK;
     const geom::Hit hit = geom::hit_test(*g, to_font(x, y), kHitPx / m_s);
@@ -1171,6 +1237,18 @@ void GlyphCanvas::on_press(double x, double y) {
 }
 
 void GlyphCanvas::on_drag(double dx, double dy) {
+    if (m_mode == Mode::Pen) {
+        const auto st = m_drag->get_current_event_state();
+        const bool shift = (st & Gdk::ModifierType::SHIFT_MASK) == Gdk::ModifierType::SHIFT_MASK;
+        const bool alt = (st & Gdk::ModifierType::ALT_MASK) == Gdk::ModifierType::ALT_MASK;
+        geom::Vec2 d{dx / m_s, -dy / m_s};
+        if (std::hypot(dx, dy) < kDragPx) d = {0, 0};
+        else if (shift) d = geom::constrain45(d);
+        command::pen_drag(m_ctx.doc.journal, m_ctx.doc.font, m_shown,
+                          {m_pen_at_contour, m_pen_at_node, m_pen_at_closed}, d, alt);
+        m_mx = m_press_x + dx; m_my = m_press_y + dy;
+        return;
+    }
     switch (m_mode) {
         case Mode::Measure:
             m_meas_b = snap_to_node(to_font(m_press_x + dx, m_press_y + dy));
@@ -1330,6 +1408,17 @@ void GlyphCanvas::on_drag(double dx, double dy) {
 void GlyphCanvas::on_release(double dx, double dy) {
     const Mode was = m_mode;
     m_mode = Mode::None;
+    if (was == Mode::Pen) {
+        command::drag_end(m_ctx.doc.journal, m_ctx.doc.font);
+        m_began = false;
+        if (m_ctx.say) {
+            if (m_pen_at_closed) m_ctx.say("Path closed. Click to start another; P or Escape leaves the pen.", false);
+            else m_ctx.say("Pen: node " + std::to_string(m_pen_at_node + 1) +
+                           " -- click the first node to close, Enter to end the path.", false);
+        }
+        m_area.queue_draw();
+        return;
+    }
     if (was == Mode::Measure) {
         if (!m_meas_dragged) {   // a click: the stems through that point
             if (const model::Glyph* g = glyph()) {
@@ -1407,6 +1496,19 @@ bool GlyphCanvas::on_key(guint keyval, guint, Gdk::ModifierType state) {
     const bool shift = (state & Gdk::ModifierType::SHIFT_MASK) == Gdk::ModifierType::SHIFT_MASK;
     const model::Glyph* g = glyph();
 
+    if ((keyval == GDK_KEY_p || keyval == GDK_KEY_P) && !ctrl && m_mode == Mode::None) {
+        set_pen(!m_pen.get_active());
+        return true;
+    }
+    if ((keyval == GDK_KEY_Return || keyval == GDK_KEY_KP_Enter) && m_pen.get_active() && m_mode == Mode::None) {
+        end_path();
+        return true;
+    }
+    if (keyval == GDK_KEY_Escape && m_pen.get_active() && m_mode == Mode::None) {
+        if (pen_path_live()) end_path();
+        else set_pen(false);
+        return true;
+    }
     if (keyval == GDK_KEY_Escape) {
         if (m_mode != Mode::None) cancel_drag();
         else if (m_pick.empty() && !m_ctx.guide_pick) {
@@ -1540,6 +1642,11 @@ void GlyphCanvas::update_readout(double sx, double sy) {
 
 void GlyphCanvas::on_motion(double x, double y) {
     if (m_mode == Mode::None) { m_mx = x; m_my = y; update_readout(x, y); }
+    if (m_pen.get_active() && !m_space) {
+        m_area.set_cursor("crosshair");
+        if (pen_path_live() || m_mode == Mode::Pen) m_area.queue_draw();   // the rubber band follows
+        return;
+    }
     if (m_mode == Mode::Marquee || m_mode == Mode::Points) return;
     const int side = m_mode == Mode::None ? sidebearing_at(x, y) : m_side;
     if (m_space) {
@@ -1690,6 +1797,61 @@ void GlyphCanvas::say_pick() {
         return;
     }
     m_ctx.say(std::to_string(m_pick.size()) + " points picked", false);
+}
+
+// ── the pen (M5g) ──────────────────────────────────────────────────────────
+
+void GlyphCanvas::set_pen(bool on) {
+    if (m_pen.get_active() != on) m_pen.set_active(on);   // the toggle's handler does the rest
+}
+
+bool GlyphCanvas::pen_path_live() const {
+    const model::Glyph* g = glyph();
+    if (!g || m_pen_contour < 0 || m_pen_glyph != m_shown) return false;
+    if (m_pen_contour >= static_cast<int>(g->contours.size())) return false;
+    const auto& c = g->contours[static_cast<std::size_t>(m_pen_contour)];
+    return !c.closed && !c.nodes.empty();
+}
+
+void GlyphCanvas::end_path(bool say_it) {
+    const bool was = pen_path_live();
+    m_pen_contour = -1;
+    m_pen_from_start = false;
+    if (was && say_it && m_ctx.say) m_ctx.say("Path ended (open). Click to start another; Escape leaves the pen.", false);
+    m_area.queue_draw();
+}
+
+void GlyphCanvas::draw_pen(const Cairo::RefPtr<Cairo::Context>& cr, const model::Glyph& g) {
+    if (!pen_path_live() || m_mode == Mode::Pen) return;
+    const auto& c = g.contours[static_cast<std::size_t>(m_pen_contour)];
+    const auto& last = m_pen_from_start ? c.nodes.front() : c.nodes.back();
+    const auto& first = m_pen_from_start ? c.nodes.back() : c.nodes.front();
+    const geom::Vec2 a = to_screen({last.x, last.y});
+    // The segment the next click would make: a straight rubber band (or the
+    // curve the last node's handle starts).
+    cr->save();
+    cr->set_line_width(1.0);
+    cr->set_source_rgba(NS[0], NS[1], NS[2], 0.8);
+    std::vector<double> dash{5.0, 3.0};
+    cr->set_dash(dash, 0);
+    const bool handle = m_pen_from_start ? last.has_in() : last.has_out();
+    cr->move_to(a.x, a.y);
+    if (handle) {
+        const geom::Vec2 h = to_screen(m_pen_from_start ? geom::Vec2{last.cx1, last.cy1} : geom::Vec2{last.cx2, last.cy2});
+        cr->curve_to(h.x, h.y, m_mx, m_my, m_mx, m_my);
+    } else {
+        cr->line_to(m_mx, m_my);
+    }
+    cr->stroke();
+    cr->unset_dash();
+    // The first node rings when a click would close the path.
+    const geom::Vec2 f = to_screen({first.x, first.y});
+    if (!m_pen_from_start && c.nodes.size() >= 2 && std::hypot(f.x - m_mx, f.y - m_my) <= kHitPx) {
+        cr->set_line_width(2.0);
+        cr->arc(f.x, f.y, 8.0, 0, 2 * 3.14159265358979);
+        cr->stroke();
+    }
+    cr->restore();
 }
 
 }  // namespace granjon::views
