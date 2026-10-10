@@ -30,6 +30,9 @@ public:
     explicit Navigator(ViewContext& ctx);
 
     void refresh();                 // rebuild from the model (after writes)
+    // After a step: touch only the rows for `ids` (a status dot, the font's
+    // title); rebuild only when a glyph came, went or changed its encoding.
+    void update(const std::set<std::string>& ids);
 
 private:
     void sync_selection();          // the row for ctx.selected, without emitting
@@ -63,6 +66,9 @@ private:
     };
     std::map<std::string, Section> m_sections;          // by section name
     std::map<std::string, std::string> m_glyph_section; // glyph -> its section
+    std::map<std::string, std::vector<char32_t>> m_known;   // glyph -> unicodes, as last built
+    std::map<std::string, Gtk::Widget*> m_dots;          // glyph -> its status dot
+    Gtk::Label*                m_font_label = nullptr;
     std::set<std::string>      m_picked_sections;       // section headers picked (whole sections)
     std::set<std::string>      m_multi;                 // picked glyph rows (kept across rebuilds)
     bool                       m_additive = false;      // the last press had Ctrl / Shift

@@ -123,6 +123,9 @@ void Navigator::refresh() {
     while (auto* c = m_list.get_first_child()) m_list.remove(*c);
     m_sections.clear();
     m_glyph_section.clear();
+    m_known.clear();
+    m_dots.clear();
+    m_font_label = nullptr;
     const auto& font = m_ctx.doc.font;
     const bool filtering = m_ctx.filter.has_value();
 
@@ -151,6 +154,7 @@ void Navigator::refresh() {
         auto icon = Gtk::make_managed<Gtk::Image>();
         icon->set_from_icon_name("preferences-desktop-font-symbolic");
         auto l = Gtk::make_managed<Gtk::Label>(m_ctx.doc.title());
+        m_font_label = l;
         l->set_xalign(0.0f);
         l->set_ellipsize(Pango::EllipsizeMode::END);
         box->append(*icon);
@@ -196,7 +200,10 @@ void Navigator::refresh() {
             auto row = Gtk::make_managed<Gtk::ListBoxRow>();
             row->set_name(g->name);
             auto box = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::HORIZONTAL, 8);
-            box->append(*status_dot(model::status_name(g->status)));
+            auto* dot = status_dot(model::status_name(g->status));
+            m_dots[g->name] = dot;
+            m_known[g->name] = g->unicodes;
+            box->append(*dot);
             auto name = Gtk::make_managed<Gtk::Label>(g->name);
             name->set_xalign(0.0f);
             name->set_hexpand(true);
@@ -228,6 +235,26 @@ void Navigator::refresh() {
     m_syncing = false;
     apply_folds();
     sync_selection();
+}
+
+void Navigator::update(const std::set<std::string>& ids) {
+    const auto& font = m_ctx.doc.font;
+    for (const auto& id : ids) {
+        if (id == model::Font::kInfo) {
+            if (m_font_label) m_font_label->set_text(m_ctx.doc.title());
+            continue;
+        }
+        const model::Glyph* g = font.glyph(id);
+        const auto k = m_known.find(id);
+        if (!g && k == m_known.end()) continue;   // a font record, or a glyph never shown
+        if (!g || k == m_known.end() || g->unicodes != k->second) { refresh(); return; }   // the set changed
+        if (auto d = m_dots.find(id); d != m_dots.end()) {
+            for (const char* cls : {"empty", "drafted", "done", "review"}) d->second->remove_css_class(cls);
+            d->second->add_css_class(model::status_name(g->status));
+        }
+    }
+    const std::size_t total = font.glyph_count();
+    if (!m_ctx.filter) m_count.set_text(std::to_string(total) + " glyphs");
 }
 
 bool Navigator::is_open(const std::string& section) const {
@@ -391,7 +418,10 @@ void Navigator::on_add() {
     std::string why;
     if (command::add_glyph(d.journal, d.font, name, {}, m_ctx.selected, &why)) {
         m_ctx.select(name);
-        d.journal.reselect({name});
+        // A named list, not a braced temporary: GCC 16 at -O2 reports a false
+        // -Wfree-nonheap-object on the temporary's destructor (s03).
+        const std::vector<std::string> reselected{name};
+        d.journal.reselect(reselected);
         m_ctx.say("Added " + name + " -- name it in the inspector.", false);
     } else if (!why.empty()) {
         m_ctx.say(why, true);

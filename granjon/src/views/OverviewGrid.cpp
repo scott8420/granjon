@@ -241,6 +241,9 @@ Gtk::FlowBoxChild* OverviewGrid::glyph_cell(const std::string& name) {
         paint_glyph_fitted(cr, m_ctx.doc.font, *gg, w, h, std::max(3, w / 10));
     });
     m_arts.push_back(art);
+    m_art_of[name] = art;
+    m_box_of[name] = cell;
+    m_known[name] = g->unicodes;
     cell->append(*art);
 
     auto l = Gtk::make_managed<Gtk::Label>(name);
@@ -304,12 +307,46 @@ Gtk::FlowBoxChild* OverviewGrid::gap_cell(char32_t cp) {
     return child;
 }
 
+void OverviewGrid::update(const std::set<std::string>& ids) {
+    const auto& font = m_ctx.doc.font;
+    std::set<std::string> redraw;
+    bool all = false;
+    for (const auto& id : ids) {
+        if (id == model::Font::kMetrics || id == model::Font::kInfo) { all = true; continue; }   // the em box moved
+        const model::Glyph* g = font.glyph(id);
+        const auto k = m_known.find(id);
+        const bool shown_before = k != m_known.end();
+        if (!g && !shown_before) {
+            if (font.glyph_count() != m_known.size() && !m_ctx.filter && !m_ctx.scope) { refresh(); return; }
+            continue;   // a font record, or a glyph the grid does not show
+        }
+        if (!g || !shown_before || g->unicodes != k->second) { refresh(); return; }   // the set changed
+        redraw.insert(id);
+        if (auto b = m_box_of.find(id); b != m_box_of.end()) {
+            for (const char* cls : {"empty", "drafted", "done", "review"}) b->second->remove_css_class(cls);
+            b->second->add_css_class(model::status_name(g->status));
+        }
+    }
+    if (all) { for (auto* a : m_arts) a->queue_draw(); return; }
+    if (redraw.empty()) return;
+    // Composites draw their bases: a changed base redraws its users too.
+    for (const auto& [name, art] : m_art_of) {
+        if (redraw.count(name)) { art->queue_draw(); continue; }
+        if (const model::Glyph* g = font.glyph(name))
+            for (const auto& k : g->components)
+                if (redraw.count(k.base)) { art->queue_draw(); break; }
+    }
+}
+
 void OverviewGrid::refresh() {
     m_syncing = true;
     while (auto* c = m_sections.get_first_child()) m_sections.remove(*c);
     m_flows.clear();
     m_cells.clear();
     m_arts.clear();
+    m_art_of.clear();
+    m_box_of.clear();
+    m_known.clear();
     m_captions.clear();
 
     const auto& font = m_ctx.doc.font;
@@ -418,7 +455,10 @@ void OverviewGrid::on_activated(Gtk::FlowBoxChild* c) {
         bool built = false;
         if (command::create_glyph_for(d.journal, d.font, name, cp, {}, &built, &why)) {
             m_ctx.select(name);
-            d.journal.reselect({name});
+            // A named list, not a braced temporary: GCC 16 at -O2 reports a false
+            // -Wfree-nonheap-object on the temporary's destructor (s03).
+            const std::vector<std::string> reselected{name};
+            d.journal.reselect(reselected);
             m_ctx.say("Created " + name + " for " + unicode::format_cp(cp) + (built ? ", built from its parts." : "."), false);
         } else if (!why.empty()) {
             m_ctx.say(why, true);

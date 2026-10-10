@@ -28,6 +28,7 @@ void Shell::bind_actions() {  // bindings: actions + recents group
     add_action("shortcuts",     sigc::mem_fun(*this, &Shell::on_shortcuts));
     add_action("preferences",   sigc::mem_fun(*this, &Shell::on_preferences));
     add_action("font-anchors",  sigc::mem_fun(*this, &Shell::on_font_anchors));
+    add_action("font-directions", sigc::mem_fun(*this, &Shell::on_font_directions));
     add_action("quit",          [this]() { close(); });   // close-request asks about unsaved changes
 
     // Recents: a "recents" action group with a PARAMETERISED open verb --
@@ -70,7 +71,7 @@ void Shell::bind_actions() {  // bindings: actions + recents group
     // (the one-door guard). Here: the font's writes queue one repaint; the
     // journal tells the UI when Undo / Redo change, and reads the selection
     // so a step hands it back on undo / redo.
-    m_doc.font.set_on_change([this] { queue_repaint(); });
+    m_doc.font.set_on_change([this](const std::string& id) { m_dirty.insert(id); queue_repaint(); });
     m_doc.journal.set_on_change([this] { update_undo_ui(); });
     m_doc.journal.set_selection_source([this] {
         return m_ctx.selected.empty() ? std::vector<std::string>{} : std::vector<std::string>{m_ctx.selected};

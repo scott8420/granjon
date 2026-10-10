@@ -143,7 +143,10 @@ Inspector::Inspector(ViewContext& ctx)
       m_decompose("inspector.decompose"),
       m_anchor_list("inspector.anchors", Gtk::Orientation::VERTICAL, 2),
       m_anchor_add("inspector.anchor_add"),
-      m_default_anchors("inspector.default_anchors") {
+      m_default_anchors("inspector.default_anchors"),
+      m_outline_info("inspector.outline_info"),
+      m_correct("inspector.correct_directions"),
+      m_reverse("inspector.reverse_contours") {
     add_css_class("inspector");
     set_policy(Gtk::PolicyType::NEVER, Gtk::PolicyType::AUTOMATIC);
     set_size_request(290, -1);
@@ -345,6 +348,34 @@ void Inspector::build_glyph_page() {
     on_commit(m_anchor_name, [this] { on_anchor_name(); });
     m_anchor_name_label = pick.field("Name", m_anchor_name);
 
+    // ── OUTLINE: contours and their direction (M5d) ─────────────────────────
+    Card outline(*page, "OUTLINE");
+    m_outline_info.set_xalign(0.0f);
+    m_outline_info.set_wrap(true);
+    m_outline_info.add_css_class("hint");
+    outline.wide(m_outline_info);
+    m_correct.set_label("Correct directions");
+    m_correct.set_tooltip_text("Outer contours counter-clockwise, counters clockwise (CFF / UFO) -- one undo step");
+    m_correct.signal_clicked().connect([this] {
+        std::size_t n = 0;
+        if (command::correct_directions(m_ctx.doc.journal, m_ctx.doc.font, {m_ctx.selected}, &n))
+            m_ctx.say(m_ctx.doc.journal.undo_label() + ".", false);
+    });
+    m_reverse.set_label("Reverse picked");
+    m_reverse.set_tooltip_text("Reverse every contour with a picked node or handle (the start node stays)");
+    m_reverse.signal_clicked().connect([this] {
+        std::set<int> cs;
+        for (const auto& p : m_ctx.pick)
+            if (p.contour >= 0) cs.insert(p.contour);
+        command::reverse_contours(m_ctx.doc.journal, m_ctx.doc.font, m_ctx.selected, {cs.begin(), cs.end()});
+    });
+    {
+        auto row = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::HORIZONTAL, 6);
+        row->append(m_correct);
+        row->append(m_reverse);
+        outline.wide(*row);
+    }
+
     // ── GUIDE: a picked guide ───────────────────────────────────────────────
     Card guide(*page, "GUIDE");
     m_guide_card = guide.box;
@@ -537,6 +568,15 @@ Gtk::Button* part_row(const std::string& text, std::function<void()> pick) {
 }  // namespace
 
 void Inspector::refresh_parts(const model::Glyph& g) {
+    {   // OUTLINE
+        const auto wrong = geom::wrong_way(g.contours);
+        std::string t = std::to_string(g.contours.size()) + (g.contours.size() == 1 ? " contour" : " contours");
+        if (!g.contours.empty())
+            t += wrong.empty() ? ", all running the right way"
+                               : ", " + std::to_string(wrong.size()) + " the wrong way (red on the canvas)";
+        m_outline_info.set_text(t);
+        m_correct.set_sensitive(!wrong.empty());
+    }
     using Part = geom::PointRef::Part;
     auto pick = [this](geom::PointRef r) {
         return [this, r] {
@@ -572,6 +612,11 @@ void Inspector::refresh_parts(const model::Glyph& g) {
 
 void Inspector::refresh_pick() {
     if (!m_pick_card) return;
+    {
+        bool any = false;
+        for (const auto& p : m_ctx.pick) if (p.contour >= 0) any = true;
+        m_reverse.set_sensitive(any);
+    }
     using Part = geom::PointRef::Part;
     const model::Glyph* g = m_ctx.selected.empty() ? nullptr : m_ctx.doc.font.glyph(m_ctx.selected);
     // The nodes in the pick (a picked handle counts its node) -- the Type row.
@@ -776,7 +821,10 @@ void Inspector::on_name() {
     std::string why;
     if (command::rename_glyph(m_ctx.doc.journal, m_ctx.doc.font, from, to, &why)) {
         m_ctx.select(to);
-        m_ctx.doc.journal.reselect({to});
+        // A named list, not a braced temporary: GCC 16 at -O2 reports a false
+        // -Wfree-nonheap-object on the temporary's destructor (s03).
+        const std::vector<std::string> reselected{to};
+        m_ctx.doc.journal.reselect(reselected);
     } else {
         if (!why.empty()) m_ctx.say(why, true);
         m_name.set_text(from);

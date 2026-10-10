@@ -97,6 +97,14 @@ void Shell::on_dump_registry() {  // handler: print the live widget tree
     registry::dump();
 }
 
+void Shell::on_font_directions() {  // handler: the menu's "Correct contour directions in every glyph"
+    std::size_t n = 0;
+    if (command::correct_directions(m_doc.journal, m_doc.font, m_doc.font.glyph_order(), &n))
+        say(m_doc.journal.undo_label() + ". Ctrl+Z takes it back.", false);
+    else
+        say("Every contour already runs the right way.", false);
+}
+
 void Shell::on_font_anchors() {  // handler: the menu's "Add default anchors to every letter and mark"
     std::string why;
     if (command::add_default_anchors(m_doc.journal, m_doc.font, m_doc.font.glyph_order(), &why))

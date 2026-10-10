@@ -118,6 +118,14 @@ enum class Align { Left, HCenter, Right, Top, VMiddle, Bottom, DistributeH, Dist
 // distribute spaces them evenly between the outermost two. ONE step.
 bool align_points(FontJournal& j, Font& f, const std::string& glyph, const geom::Points& pts, Align how);
 
+// ── direction (M5d) ────────────────────────────────────────────────────────
+// Reverse these contours (start nodes kept). ONE step.
+bool reverse_contours(FontJournal& j, Font& f, const std::string& glyph, const std::vector<int>& contours);
+// Outers counter-clockwise, counters clockwise, in every glyph given. ONE
+// step; refuses when every one is right already. `fixed` counts contours.
+bool correct_directions(FontJournal& j, Font& f, const std::vector<std::string>& glyphs,
+                        std::size_t* fixed = nullptr);
+
 // ── font records ───────────────────────────────────────────────────────────
 bool set_family(FontJournal& j, Font& f, const std::string& family);
 bool set_style(FontJournal& j, Font& f, const std::string& style);

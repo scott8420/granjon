@@ -29,7 +29,7 @@ void Font::put(const Id& id, const std::optional<Record>& v) {
     else                         m_glyphs.erase(id);
     m_cmap_ok = false;
 
-    if (m_changed) m_changed();
+    if (m_changed) m_changed(id);
 }
 
 const Glyph* Font::glyph(const std::string& name) const {

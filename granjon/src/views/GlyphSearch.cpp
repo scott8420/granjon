@@ -199,7 +199,10 @@ void GlyphSearch::on_activate_row(Gtk::ListBoxRow* row) {
         bool built = false;
         if (command::create_glyph_for(d.journal, d.font, c.name, c.cp, m_ctx.selected, &built, &why)) {
             m_ctx.select(c.name);
-            d.journal.reselect({c.name});
+            // A named list, not a braced temporary: GCC 16 at -O2 reports a false
+            // -Wfree-nonheap-object on the temporary's destructor (s03).
+            const std::vector<std::string> reselected{c.name};
+            d.journal.reselect(reselected);
             m_ctx.say("Created " + c.name + " for " + unicode::format_cp(c.cp) + (built ? ", built from its parts." : "."), false);
         } else if (!why.empty()) {
             m_ctx.say(why, true);

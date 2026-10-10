@@ -396,6 +396,58 @@ std::optional<std::pair<double, double>> stem_at(const std::vector<Contour>& cs,
     return std::pair{*(hi - 1), *hi};
 }
 
+// ── direction ──────────────────────────────────────────────────────────────
+
+double signed_area(const Contour& c) {
+    const int n = segment_count(c);
+    if (n == 0) return 0;
+    double sum = 0;
+    for (int s = 0; s < n; ++s) {
+        const CubicSegment seg = segment(c, s);
+        Vec2 a = seg.p0;
+        for (int i = 1; i <= 16; ++i) {
+            const Vec2 b = seg.at(i / 16.0);
+            sum += a.cross(b);
+            a = b;
+        }
+    }
+    return sum * 0.5;
+}
+
+void reverse(Contour& c) {
+    if (c.nodes.size() < 2) return;
+    for (auto& n : c.nodes) {
+        std::swap(n.cx1, n.cx2);
+        std::swap(n.cy1, n.cy2);
+    }
+    std::reverse(c.nodes.begin(), c.nodes.end());
+    if (c.closed) std::rotate(c.nodes.rbegin(), c.nodes.rbegin() + 1, c.nodes.rend());   // the start stays first
+}
+
+int depth(const std::vector<Contour>& cs, int index) {
+    if (index < 0 || index >= static_cast<int>(cs.size()) || cs[index].nodes.empty()) return 0;
+    // A point of this contour: the middle of its first segment (a start node
+    // can sit on another contour's edge more easily than a curve's middle).
+    const Vec2 p = segment_count(cs[index]) > 0 ? segment(cs[index], 0).at(0.5)
+                                                : Vec2{cs[index].nodes[0].x, cs[index].nodes[0].y};
+    int d = 0;
+    for (int k = 0; k < static_cast<int>(cs.size()); ++k)
+        if (k != index && inside({cs[k]}, p)) ++d;
+    return d;
+}
+
+std::vector<int> wrong_way(const std::vector<Contour>& cs) {
+    std::vector<int> out;
+    for (int i = 0; i < static_cast<int>(cs.size()); ++i) {
+        if (!cs[i].closed || cs[i].nodes.size() < 2) continue;
+        const double a = signed_area(cs[i]);
+        if (std::abs(a) < 1e-9) continue;
+        const bool outer = depth(cs, i) % 2 == 0;
+        if ((a > 0) != outer) out.push_back(i);
+    }
+    return out;
+}
+
 // ── hit testing ────────────────────────────────────────────────────────────
 
 Hit hit_test(const model::Glyph& g, Vec2 pt, double tol, bool show_handles) {

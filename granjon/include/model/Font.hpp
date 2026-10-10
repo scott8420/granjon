@@ -70,7 +70,9 @@ public:
     };
 
     // Called after every put (the UI queues a repaint here).
-    void set_on_change(std::function<void()> f) { m_changed = std::move(f); }
+    // Called after every put, with the record's id -- so the UI can repaint
+    // only what a step touched (a guide edit must not rebuild 1000 cells).
+    void set_on_change(std::function<void(const Id&)> f) { m_changed = std::move(f); }
 
 private:
     FontInfo                     m_info;
@@ -82,7 +84,7 @@ private:
     int                          m_strays  = 0;
     int                          m_loading = 0;
     std::function<bool()>        m_door;
-    std::function<void()>        m_changed;
+    std::function<void(const Id&)> m_changed;
     // glyph_for's map (code point -> first glyph in glyph order), built on
     // first use, dropped by every put. Without it each lookup sorted the
     // whole glyph order (~14 ms per call on a 1000-glyph font).

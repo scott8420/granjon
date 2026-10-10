@@ -102,6 +102,20 @@ std::vector<double> crossings(const std::vector<model::Contour>& cs, bool horizo
 // nullopt when pt is not between two crossings.
 std::optional<std::pair<double, double>> stem_at(const std::vector<model::Contour>& cs, Vec2 pt, bool horizontal);
 
+// ── direction (M5d) ────────────────────────────────────────────────────────
+// Signed area of the contour's flattened outline (curves sampled, not just
+// the anchors). Font units are y-up, so > 0 = counter-clockwise.
+double signed_area(const model::Contour& c);
+// Reverse the travel direction (Curvz BezierPath::reverse: handles swap, the
+// node order flips) KEEPING the start node where it is.
+void reverse(model::Contour& c);
+// How many of the other contours enclose this one (even = an outer contour,
+// odd = a counter).
+int depth(const std::vector<model::Contour>& cs, int index);
+// The contours running the wrong way for CFF / UFO: outers must be
+// counter-clockwise, counters clockwise.
+std::vector<int> wrong_way(const std::vector<model::Contour>& cs);
+
 // ── hit testing ────────────────────────────────────────────────────────────
 struct Hit {
     enum class Kind { None, Node, HandleIn, HandleOut, Anchor, Segment };

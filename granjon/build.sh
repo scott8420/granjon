@@ -3,7 +3,9 @@
 # Deps (Ubuntu/Debian): libgtkmm-4.0-dev libspdlog-dev libxml2-dev cmake g++.
 set -e
 cd "$(dirname "${BASH_SOURCE[0]}")"
-cmake -B build
+# Optimised with debug info unless BUILD_TYPE says otherwise (an old Debug
+# cache is overridden here -- that was the "a little slow" of s03).
+cmake -B build -DCMAKE_BUILD_TYPE="${BUILD_TYPE:-RelWithDebInfo}"
 cmake --build build -- -j"$(nproc)"
 echo ""
 echo "Built: ./build/granjon  and  ./build/granjon_selftest"

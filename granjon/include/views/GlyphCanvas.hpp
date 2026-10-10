@@ -125,6 +125,7 @@ private:
     void draw_grid(const Cairo::RefPtr<Cairo::Context>& cr, int w, int h);
     void draw_user_guides(const Cairo::RefPtr<Cairo::Context>& cr, int w, int h, const model::Glyph& g);
     void draw_rulers(const Cairo::RefPtr<Cairo::Context>& cr, int w, int h);
+    void draw_directions(const Cairo::RefPtr<Cairo::Context>& cr, const model::Glyph& g, int w);
     void draw_measure(const Cairo::RefPtr<Cairo::Context>& cr, const model::Glyph& g);
     std::optional<ViewContext::GuideRef> guide_at(double sx, double sy) const;
     const model::Guide* picked_guide() const;

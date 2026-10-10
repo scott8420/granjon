@@ -172,6 +172,7 @@ Glib::RefPtr<Gio::Menu> Shell::build_menu() {  // zone: hamburger model
 
     auto fontm = Gio::Menu::create();
     fontm->append("Add default anchors to every letter and mark", "win.font-anchors");
+    fontm->append("Correct contour directions in every glyph", "win.font-directions");
     menu->append_section(fontm);
 
     auto view = Gio::Menu::create();

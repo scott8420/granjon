@@ -15,6 +15,7 @@
 #include <array>
 #include <functional>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -88,6 +89,7 @@ private:
     void on_recent_clear();                      // category: handler: empty the recents list
     void on_dump_registry();                     // category: handler: print the live widget tree
     void on_about();                             // category: handler: open the About window (dialog-lifetime exemplar)
+    void on_font_directions();                   // category: handler: correct directions font-wide (one step)
     void on_font_anchors();                      // category: handler: default anchors on the whole font (one step)
     void on_preferences();                       // category: handler: open the Preferences window (Ctrl+,)
     void on_shortcuts();   // handler: open the keyboard reference (renders from core::shortcut_registry)
@@ -111,6 +113,7 @@ private:
     void save_settings();                         // category: helper: write the settings file (best effort)
     void queue_repaint();                         // category: helper: one repaint per idle, after the writes
     void repaint();                               // category: helper: every view from the model
+    void repaint_changed();                       // category: helper: only what m_dirty names (the idle path)
     void update_undo_ui();                        // category: helper: Undo / Redo say what they would do, grey when nothing
     void say(const std::string& s, bool warn);    // category: helper: the status strip
     void apply_motif();                           // category: helper: granjon-light on the window when the desktop is light
@@ -154,6 +157,7 @@ private:
     Glib::RefPtr<Gio::SimpleAction> m_recents_clear;  // held to toggle enabled state
 
     bool                            m_repaint_queued = false;
+    std::set<std::string>           m_dirty;          // records written since the last repaint
     bool                            m_closing = false;   // confirmed: let the next close through
     Glib::RefPtr<Gio::Menu>         m_edit_menu;      // Undo / Redo items, re-labelled live
     Glib::RefPtr<Gio::SimpleAction> m_act_undo, m_act_redo, m_act_view;

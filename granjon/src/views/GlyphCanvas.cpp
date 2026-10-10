@@ -471,6 +471,7 @@ void GlyphCanvas::on_draw(const Cairo::RefPtr<Cairo::Context>& cr, int w, int h)
     cr->set_line_width(1.0);
     cr->stroke();
 
+    draw_directions(cr, *g, w);
     draw_overlay(cr, *g);
     draw_anchors(cr, *g);
 
@@ -506,6 +507,73 @@ void GlyphCanvas::on_draw(const Cairo::RefPtr<Cairo::Context>& cr, int w, int h)
         cr->stroke();
     }
     draw_rulers(cr, w, h);
+}
+
+// ── direction (M5d) ───────────────────────────────────────────────────────
+// An arrowhead on every contour (on its first segment, and on any segment
+// long enough on screen to carry one), pointing the way the contour runs.
+// Contours running the wrong way for CFF (outers counter-clockwise, counters
+// clockwise) are redrawn in red, with a note at the top of the canvas.
+void GlyphCanvas::draw_directions(const Cairo::RefPtr<Cairo::Context>& cr, const model::Glyph& g, int w) {
+    const auto fg = m_area.get_color();
+    const auto wrong = geom::wrong_way(g.contours);
+    const double WR[3] = {0.93, 0.33, 0.30};
+    auto is_wrong = [&](int i) { return std::find(wrong.begin(), wrong.end(), i) != wrong.end(); };
+    for (int ci = 0; ci < static_cast<int>(g.contours.size()); ++ci) {
+        const auto& c = g.contours[ci];
+        const int n = geom::segment_count(c);
+        const bool bad = is_wrong(ci);
+        if (bad) {   // the contour itself, red
+            model::Glyph one;
+            one.contours = {c};
+            cr->begin_new_path();
+            cr->save();
+            cr->translate(m_ox, m_oy);
+            cr->scale(m_s, -m_s);
+            append_glyph_path(cr, m_ctx.doc.font, one);
+            cr->restore();
+            cr->set_source_rgba(WR[0], WR[1], WR[2], 0.95);
+            cr->set_line_width(2.0);
+            cr->stroke();
+        }
+        for (int s = 0; s < n; ++s) {
+            const auto seg = geom::segment(c, s);
+            const double chord = (to_screen(seg.p3) - to_screen(seg.p0)).length();
+            if (s != 0 && chord < 90) continue;   // one per long segment, always one on the first
+            if (chord < 14) continue;             // too small to read
+            const double t = s == 0 ? 0.35 : 0.5;
+            const geom::Vec2 p = to_screen(seg.at(t));
+            geom::Vec2 d = seg.tangent(t);
+            d = geom::Vec2{d.x, -d.y}.normalised();   // y flips on screen
+            if (d.length() < 1e-9) continue;
+            const geom::Vec2 nrm = d.perp();
+            const double L = 7, W = 3.5;
+            cr->move_to(p.x + d.x * L / 2, p.y + d.y * L / 2);
+            cr->line_to(p.x - d.x * L / 2 + nrm.x * W, p.y - d.y * L / 2 + nrm.y * W);
+            cr->line_to(p.x - d.x * L / 2 - nrm.x * W, p.y - d.y * L / 2 - nrm.y * W);
+            cr->close_path();
+            if (bad) cr->set_source_rgba(WR[0], WR[1], WR[2], 1.0);
+            else     cr->set_source_rgba(fg.get_red(), fg.get_green(), fg.get_blue(), 0.7);
+            cr->fill();
+        }
+    }
+    if (!wrong.empty()) {
+        Pango::FontDescription small;
+        small.set_size(9 * PANGO_SCALE);
+        auto layout = m_area.create_pango_layout(
+            std::to_string(wrong.size()) + (wrong.size() == 1 ? " contour runs" : " contours run") +
+            " the wrong way -- Correct directions in the inspector");
+        layout->set_font_description(small);
+        int lw = 0, lh = 0;
+        layout->get_pixel_size(lw, lh);
+        const double x = std::max(kRuler + 8, (w - lw) / 2.0), y = kRuler + 8;
+        cr->set_source_rgba(0, 0, 0, 0.55);
+        cr->rectangle(x - 6, y - 3, lw + 12, lh + 6);
+        cr->fill();
+        cr->set_source_rgb(WR[0], WR[1], WR[2]);
+        cr->move_to(x, y);
+        layout->show_in_cairo_context(cr);
+    }
 }
 
 // ── guides, rulers, measure (M5c) ─────────────────────────────────────────

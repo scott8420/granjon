@@ -2,6 +2,7 @@
 #include "core/Recents.hpp"
 #include "Log.hpp"
 
+#include <chrono>
 #include <gtkmm/alertdialog.h>
 #include <gtkmm/filedialog.h>
 #include <giomm/file.h>
@@ -96,7 +97,7 @@ void Shell::queue_repaint() {  // helper
     m_repaint_queued = true;
     Glib::signal_idle().connect_once([this]() {
         m_repaint_queued = false;
-        repaint();
+        repaint_changed();
     });
 }
 
@@ -191,15 +192,33 @@ void Shell::update_title() {  // helper
     set_title(t);
 }
 
+// The idle path: the editor and inspector repaint (cheap); the navigator and
+// overview update only the rows / cells the step touched, and rebuild only when
+// the glyph SET changed (added, removed, renamed, re-encoded).
+void Shell::repaint_changed() {  // helper
+    const auto t0 = std::chrono::steady_clock::now();
+    if (!m_ctx.selected.empty() && !m_doc.font.glyph(m_ctx.selected)) m_ctx.select({});
+    update_title();
+    m_editor.refresh();
+    if (m_doc.journal.in_gesture()) return;   // m_dirty keeps collecting until the release
+    const auto dirty = std::move(m_dirty);
+    m_dirty.clear();
+    m_navigator.update(dirty);
+    m_overview.update(dirty);
+    m_inspector.refresh();
+    // Left in on purpose: a step that takes long enough to feel is worth a line.
+    const auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    if (ms > 50)
+        if (auto lg = log::get(log::Area::Shell)) lg->info("slow repaint: {} ms ({} records)", static_cast<long>(ms), dirty.size());
+}
+
 void Shell::repaint() {  // helper
     // A step may have removed the selected glyph (undo of an add): fall back
     // to the font before any view reads the selection.
     if (!m_ctx.selected.empty() && !m_doc.font.glyph(m_ctx.selected)) m_ctx.select({});
     update_title();
     m_editor.refresh();
-    // Mid-drag only the canvas follows the pointer: the overview rebuilds every
-    // cell, so it (and the panels) catch up on the repaint after the release.
-    if (m_doc.journal.in_gesture()) return;
+    m_dirty.clear();   // a full repaint covers everything
     m_navigator.refresh();
     m_overview.refresh();
     m_inspector.refresh();

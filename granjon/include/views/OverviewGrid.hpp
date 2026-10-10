@@ -22,6 +22,7 @@
 #include <gtkmm/popover.h>
 
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -31,6 +32,9 @@ class OverviewGrid : public widgets::Box {
 public:
     explicit OverviewGrid(ViewContext& ctx);
     void refresh();
+    // After a step: redraw only the cells `ids` touched (and the glyphs that
+    // use them as components); rebuild only when the glyph set changed.
+    void update(const std::set<std::string>& ids);
 
     // The coverage set shown ("" = none) -- the selftest-free seam the shell
     // could persist later.
@@ -66,6 +70,9 @@ private:
     std::vector<Gtk::FlowBox*>         m_flows;
     std::map<std::string, Gtk::FlowBoxChild*> m_cells;   // glyph name -> its cell
     std::vector<Gtk::DrawingArea*>     m_arts;
+    std::map<std::string, Gtk::DrawingArea*> m_art_of;   // glyph -> its drawing
+    std::map<std::string, Gtk::Box*>          m_box_of;   // glyph -> its cell (status class)
+    std::map<std::string, std::vector<char32_t>> m_known; // glyph -> unicodes, as last built
     std::vector<Gtk::Label*>           m_captions;
 
     std::string            m_charset;     // "" = no coverage set

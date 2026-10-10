@@ -20,6 +20,10 @@ What to look at in M5c:
 - **Align / distribute:** pick two or more nodes or anchors -- the PICK card shows Left / Centre / Right / ↔ and Top / Middle / Bottom / ↕ (↔ / ↕ space them evenly).
 - **Measure: hold M.** Drag for distance, angle and delta (the ends snap to nodes); click for the stem thickness through that point, across and up. Let go of M to go back to editing.
 
+**M5d contour direction** (asked after M5c): arrows on every contour; a contour running the wrong way (CFF: outers counter-clockwise, counters clockwise) is red with a note on the canvas. Inspector OUTLINE card: Correct directions / Reverse picked; ☰ menu: correct the whole font. Each one undo step. The GCC 16 `-Wfree-nonheap-object` warning: the four braced `reselect({name})` calls now use a named list -- tell me if your build still shows it.
+
+**Speed fix** (Scott: guide add / edit / delete felt slow): each edit rebuilt the navigator and overview whole (~320 ms on Termes); now they update only what the step touched (3-4 ms). `build.sh` now builds optimised (RelWithDebInfo) -- **run `./build.sh` once to re-configure** (it overrides the old Debug cache). A repaint over 50 ms writes "slow repaint" to the log. Sandbox -O2 build shows 2 warnings from the system fmt headers (GCC 13 false positive), not from Granjon code.
+
 ## Decisions made in s03
 - Context glyphs fixed (H / n), a preference since M4b.
 - Left-sidebearing drag moves the origin, drawing fixed; a modifier (Alt by default, a preference) slides the drawing.

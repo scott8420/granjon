@@ -639,6 +639,44 @@ bool align_points(FontJournal& j, Font& f, const std::string& glyph, const geom:
     return j.run(names[static_cast<int>(how)], {glyph}, [&] { f.put(glyph, Record{g}); });
 }
 
+// ── direction (M5d) ────────────────────────────────────────────────────────
+
+bool reverse_contours(FontJournal& j, Font& f, const std::string& glyph, const std::vector<int>& contours) {
+    const Glyph* was = f.glyph(glyph);
+    if (!was) return false;
+    std::set<int> idx;
+    for (int i : contours)
+        if (i >= 0 && i < static_cast<int>(was->contours.size()) && was->contours[i].nodes.size() >= 2) idx.insert(i);
+    if (idx.empty()) return false;
+    return j.run(idx.size() == 1 ? "Reverse contour" : "Reverse " + std::to_string(idx.size()) + " contours",
+                 {glyph}, [&] {
+        Glyph g = glyph_copy(f, glyph);
+        for (int i : idx) geom::reverse(g.contours[i]);
+        f.put(glyph, Record{g});
+    });
+}
+
+bool correct_directions(FontJournal& j, Font& f, const std::vector<std::string>& glyphs, std::size_t* fixed) {
+    std::vector<std::string> ids;
+    std::size_t n = 0;
+    for (const auto& name : glyphs)
+        if (const Glyph* g = f.glyph(name)) {
+            const auto w = geom::wrong_way(g->contours);
+            if (!w.empty()) { ids.push_back(name); n += w.size(); }
+        }
+    if (fixed) *fixed = n;
+    if (ids.empty()) return false;
+    const std::string label = "Correct directions (" + std::to_string(n) + (n == 1 ? " contour" : " contours") +
+                              (ids.size() == 1 ? ")" : " in " + std::to_string(ids.size()) + " glyphs)");
+    return j.run(label, ids, [&] {
+        for (const auto& name : ids) {
+            Glyph g = glyph_copy(f, name);
+            for (int i : geom::wrong_way(g.contours)) geom::reverse(g.contours[i]);
+            f.put(name, Record{g});
+        }
+    });
+}
+
 // ── font records ───────────────────────────────────────────────────────────
 
 bool set_family(FontJournal& j, Font& f, const std::string& family) {
@@ -708,7 +746,9 @@ void make_fixture(Font& f) {
         return g;
     };
     Glyph gh = add("H", U'H', 700, {box(80, 0, 170, 700), box(530, 0, 620, 700), box(170, 320, 530, 400)});
-    add("O", U'O', 760, {box(60, -12, 700, 712)});
+    // O's counter runs the WRONG way (counter-clockwise, like its outer) --
+    // something for correct_directions to fix (M5d).
+    add("O", U'O', 760, {box(60, -12, 700, 712), box(160, 88, 600, 612)});
     Glyph gn = add("n", U'n', 560, {box(70, 0, 150, 500), box(410, 0, 490, 500)});
     Glyph go = add("o", U'o', 540, {box(50, -10, 490, 510)});
     // Guides (M5c): something for the guide verbs to change.
@@ -790,6 +830,8 @@ const std::vector<Verb>& verbs() {
         {"align_points", [](FontJournal& j, Font& f) {
              align_points(j, f, "H", {{0, 2, geom::PointRef::Part::Node}, {1, 0, geom::PointRef::Part::Node}},
                           Align::Top); }},
+        {"reverse_contours", [](FontJournal& j, Font& f) { reverse_contours(j, f, "H", {0, 2}); }},
+        {"correct_directions", [](FontJournal& j, Font& f) { correct_directions(j, f, {"H", "n", "o", "O"}); }},
         {"set_family",   [](FontJournal& j, Font& f) { set_family(j, f, "Garamond Nova"); }},
         {"set_style",    [](FontJournal& j, Font& f) { set_style(j, f, "Italic"); }},
         {"set_units_per_em", [](FontJournal& j, Font& f) { set_units_per_em(j, f, 2048); }},

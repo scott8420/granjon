@@ -914,6 +914,38 @@ int main() {
             check("stem: outside the drawing", !geom::stem_at(cs, {600, 250}, true));
             check("crossings: four through the n", geom::crossings(cs, true, 250).size() == 4);
         }
+        {   // M5d: contour direction.
+            Fix x;
+            const auto& O = *x.f.glyph("O");
+            check("direction: an outer box is counter-clockwise", geom::signed_area(O.contours[0]) > 0);
+            check("direction: depth -- outer 0, counter 1", geom::depth(O.contours, 0) == 0 && geom::depth(O.contours, 1) == 1);
+            check("direction: the fixture's counter runs the wrong way", geom::wrong_way(O.contours) == std::vector<int>{1});
+            model::Contour c = O.contours[0];
+            const auto start = c.nodes[0];
+            geom::reverse(c);
+            check("reverse: clockwise now", geom::signed_area(c) < 0);
+            check("reverse: the start node stays first", c.nodes[0].x == start.x && c.nodes[0].y == start.y);
+            check("reverse: next becomes the old last", c.nodes[1] == O.contours[0].nodes[3]);
+            geom::reverse(c);
+            check("reverse: twice is the original", c == O.contours[0]);
+            model::Contour curve;   // handles swap with the order
+            curve.nodes = {{0, 0, 0, 0, 30, 0, model::Node::Type::Corner}, {100, 50, 100, 20, 100, 50, model::Node::Type::Corner},
+                           {0, 100, 0, 100, 0, 100, model::Node::Type::Corner}};
+            auto rc = curve;
+            geom::reverse(rc);
+            // The old segment 0 -> 1 (handles (30,0), (100,20)) now runs 1 -> 0, which is
+            // index 2 -> index 0 after the start is kept: out (100,20), in (30,0).
+            check("reverse: the curve keeps its shape", rc.nodes[2].cx2 == 100 && rc.nodes[2].cy2 == 20 &&
+                  rc.nodes[0].cx1 == 30 && rc.nodes[0].cy1 == 0 &&
+                  std::abs(geom::signed_area(rc) + geom::signed_area(curve)) < 1e-6);
+            std::size_t n = 0;
+            check("correct: one step fixes O's counter", cmd::correct_directions(x.j, x.f, x.f.glyph_order(), &n) && n == 1 &&
+                  x.j.size() == 1 && geom::wrong_way(x.f.glyph("O")->contours).empty());
+            check("correct: again, nothing to do", !cmd::correct_directions(x.j, x.f, x.f.glyph_order()));
+            check("reverse_contours: one step", cmd::reverse_contours(x.j, x.f, "o", {0}) && x.j.size() == 2 &&
+                  geom::signed_area(x.f.glyph("o")->contours[0]) < 0);
+            check("reverse_contours: a bad index is refused", !cmd::reverse_contours(x.j, x.f, "o", {9}));
+        }
         {   // A point drag is one step on whole units.
             Fix x;
             const geom::Points pts{{0, 0, geom::PointRef::Part::Node}};

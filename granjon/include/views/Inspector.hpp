@@ -107,6 +107,10 @@ private:
     widgets::Box         m_anchor_list;
     widgets::Entry       m_anchor_add;
     widgets::Button      m_default_anchors;
+    // outline (M5d): contour count, direction, Correct / Reverse
+    widgets::Label       m_outline_info;
+    widgets::Button      m_correct;
+    widgets::Button      m_reverse;
 };
 
 }  // namespace granjon::views
