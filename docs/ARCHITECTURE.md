@@ -188,8 +188,8 @@ Window layout (M1b, Mac/web roots -- the Curvz house look):
 Views:
 1. **Overview (M3):** glyph cards (drawing, name, codepoint), status-tinted, grouped by Unicode block under section headers (code point order within a block; Unencoded last). Toolbar: **Coverage** menu (the char sets as a checklist: have / total, missing count, tick on the chosen one), **Create N missing** (`add_glyphs`, ONE undo step), cell-size slider (40-200 px; captions hide below 56). The chosen set's gaps are dashed cells showing the character; click says what it is, double-click creates it. Gaps hide while the search narrows. Click selects; double-click opens the editor.
 2. **Editor (M4):** `views/GlyphCanvas`. Metric guides with overshoot zones; sidebearing lines (drag the right one for width; the left one moves the origin with the drawing fixed, Alt slides the drawing in a fixed width); fixed context glyphs ghosted (H beside capitals / figures, n beside the rest); components dashed, read-only; outline shaded or not (Fill toggle); Curvz node shapes; anchors named. Pick / marquee / drag (one step, snapped on release) / nudge; Ctrl+scroll zoom, scroll / middle / Space pan. Editing geometry is GTK-free in `geom/` (Curvz's Vec2, CubicSegment, BezierPath rules on `model::Contour`).
-3. **Spacing / kerning:** a text strip laid out from the model (advances + class kerning; HarfBuzz shaping arrives with export, M9). Click a glyph to select, a join to pick the pair (drag / arrows kern it, Alt = exception), drag the band under a glyph for its sidebearings; metrics keys marked when off. Profile readouts arrive in M8. (M6, M8)
-4. **Preview:** waterfall sizes, sample text, light/dark. (M6)
+3. **Spacing / kerning:** a text strip laid out from the model (advances + class kerning -- the same lookup the compiled GPOS is built from; HarfBuzz in the strip itself still to come). Click a glyph to select, a join to pick the pair (drag / arrows kern it, Alt = exception), drag the band under a glyph for its sidebearings; metrics keys marked when off. Profile readouts arrive in M8. (M6, M8)
+4. **Preview (M9):** `views/PreviewPane`. The font compiled (the bytes Export writes) and set by Pango in a private font map whose fontconfig holds only that font -- the desktop's own text stack, GPOS kerning included. Waterfall 10-96 px of a sample (remembered), two paragraphs, Kerning on / off, Dark; recompiles a short pause after a step while shown. Missing characters counted in the bar.
 5. **Report:** results from all checks, with click-to-navigate. (M7)
 
 Panels (always present, collapsible): **Navigator** (source list by Unicode block) and **Inspector** (what was the Info view, plus the glyph cards).
@@ -210,7 +210,7 @@ Panels (always present, collapsible): **Navigator** (source list by Unicode bloc
 ### Pre-export steps
 - Decompose or keep components per the format.
 - Remove overlaps (boolean path operations).
-- Correct contour direction.
+- Correct contour direction. (M9 decision: OTF goes out **as drawn** -- no silent correction, since an overlapping contour can test as "inside" and be reversed into a hole; direction is the Checks report's job, and CFF fills nonzero as the editor shows. Revisit with overlap removal, M10.)
 - Generate production names.
 - Compute OS/2 `ulUnicodeRange` and code page bits from actual coverage. These are never hand-set.
 
@@ -227,8 +227,9 @@ No manual hinting. `ttfautohint` runs as an optional external step on TTF.
 ## 9. Dependencies (to confirm on Fedora)
 
 - gtkmm 4, C++23 (match Cairn)
-- FreeType (import, rendering checks)
-- HarfBuzz (shaping for preview and kerning strip)
+- FreeType (import, rendering checks) -- not linked yet
+- HarfBuzz (shaping for the kerning strip) -- not linked yet
+- Pango + fontconfig (M9 Preview: the compiled font in a private font map) -- come with gtkmm, no extra package
 - libxml2 (plist / GLIF) -- chosen over libxml++ (small files, no extra C++ wrapper)   [M2]
 - Clipper2 1.5.4 (as Curvz: `find_package`, FetchContent fallback) for boolean ops
 - Brotli (WOFF2)
@@ -266,9 +267,9 @@ io/         Plist, Glif, Ufo (save_ufo / load_ufo)   [M2: built]
 unicode/    Embedded, UcdTable, Blocks, Agl, CharSet   [M3: built]  (model/Coverage)
 geom/       Vec2, CubicSegment, Edit (Curvz node rules, hit-test)   [M4: built]; Profile, BooleanOps, CubicToQuad, Direction to come
 core/       Settings (app preferences, JSON, not undoable)   [M4b: built]
-views/      ViewContext, Navigator, Inspector, OverviewGrid, GlyphPaint, GlyphSearch [M1b/c], GlyphCanvas [M4], SpacingStrip [M6], ReportList [M7]; PreviewPane to come
+views/      ViewContext, Navigator, Inspector, OverviewGrid, GlyphPaint, GlyphSearch [M1b/c], GlyphCanvas [M4], SpacingStrip [M6], ReportList [M7], PreviewPane [M9]
 check/      Check, Report, concrete checks
-export/     SfntWriter, tables/*, OtfExporter, TtfExporter, Woff2Exporter
+export/     Sfnt (writer, assembly), OtfData (generated spec tables), Cff, Tables (head hhea maxp OS/2 name cmap post hmtx), Gpos (kern), Otf (prepare, compile, export)   [M9: built]; TTF, WOFF2 to come
 import/     FtImporter, SvgImporter
 ```
 
@@ -292,6 +293,6 @@ Work stops at each milestone for a compile/run report before continuing.
 6. **M6 Spacing:** spacing strip (own layout; HarfBuzz with export), metrics keys, class kerning.   [s04: done]
 7. **M7 Checks:** report framework plus first checks (origin, zones, overshoot, direction).   [s04: done]
 8. **M8 Profiles:** contact gap, optical area, kern-to-gap.   [s04: built, awaiting crc]
-9. **M9 Export OTF:** sfnt writer + CFF; validate by FreeType reload.
+9. **M9 Export OTF:** sfnt writer + CFF; validate by FreeType reload.   [s05: built, awaiting crc]
 10. **M10 Export TTF / WOFF2:** cubic → quadratic, overlap removal, ttfautohint hook.
 11. **M11 Import:** TTF/OTF via FreeType; SVG glyph import.

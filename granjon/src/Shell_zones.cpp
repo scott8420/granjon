@@ -123,7 +123,7 @@ void Shell::build_views() {  // zone: the view stack
     m_stack.add(m_overview, "overview", "Overview");
     m_stack.add(m_editor, "editor", "Editor");
     m_stack.add(m_spacing, "spacing", "Spacing");
-    add_stub_view("preview", "Preview", "Waterfall sizes, sample text, light and dark.");
+    m_stack.add(m_preview, "preview", "Preview");
     m_stack.add(m_report, "report", "Report");
 }
 
@@ -158,6 +158,9 @@ Glib::RefPtr<Gio::Menu> Shell::build_menu() {  // zone: hamburger model
     save->append("Save", "win.save");
     save->append("Save as…", "win.save-as");
     menu->append_section(save);
+    auto exp = Gio::Menu::create();
+    exp->append("Export OTF…", "win.export-otf");
+    menu->append_section(exp);
 
     // Undo / Redo, re-labelled live and greyed when there is nothing to do --
     // update_undo_ui() owns this section.

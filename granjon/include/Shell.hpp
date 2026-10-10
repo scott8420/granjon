@@ -8,6 +8,7 @@
 #include "views/OverviewGrid.hpp"
 #include "views/SpacingStrip.hpp"
 #include "views/ReportList.hpp"
+#include "views/PreviewPane.hpp"
 #include "views/ViewContext.hpp"
 
 #include <gtkmm/applicationwindow.h>
@@ -86,6 +87,7 @@ private:
     void on_open();                              // category: handler: choose a .granjon / .ufo folder (Ctrl+O)
     void on_save();                              // category: handler: save, or Save As when untitled (Ctrl+S)
     void on_save_as();                           // category: handler: choose where (Ctrl+Shift+S)
+    void on_export_otf();                        // category: handler: compile + write an .otf (Ctrl+E, M9)
     bool on_close_request();                     // category: handler: the window's X with unsaved changes
     void on_recent_open(const std::string& p);   // category: handler: open a recent font (parameterised)
     void on_recent_clear();                      // category: handler: empty the recents list
@@ -153,6 +155,7 @@ private:
     views::GlyphCanvas    m_editor{m_ctx};
     views::SpacingStrip   m_spacing{m_ctx};
     views::ReportList     m_report{m_ctx};
+    views::PreviewPane    m_preview{m_ctx};
     views::Inspector      m_inspector{m_ctx};
 
     // Recents state (core data; UI holds it + resolves the path -- the seam).

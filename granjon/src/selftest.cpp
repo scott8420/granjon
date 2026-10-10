@@ -36,6 +36,7 @@
 #include "unicode/CharSet.hpp"
 #include "unicode/UcdTable.hpp"
 #include <cmath>
+#include <functional>
 
 #include <algorithm>
 #include <filesystem>
@@ -44,6 +45,9 @@
 #include <iostream>
 #include <string>
 #include <vector>
+
+// Per-milestone parts in their own files (the split ARC asks for, begun at M9).
+void selftest_export(const std::function<void(const std::string&, bool, const std::string&)>& check);
 
 namespace core = granjon::core;
 namespace geom = granjon::geom;
@@ -1750,6 +1754,8 @@ int main() {
             fs::remove_all(dir);
         }
     }
+
+    selftest_export([](const std::string& n, bool ok, const std::string& d) { check(n, ok, d); });
 
     std::cout << "-----------------------------------------------\n";
     std::cout << g_pass << " pass / " << g_fail << " fail\n";

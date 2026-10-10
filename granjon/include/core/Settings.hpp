@@ -44,6 +44,12 @@ struct Settings {
     std::string spacing_text = "nnHOHnn nonon HOHOH";   // the strip's text (the /name syntax works)
     int         spacing_size = 96;                     // px per em, kSpacingSizeMin..Max
 
+    // ── Preview + export (M9) ─────────────────────────────────────────────
+    std::string preview_text = "Hamburgefonstiv HOHOHO nonono";   // the waterfall's sample
+    bool        preview_kern = true;     // the compiled kerning on
+    bool        preview_dark = false;    // light text on dark
+    std::string export_folder;           // where the Export dialog starts
+
     // ── Overview ──────────────────────────────────────────────────────────
     int         overview_cell    = 84;     // px, kOverviewCellMin..Max
     std::string overview_charset;          // "" = no coverage set

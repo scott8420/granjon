@@ -10,6 +10,7 @@
 #include "Log.hpp"
 #include "Registry.hpp"
 #include "core/Recents.hpp"
+#include "export/Otf.hpp"
 
 #include <gtkmm/filedialog.h>
 #include <giomm/asyncresult.h>
@@ -67,6 +68,47 @@ void Shell::on_save() {  // handler: Ctrl+S
 }
 
 void Shell::on_save_as() { save_as({}); }  // handler: Ctrl+Shift+S
+
+// Export OTF (M9): the font compiled -- the bytes the Preview sets -- written
+// beside the font by default ("Family-Style.otf"). Read-only on the font: no
+// undo step. The dialog starts where the last export went.
+void Shell::on_export_otf() {  // handler: Ctrl+E
+    auto dialog = Gtk::FileDialog::create();
+    dialog->set_title("Export OTF");
+    dialog->set_initial_name(otf::default_file_name(m_doc.font.info()));
+    std::error_code ec;
+    if (!m_settings.export_folder.empty() && std::filesystem::is_directory(m_settings.export_folder, ec))
+        dialog->set_initial_folder(Gio::File::create_for_path(m_settings.export_folder));
+    else if (!m_doc.path.empty())
+        dialog->set_initial_folder(Gio::File::create_for_path(std::filesystem::path(m_doc.path).parent_path().string()));
+    dialog->save(*this, [this, dialog](const Glib::RefPtr<Gio::AsyncResult>& result) {
+        Glib::RefPtr<Gio::File> file;
+        try { file = dialog->save_finish(result); } catch (const Glib::Error&) { return; }
+        if (!file) return;
+        std::filesystem::path p = file->get_path();
+        if (p.extension() != ".otf") p += ".otf";
+        otf::OtfReport rep;
+        std::string err;
+        if (!otf::export_otf(m_doc.font, p, {}, &rep, &err)) {
+            say("Could not export: " + err, true);
+            if (auto lg = log::get(log::Area::Io)) lg->warn("export '{}': {}", p.string(), err);
+            return;
+        }
+        m_settings.export_folder = p.parent_path().string();
+        save_settings();
+        char buf[200];
+        std::snprintf(buf, sizeof buf, " \u2014 %d glyphs, %.0f KB, %.0f ms", rep.glyphs, rep.bytes / 1024.0, rep.ms);
+        std::string line = "Exported " + p.filename().string() + buf;
+        if (!rep.notes.empty()) line += ". " + rep.notes.front() + (rep.notes.size() > 1 ? " (more in the log)" : "");
+        say(line, false);
+        if (auto lg = log::get(log::Area::Io)) {
+            lg->info("export '{}': {} glyphs, {} code points, {} bytes, {:.1f} ms; kern {} glyph pairs, {} class cells, {} subtables",
+                     p.string(), rep.glyphs, rep.encoded, rep.bytes, rep.ms, rep.kern_glyph_pairs, rep.kern_class_pairs,
+                     rep.gpos_subtables);
+            for (const auto& n : rep.notes) lg->info("export: {}", n);
+        }
+    });
+}
 
 // The window's X. Unsaved changes: ask; the dialog's answer closes it.
 bool Shell::on_close_request() {  // handler

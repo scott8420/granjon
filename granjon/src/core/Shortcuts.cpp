@@ -153,6 +153,7 @@ const std::vector<ShortcutSpec>& shortcut_registry() {
         {"General", "win.open",          {"<Ctrl>o"}, "", "Open a font (.granjon / .ufo folder)"},
         {"General", "win.save",          {"<Ctrl>s"}, "", "Save"},
         {"General", "win.save-as",       {"<Ctrl><Shift>s"}, "", "Save as"},
+        {"General", "win.export-otf",    {"<Ctrl>e"}, "", "Export OTF (the font compiled, as the Preview shows it)"},
         {"General", "win.shortcuts",     {"<Ctrl>question", "<Ctrl>slash"}, "",
          "Keyboard shortcuts (this window)"},
         {"General", "win.about",         {"F1"}, "", "About Granjon"},

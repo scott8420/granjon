@@ -22,6 +22,7 @@ void Shell::bind_actions() {  // bindings: actions + recents group
     add_action("open",          sigc::mem_fun(*this, &Shell::on_open));
     add_action("save",          sigc::mem_fun(*this, &Shell::on_save));
     add_action("save-as",       sigc::mem_fun(*this, &Shell::on_save_as));
+    add_action("export-otf",    sigc::mem_fun(*this, &Shell::on_export_otf));
     signal_close_request().connect(sigc::mem_fun(*this, &Shell::on_close_request), false);
     add_action("dump-registry", sigc::mem_fun(*this, &Shell::on_dump_registry));
     add_action("about",         sigc::mem_fun(*this, &Shell::on_about));
