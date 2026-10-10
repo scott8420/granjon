@@ -580,12 +580,12 @@ void Inspector::build_glyph_page() {
     m_code.set_editable(false);
     m_code.set_cursor_visible(false);
     m_code.set_monospace(true);
-    m_code.set_wrap_mode(Gtk::WrapMode::NONE);
+    m_code.set_wrap_mode(Gtk::WrapMode::WORD_CHAR);   // long lines wrap (Scott, s05)
     m_code.set_left_margin(6);
     m_code.set_top_margin(4);
     m_code.add_css_class("code");
     m_code_scroll.set_child(m_code);
-    m_code_scroll.set_policy(Gtk::PolicyType::AUTOMATIC, Gtk::PolicyType::AUTOMATIC);
+    m_code_scroll.set_policy(Gtk::PolicyType::NEVER, Gtk::PolicyType::AUTOMATIC);
     m_code_scroll.set_size_request(-1, 220);
     m_code_scroll.set_has_frame(true);
     code.wide(m_code_scroll);

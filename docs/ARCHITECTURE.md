@@ -265,7 +265,7 @@ model/      Profiles [M8] (edge profiles, contact / optical gap, kern-to-gap), C
 command/    Document (font + journal), Verbs + verb table   [M1: built]
 io/         Plist, Glif, Ufo (save_ufo / load_ufo)   [M2: built]
 unicode/    Embedded, UcdTable, Blocks, Agl, CharSet   [M3: built]  (model/Coverage)
-geom/       Vec2, CubicSegment, Edit (Curvz node rules, hit-test)   [M4: built]; Profile, BooleanOps, CubicToQuad, Direction to come
+geom/       Vec2, CubicSegment, Edit (Curvz node rules, hit-test)   [M4: built], NodeEdit (insert / delete / line-curve)   [M5f: built]; Profile, BooleanOps, CubicToQuad, Direction to come
 core/       Settings (app preferences, JSON, not undoable)   [M4b: built]
 views/      ViewContext, Navigator, Inspector, OverviewGrid, GlyphPaint, GlyphSearch [M1b/c], GlyphCanvas [M4], SpacingStrip [M6], ReportList [M7], PreviewPane [M9]
 check/      Check, Report, concrete checks
@@ -290,10 +290,12 @@ Work stops at each milestone for a compile/run report before continuing.
 5c. **M5c Guides:** rulers, glyph + font guidelines, snap to guides, align / distribute, measure.   [s03: done]
 5d. **M5d Direction:** contour arrows, wrong-way tint, correct / reverse.   [s03: done]
 5e. **M5e Node navigation:** amber start node, open-end bar, Make first, Tab / Ctrl+Tab / ` traversal.   [s04: done]
+5f. **M5f Node editing:** delete nodes keeping the shape (refit), insert a node on a segment, line <-> curve.   [s05: built, awaiting crc]
+5g. **M5g Pen tool:** draw new contours.
 6. **M6 Spacing:** spacing strip (own layout; HarfBuzz with export), metrics keys, class kerning.   [s04: done]
 7. **M7 Checks:** report framework plus first checks (origin, zones, overshoot, direction).   [s04: done]
 8. **M8 Profiles:** contact gap, optical area, kern-to-gap.   [s04: built, awaiting crc]
 9. **M9 Export OTF:** sfnt writer + CFF; validate by FreeType reload.   [s05: done]
-9c. **M9c Drawing codes + SVG:** inspector CODE card (CFF / TrueType / SVG path), Export SVG of a glyph or the Spacing text.   [s05: built, awaiting crc]
+9c. **M9c Drawing codes + SVG:** inspector CODE card (CFF / TrueType / SVG path), Export SVG of a glyph or the Spacing text.   [s05: done]
 10. **M10 Export TTF / WOFF2:** cubic → quadratic, overlap removal, ttfautohint hook.   [s05: M10a TTF done; M10b WOFF2 + overlaps to come]
 11. **M11 Import:** TTF/OTF via FreeType; SVG glyph import.

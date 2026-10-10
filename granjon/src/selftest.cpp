@@ -48,6 +48,7 @@
 
 // Per-milestone parts in their own files (the split ARC asks for, begun at M9).
 void selftest_export(const std::function<void(const std::string&, bool, const std::string&)>& check);
+void selftest_edit(const std::function<void(const std::string&, bool, const std::string&)>& check);
 
 namespace core = granjon::core;
 namespace geom = granjon::geom;
@@ -1373,8 +1374,14 @@ int main() {
                                                       {-1, 0, geom::PointRef::Part::Anchor}}) ||
                   cmd::delete_points(j, f, "eacute", {{-1, 1, geom::PointRef::Part::Component}}));
             check("delete: the mark is gone", f.glyph("eacute")->components.size() == 1);
-            check("delete: nodes are not deleted (yet)",
-                  !cmd::delete_points(j, f, "e", {{0, 0, geom::PointRef::Part::Node}}, &why));
+            {   // M5f: nodes delete now (one step, undone whole).
+                const auto before = *f.glyph("e");
+                check("delete: a node goes, in one step",
+                      cmd::delete_points(j, f, "e", {{0, 0, geom::PointRef::Part::Node}}, &why) &&
+                      f.glyph("e")->contours[0].nodes.size() + 1 == before.contours[0].nodes.size());
+                j.undo();
+                check("delete: undone whole", *f.glyph("e") == before);
+            }
             check("position: typed coordinates", cmd::set_position(j, f, "c", {-1, 0, geom::PointRef::Part::Anchor}, 250.4, 520) &&
                   f.glyph("c")->anchors[0].x == 250 && f.glyph("c")->anchors[0].y == 520);
             check("position: the component offset", cmd::set_position(j, f, "eacute", {-1, 0, geom::PointRef::Part::Component}, 5, 0) &&
@@ -1756,6 +1763,7 @@ int main() {
     }
 
     selftest_export([](const std::string& n, bool ok, const std::string& d) { check(n, ok, d); });
+    selftest_edit([](const std::string& n, bool ok, const std::string& d) { check(n, ok, d); });
 
     std::cout << "-----------------------------------------------\n";
     std::cout << g_pass << " pass / " << g_fail << " fail\n";

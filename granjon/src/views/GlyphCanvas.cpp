@@ -183,6 +183,15 @@ GlyphCanvas::GlyphCanvas(ViewContext& ctx)
         const model::Glyph* g = glyph();
         if (!g) return;
         const geom::Hit hit = geom::hit_test(*g, to_font(x, y), kHitPx / m_s);
+        if (hit.kind == geom::Hit::Kind::Segment) {   // M5f: a node on the segment, the shape unchanged
+            int at = -1;
+            if (command::insert_node(m_ctx.doc.journal, m_ctx.doc.font, m_shown, hit.contour, hit.index, hit.t, &at) && at >= 0) {
+                m_pick = {{hit.contour, at, Part::Node}};
+                say_pick();
+                m_area.queue_draw();
+            }
+            return;
+        }
         if (hit.kind != geom::Hit::Kind::Node) return;
         // Corner <-> smooth (any other type goes to corner).
         const auto t = g->contours[hit.contour].nodes[hit.index].type;
@@ -1440,9 +1449,23 @@ bool GlyphCanvas::on_key(guint keyval, guint, Gdk::ModifierType state) {
         if (command::delete_points(m_ctx.doc.journal, m_ctx.doc.font, m_shown, m_pick, &why)) {
             m_pick.clear();
             say_pick();
+            if (m_ctx.say) m_ctx.say(m_ctx.doc.journal.undo_label() + " -- Ctrl+Z brings it back.", false);
         } else if (!why.empty() && m_ctx.say) {
             m_ctx.say(why, true);
         }
+        return true;
+    }
+    // M5f: the segments between picked nodes -> lines (L) / curves (C).
+    if ((keyval == GDK_KEY_l || keyval == GDK_KEY_L || keyval == GDK_KEY_c || keyval == GDK_KEY_C) && !ctrl &&
+        (state & Gdk::ModifierType::ALT_MASK) != Gdk::ModifierType::ALT_MASK && m_mode == Mode::None) {
+        if (!g) return true;
+        const bool curve = keyval == GDK_KEY_c || keyval == GDK_KEY_C;
+        std::string why;
+        if (command::set_segments(m_ctx.doc.journal, m_ctx.doc.font, m_shown, m_pick, curve, &why)) {
+            say_pick();
+            if (m_ctx.say) m_ctx.say(m_ctx.doc.journal.undo_label() + ".", false);
+        }
+        else if (!why.empty() && m_ctx.say) m_ctx.say(why, true);
         return true;
     }
     if (keyval == GDK_KEY_space && !ctrl) {

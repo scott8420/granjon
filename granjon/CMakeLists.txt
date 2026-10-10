@@ -63,6 +63,7 @@ add_library(granjon_core STATIC
     # selftest gate walks. All GTK-free. docs/undo.md, ARCHITECTURE §2-3.
     src/geom/CubicSegment.cpp
     src/geom/Edit.cpp
+    src/geom/NodeEdit.cpp   # M5f: insert / delete nodes, line <-> curve
     src/model/Glyph.cpp
     src/model/FontRecords.cpp
     src/model/Font.cpp
@@ -110,7 +111,7 @@ target_include_directories(granjon_core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thir
 # ── Headless selftest -- exercises the core with no display ────────────────────
 # Cairn's Stones (the journal's own fixture) compiles into the selftest only:
 # it proves the journal mechanics; the app's store is model::Font.
-add_executable(granjon_selftest src/selftest.cpp src/selftest_export.cpp src/core/Stones.cpp)
+add_executable(granjon_selftest src/selftest.cpp src/selftest_export.cpp src/selftest_edit.cpp src/core/Stones.cpp)
 target_link_libraries(granjon_selftest PRIVATE granjon_core)
 # selftest.cpp's main() is one long walk; GCC 16 with -g notes "variable
 # tracking size limit exceeded" and retries without. Skip the attempt for this

@@ -4,6 +4,7 @@
 #include "model/Spacing.hpp"
 #include "model/Checks.hpp"
 #include "model/Profiles.hpp"
+#include "geom/NodeEdit.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -441,24 +442,96 @@ bool delete_points(FontJournal& j, Font& f, const std::string& glyph, const geom
     const Glyph* was = f.glyph(glyph);
     if (!was) return false;
     std::vector<int> anchors, comps;
+    std::set<std::pair<int, int>> nodes;
+    std::vector<geom::PointRef> handles;
     for (const auto& p : pts) {
         if (!geom::valid(*was, p)) continue;
-        if (p.part == geom::PointRef::Part::Anchor) anchors.push_back(p.index);
-        if (p.part == geom::PointRef::Part::Component) comps.push_back(p.index);
+        switch (p.part) {
+            case geom::PointRef::Part::Anchor:    anchors.push_back(p.index); break;
+            case geom::PointRef::Part::Component: comps.push_back(p.index); break;
+            case geom::PointRef::Part::Node:      nodes.insert({p.contour, p.index}); break;
+            default:                              handles.push_back(p); break;
+        }
     }
-    if (anchors.empty() && comps.empty()) {
-        say(why, "Delete takes anchors and components for now -- deleting nodes comes with the pen tool.");
+    // A handle whose node also goes is gone with it.
+    std::erase_if(handles, [&](const geom::PointRef& h) { return nodes.count({h.contour, h.index}) > 0; });
+    if (anchors.empty() && comps.empty() && nodes.empty() && handles.empty()) {
+        say(why, "Nothing picked to delete.");
         return false;
     }
-    const std::size_t n = anchors.size() + comps.size();
-    return j.run(n == 1 ? (anchors.empty() ? "Delete component" : "Delete anchor")
-                        : "Delete " + std::to_string(n) + " items",
-                 {glyph}, [&] {
+    std::string label;
+    const std::size_t n = anchors.size() + comps.size() + nodes.size() + handles.size();
+    if (n == 1) label = !nodes.empty() ? "Delete node" : !handles.empty() ? "Retract handle"
+                      : !anchors.empty() ? "Delete anchor" : "Delete component";
+    else if (n == nodes.size()) label = "Delete " + std::to_string(n) + " nodes";
+    else label = "Delete " + std::to_string(n) + " items";
+    return j.run(label, {glyph}, [&] {
         Glyph g = glyph_copy(f, glyph);
+        for (const auto& h : handles)
+            geom::retract_handle(g.contours[static_cast<std::size_t>(h.contour)], h.index, h.part == geom::PointRef::Part::Out);
+        geom::delete_nodes(g, nodes);
         std::sort(anchors.rbegin(), anchors.rend());   // back to front: indices stay good
         std::sort(comps.rbegin(), comps.rend());
         for (int i : anchors) g.anchors.erase(g.anchors.begin() + i);
         for (int i : comps) g.components.erase(g.components.begin() + i);
+        g.snap();
+        f.put(glyph, Record{g});
+    });
+}
+
+bool insert_node(FontJournal& j, Font& f, const std::string& glyph, int contour, int segment, double t, int* index) {
+    const Glyph* was = f.glyph(glyph);
+    if (!was || contour < 0 || contour >= static_cast<int>(was->contours.size())) return false;
+    if (segment < 0 || segment >= geom::segment_count(was->contours[static_cast<std::size_t>(contour)])) return false;
+    int at = -1;
+    const bool ok = j.run("Add node", {glyph}, [&] {
+        Glyph g = glyph_copy(f, glyph);
+        at = geom::insert_node(g.contours[static_cast<std::size_t>(contour)], segment, t);
+        g.snap();
+        f.put(glyph, Record{g});
+    });
+    if (index) *index = at;
+    return ok;
+}
+
+std::vector<std::pair<int, int>> picked_segments(const model::Glyph& g, const geom::Points& pts) {
+    std::vector<std::pair<int, int>> out;
+    for (int ci = 0; ci < static_cast<int>(g.contours.size()); ++ci) {
+        const auto& c = g.contours[static_cast<std::size_t>(ci)];
+        const int n = static_cast<int>(c.nodes.size());
+        for (int s = 0; s < geom::segment_count(c); ++s)
+            if (pts.count({ci, s, geom::PointRef::Part::Node}) && pts.count({ci, (s + 1) % n, geom::PointRef::Part::Node}))
+                out.push_back({ci, s});
+    }
+    return out;
+}
+
+bool set_segments(FontJournal& j, Font& f, const std::string& glyph, const geom::Points& pts, bool curve,
+                  std::string* why) {
+    const Glyph* was = f.glyph(glyph);
+    if (!was) return false;
+    const auto segs = picked_segments(*was, pts);
+    if (segs.empty()) {
+        say(why, "Pick the nodes at both ends of a segment (or a run of nodes) to make it a " +
+                 std::string(curve ? "curve." : "line."));
+        return false;
+    }
+    std::vector<std::pair<int, int>> todo;
+    for (const auto& [ci, s] : segs)
+        if (geom::is_line(was->contours[static_cast<std::size_t>(ci)], s) == curve) todo.push_back({ci, s});
+    if (todo.empty()) {
+        say(why, std::string("Already ") + (curve ? "curves." : "lines."));
+        return false;
+    }
+    const std::string what = curve ? "curve" : "line";
+    return j.run(todo.size() == 1 ? "Make " + what : "Make " + std::to_string(todo.size()) + " " + what + "s", {glyph}, [&] {
+        Glyph g = glyph_copy(f, glyph);
+        for (const auto& [ci, s] : todo) {
+            auto& c = g.contours[static_cast<std::size_t>(ci)];
+            if (curve) geom::segment_to_curve(c, s);
+            else geom::segment_to_line(c, s);
+        }
+        g.snap();
         f.put(glyph, Record{g});
     });
 }
@@ -942,6 +1015,11 @@ const std::vector<Verb>& verbs() {
         {"rename_anchor", [](FontJournal& j, Font& f) { rename_anchor(j, f, "Odotbelow", 0, "center"); }},
         {"delete_points", [](FontJournal& j, Font& f) {
              delete_points(j, f, "Odotbelow", {{-1, 0, geom::PointRef::Part::Component}}); }},
+        {"delete_nodes", [](FontJournal& j, Font& f) {
+             delete_points(j, f, "H", {{2, 1, geom::PointRef::Part::Node}, {0, 0, geom::PointRef::Part::In}}); }},
+        {"insert_node",  [](FontJournal& j, Font& f) { insert_node(j, f, "o", 0, 1, 0.37); }},
+        {"set_segments", [](FontJournal& j, Font& f) {
+             set_segments(j, f, "n", {{0, 0, geom::PointRef::Part::Node}, {0, 1, geom::PointRef::Part::Node}}, true); }},
         {"set_position", [](FontJournal& j, Font& f) {
              set_position(j, f, "o", {0, 0, geom::PointRef::Part::Node}, 61, -9); }},
         {"add_default_anchors", [](FontJournal& j, Font& f) { add_default_anchors(j, f, {"H", "n", "o"}); }},

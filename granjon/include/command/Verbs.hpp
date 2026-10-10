@@ -84,7 +84,9 @@ bool add_anchor(FontJournal& j, Font& f, const std::string& glyph, const std::st
                 double x, double y, std::string* why = nullptr);
 bool rename_anchor(FontJournal& j, Font& f, const std::string& glyph, int index, const std::string& name,
                    std::string* why = nullptr);
-// The Delete key: the anchors and components in the pick (nodes not yet).
+// The Delete key, ONE step: picked nodes go (the outline refit through them,
+// so the shape holds -- geom::delete_nodes), picked handles retract onto their
+// nodes, picked anchors and components go.
 bool delete_points(FontJournal& j, Font& f, const std::string& glyph, const geom::Points& pts,
                    std::string* why = nullptr);
 // The type of every picked node (and of the node under each picked handle),
@@ -126,6 +128,17 @@ bool reverse_contours(FontJournal& j, Font& f, const std::string& glyph, const s
 // step; refuses when every one is right already. `fixed` counts contours.
 bool correct_directions(FontJournal& j, Font& f, const std::vector<std::string>& glyphs,
                         std::size_t* fixed = nullptr);
+// M5f: a node on segment `segment` of `contour` at t, the shape unchanged.
+// ONE step; `index` gets the new node's index.
+bool insert_node(FontJournal& j, Font& f, const std::string& glyph, int contour, int segment, double t,
+                 int* index = nullptr);
+// M5f: the segments between picked nodes that follow one another (both ends
+// picked) become lines / curves. ONE step; refused, with a reason, when no
+// such segment is picked or none would change.
+bool set_segments(FontJournal& j, Font& f, const std::string& glyph, const geom::Points& pts, bool curve,
+                  std::string* why = nullptr);
+// The segments both of whose end nodes are picked: (contour, segment).
+std::vector<std::pair<int, int>> picked_segments(const model::Glyph& g, const geom::Points& pts);
 // Make this node its contour's start (M5e). ONE step. Refused on an open
 // contour, on the start itself, on a bad index; `why` says which.
 bool make_first(FontJournal& j, Font& f, const std::string& glyph, int contour, int index,

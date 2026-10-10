@@ -246,3 +246,12 @@ Newest session at the bottom.
   - ☰: Export glyph as SVG…, Export Spacing text as SVG… (same folder memory as the font exports).
   - Checked: Termes text "Granjon AVATAR Øg&@" exported and rendered by rsvg -- kerned, 17 paths, valid XML. Headless shot: the CODE card on Q (138 bytes, 8 operators).
   - Selftest 717 / 0.
+- M9c r2 (Scott: "it should wrap the text if it is on one long line"): the CODE listing wraps (word, then character); the SVG listing starts each contour (M) on its own line; the exported .svg is unchanged.
+- M9c: crc (Scott, on r2).
+- Scott: "what is next?" -- options laid out (editor drawing tools / M10b blocked on packages / import / follow-ons); "gtg" on the drawing tools in this session. Split: M5f node editing, M5g pen tool.
+- M5f node editing.
+  - `geom/NodeEdit` (GTK-free): `insert_node` (de Casteljau split; line -> corner at the point), `delete_nodes` (per contour, back to front; open ends just go and lose their outward handle; interior nodes: two lines merge to a line, otherwise the merged cubic keeps both end tangents -- the outside handles, or toward the deleted node -- and fits the two handle lengths by least squares over 49 samples of the old outline, reparameterised 6 rounds by nearest point; contours left with < 2 nodes go), `retract_handle`, `segment_to_line`, `segment_to_curve`, `is_line`.
+  - Verbs: `delete_points` now takes nodes (refit) and handles (retract) with anchors / components, one step; `insert_node`; `set_segments` + `picked_segments` (both ends picked, wraps closed contours). All in the verb table (delete_nodes, insert_node, set_segments).
+  - Canvas: double-click a segment -> insert + pick the new node; L / C -> lines / curves; Delete reports the step on the status line. Shortcuts registry: three Editor rows.
+  - Fixed on the way: the old "nodes are not deleted (yet)" test rewritten for the new contract (delete + undo), which also keeps eacute's component pick test valid.
+  - Selftest 744 / 0 (new file `src/selftest_edit.cpp`). Headless shots on Termes O: insert, delete, status line.

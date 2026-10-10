@@ -150,7 +150,12 @@ GlyphCode glyph_code(const model::Font& f, const std::string& glyph, CodeFormat 
     } else {
         const int top = std::max(f.metrics().ascender, o.ymax);
         const std::string d = path_data(o.contours, 0, top);
-        out.text = "<!-- " + head + "; y down from y = " + std::to_string(top) + " -->\n<path d=\"" + d + "\"/>\n";
+        std::string shown;   // for reading: each contour on its own line (the file keeps one line)
+        for (char ch : d) {
+            if (ch == 'M' && !shown.empty()) shown += "\n   ";
+            shown += ch;
+        }
+        out.text = "<!-- " + head + "; y down from y = " + std::to_string(top) + " -->\n<path d=\"" + shown + "\"/>\n";
         out.summary = std::to_string(d.size()) + " characters of path data";
     }
     return out;
