@@ -32,7 +32,11 @@
 #include "widgets/Widgets.hpp"
 
 #include <gtkmm/eventcontrollerkey.h>
+#include <gtkmm/gestureclick.h>
 #include <gtkmm/gesturedrag.h>
+
+#include <optional>
+#include <vector>
 
 #include <string>
 
@@ -44,7 +48,12 @@ public:
 
     void refresh();                 // the model changed (or the selection did)
     void fit();                     // the glyph's width and the em, centred
-    void focus_canvas();            // the editor came to the front: keys go to the canvas
+    void focus_canvas();
+    // Editor tabs (Scott: "if i double-click in navigator the set should open
+    // in tabs for editing"). One tab per glyph; the selected glyph is the
+    // front tab; a glyph selected elsewhere joins as a tab.
+    void open_tabs(const std::vector<std::string>& names, const std::string& active);
+    void clear_tabs();            // the editor came to the front: keys go to the canvas
     bool shading() const { return m_fill.get_active(); }
 
 private:
@@ -74,21 +83,32 @@ private:
     void say_pick();
     const model::Glyph* glyph() const;
 
+    void rebuild_tabs();
+    void close_tab(const std::string& name);
+
     ViewContext&         m_ctx;
+    widgets::ScrolledWindow m_tab_scroll;
+    widgets::Box         m_tabs;
+    std::vector<std::string> m_tab_names;
     widgets::Box         m_bar;
     widgets::Label       m_title;
     widgets::ToggleButton m_context;
     widgets::ToggleButton m_fill;
+    widgets::ToggleButton m_grid;           // the zoom-adaptive grid (a preference)
+    widgets::ToggleButton m_snap;           // snapping (a preference)
     widgets::Button      m_fit_button;
+    widgets::Button      m_anchors;          // default anchors for this glyph
+    widgets::Label       m_readout;          // pointer x, y -- or the drag's delta
     widgets::Label       m_zoom;
     widgets::DrawingArea m_area;
     Glib::RefPtr<Gtk::GestureDrag> m_drag, m_pan;
+    Glib::RefPtr<Gtk::GestureClick> m_click;   // double-click a node: corner <-> smooth
 
     double m_s = 0.5, m_ox = 0, m_oy = 0;   // px per unit; the origin on screen
     bool   m_fitted = false;                // fit on the first draw with a size
     std::string m_shown;                    // the glyph the pick belongs to
 
-    geom::Points m_pick;
+    geom::Points& m_pick;                   // = ViewContext::pick (the inspector reads it)
     Mode   m_mode = Mode::None;
     bool   m_began = false;                 // the journal gesture is open
     bool   m_space = false;
@@ -98,6 +118,12 @@ private:
     double m_press_advance = 0;
     double m_mx = 0, m_my = 0;              // marquee corner, screen
     geom::Points m_press_pick;              // for Shift+marquee
+    model::Glyph m_press_glyph;             // the glyph at the press (snapping reads it)
+    geom::PointRef m_lead;
+    std::optional<geom::PointRef> m_unpick;   // Shift-pressed on a picked point: drop it if no drag follows                  // the point under the pointer at the press -- the one that snaps
+    std::optional<double> m_snap_x, m_snap_y;   // what the lead snapped to (drawn while dragging)
+    void draw_grid(const Cairo::RefPtr<Cairo::Context>& cr, int w, int h);
+    void update_readout(double sx, double sy);
 };
 
 }  // namespace granjon::views

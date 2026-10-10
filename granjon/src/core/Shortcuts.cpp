@@ -121,13 +121,19 @@ const std::vector<ShortcutSpec>& shortcut_registry() {
         // Doc-only: the canvas handles these itself while it has the keyboard.
         {"Editor", "", {}, "Click / Shift+click", "Pick a node, handle or anchor / add or remove it"},
         {"Editor", "", {}, "Click a segment", "Pick its two end nodes"},
+        {"Editor", "", {}, "Click inside a component", "Pick the component (drag or nudge moves its offset)"},
+        {"Editor", "", {}, "Delete / Backspace", "Delete the picked anchors and components"},
         {"Editor", "", {}, "Drag empty canvas", "Marquee (Shift adds)"},
         {"Editor", "", {}, "Drag the pick", "Move it -- one undo step, whole units on release"},
+        {"Editor", "", {}, "Shift+drag", "Lock to horizontal / vertical (a handle: from its node)"},
+        {"Editor", "", {}, "Alt+drag a handle", "Move it alone -- its node turns Corner"},
+        {"Editor", "", {}, "Ctrl+drag", "Fine drag: a tenth of the speed, no snapping"},
+        {"Editor", "", {}, "Double-click a node", "Corner <-> smooth"},
         {"Editor", "", {}, "Drag the left line", "Move the origin; the drawing stays put"},
         {"Editor", "", {}, "Alt+drag the left line", "Slide the drawing inside the width"},
         {"Editor", "", {}, "Drag the right line", "Change the width"},
         {"Editor", "", {}, "Arrows / Shift+arrows", "Nudge 1 / 10 units"},
-        {"Editor", "", {}, "Ctrl+A", "Pick every node and anchor"},
+        {"Editor", "", {}, "Ctrl+A", "Pick every node, anchor and component"},
         {"Editor", "", {}, "Escape", "Cancel the drag, else drop the pick"},
         {"Editor", "", {}, "Ctrl+0", "Fit the glyph"},
         {"Editor", "", {}, "Ctrl+=  /  Ctrl+-", "Zoom in / out"},
@@ -149,6 +155,10 @@ const std::vector<ShortcutSpec>& shortcut_registry() {
         // Doc-only: a gesture is not a GAction, but the reader still needs it.
         {"Mouse", "", {}, "Click a recent", "Open that font"},
         {"Mouse", "", {}, "Double-click a glyph", "Open it in the editor"},
+        {"Mouse", "", {}, "Click a navigator section", "Show its glyphs in the overview (Ctrl+click adds sections)"},
+        {"Mouse", "", {}, "Ctrl / Shift+click navigator glyphs", "Pick several -- the overview shows just those"},
+        {"Mouse", "", {}, "Double-click in the navigator", "Open the pick (or the section) in editor tabs"},
+        {"Mouse", "", {}, "Click a section's arrow", "Fold / open it (Ctrl+click: all); remembered"},
 
         // ── View ──────────────────────────────────────────────────────────────
         {"View", "win.view::overview", {"<Ctrl>1"}, "", "Overview"},

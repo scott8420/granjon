@@ -16,8 +16,10 @@ std::set<char32_t> mapped(const Font& f);
 std::vector<char32_t> missing_from(const Font& f, const std::vector<char32_t>& cps);
 
 struct NewGlyph {
-    std::string           name;
-    std::vector<char32_t> unicodes;
+    std::string            name;
+    std::vector<char32_t>  unicodes;
+    std::vector<Component> components;   // a composite (model::plan_composites); empty = an empty glyph
+    double                 advance = -1; // < 0: the add verb's default
 };
 // One new glyph per code point in `cps`, named as the add verb would
 // (AGLFN, else uniXXXX), unique against the font AND each other.

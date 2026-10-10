@@ -1,66 +1,60 @@
 # Granjon handoff — s03 -> s04
 
-# s04_components_anchors
+# s04_guides_rulers
 
 ## Files to upload
-- `s04_components_anchors.zip` (made by `scripts/granjon_backup.sh -o s04_components_anchors`)
+- `s04_guides_rulers.zip` (made by `scripts/granjon_backup.sh -o s04_guides_rulers`)
 - `RULES.md`, `HANDOFF.md`, `ARCHITECTURE.md`, `ARC.md`, `CANON.md`
-- No Curvz source needed: the geometry M4 used is ported into `geom/`. (Curvz `BooleanOpsClipper` comes back at M10 overlap removal.)
-- Test fonts live in the project's `fonts/` folder (outside the repo): `My-Termes-Regular.granjon` (TeX Gyre Termes, 1090 glyphs, no anchors / components). M5 wants a font WITH anchors and components -- upload one if you have it, or I build a small fixture.
+- No Curvz source needed (its geometry is in `geom/`; `BooleanOpsClipper` returns at M10).
+- Test fonts live in the project's `fonts/` folder (outside the repo): `My-Termes-Regular.granjon` (TeX Gyre Termes, 1090 glyphs). Upload it if the session should look at spacing on a real font.
 
 ---
 
-## Status — s03 ends at M4b (awaiting Scott's compile/run report)
-M2 + M3 confirmed at session open. **M4: crc** (Scott, on Termes).
+## Status — s03 ends at M5b (awaiting Scott's compile/run report)
+s03 ran M4 editor, M4b preferences, M5 components + anchors (all crc), and M5b precision (this report). Built against Ubuntu 24.04, g++ 13.3, gtkmm 4.10 / GTK 4.14, libxml2 2.9.14, spdlog 1.12. Clean, no warnings. Selftest 456 / 0. **No new package dependency.**
 
-**M4b -- preferences** (added mid-session, Scott's ask). Built against the same toolchain; selftest 360 / 0. What to look at:
-- Ctrl+, (or the menu): General / Editor / Overview cards. Changes apply at once and are saved -- no Apply.
-- Quit with a font open, relaunch: it reopens (the switch turns that off).
-- Ctrl+O starts in the last font's folder (your `fonts/`).
-- The editor's Fill / Context and the overview's slider / Coverage menu are remembered, and follow the Preferences window live (and the other way round).
-- Context glyphs and the slide-the-drawing modifier (Alt / Ctrl / Shift) are set here.
-- The file: `~/.config/granjon/settings.json` (path shown at the bottom of the window). Delete it to start clean; a bad value in it falls back to the default.
-
-**M4 notes** (for reference):
-
-M4 built here against Ubuntu 24.04, g++ 13.3, gtkmm 4.10 / GTK 4.14, libxml2 2.9.14, spdlog 1.12. Clean, no warnings. Selftest 350 / 0. **No new package dependency.**
-
-What to look at (open a real UFO, or `GRANJON_SAMPLE=1 ./build/granjon`; double-click a glyph or Ctrl+2):
-- Guides: ascender, cap height, x-height, baseline, descender, labelled, with overshoot zones tinted.
-- Context glyphs ghosted either side (H beside capitals and figures, n beside the rest); **Context** toggle in the editor toolbar. **Fill** toggles shading.
-- Nodes in Curvz's shapes: corner square, smooth hollow circle, symmetric filled circle, cusp triangle; a contour's first node is a diamond. Handles blue.
-- Click a node / handle / anchor; Shift+click adds or removes; click a segment picks its ends; drag empty canvas for a marquee. Drag moves the pick -- one Ctrl+Z, whole units on release; Escape mid-drag puts it back.
-- Smooth node: drag one handle, the other stays in line. Symmetric mirrors. Cusp changes length only.
-- Sidebearings: drag the **right** line for width. Drag the **left** line: the origin moves and the drawing stays put on screen (RSB holds). **Alt**+drag the left line: the drawing slides inside the width. *If your desktop uses Alt+drag to move windows, that modifier won't reach the canvas -- tell me which key you want.*
-- Arrows nudge 1, Shift+arrows 10 (one undo step while pressed in a row). Ctrl+A picks all. Ctrl+0 fit, Ctrl+= / Ctrl+-, Ctrl+scroll zooms at the pointer; scroll, middle-drag or Space+drag pans.
-- Anchors: red diamonds with names, draggable. Components: dashed, tinted, read-only for now.
-- The status line reads the pick: "Node (smooth)   280, 512".
-- Feel: drag smoothness on a big font. Mid-drag only the canvas repaints; the overview and panels catch up after release.
+What to look at in M5b (Termes `a` is a good subject):
+- **Node type:** pick nodes, then Corner | Smooth | Sym. | Cusp on the inspector's PICK card (one undo for all of them). Double-click a node: corner <-> smooth.
+- **Handles:** pick ONE node -- the PICK card shows its X / Y and In / Out. "Relative to the node" switches the handle numbers between offsets and font coordinates (remembered). Type a value, Enter.
+- **While dragging:** Shift = horizontal / vertical only (a handle: from its node). Alt on a handle = it moves alone (the node becomes Corner). Ctrl = fine drag, a tenth of the speed.
+- **Grid** (editor toolbar): follows the zoom -- tenths close in, 20s / 50s far out; every tenth line stronger, whole units stronger when it shows tenths. The step reads beside the zoom ("58% . grid 20").
+- **Snap** (toolbar, on by default): the grabbed point lands on the metric lines, overshoot edges, sidebearings, other nodes, and the grid when it shows -- a dashed blue line shows what it caught. Ctrl turns it off for that drag.
+- **Readout:** the pointer's x, y in the toolbar; the drag's delta while dragging.
+- Toolbar toggles that are on are now blue.
+- **Navigator folds** (asked after M5b's crc): the arrow on a section header folds / opens it (Ctrl+click: all). Starts all folded; what you open is remembered.
+- **Navigator pick -> overview -> tabs:** click a section header and the overview shows that section (Ctrl+click adds sections); Ctrl / Shift+click glyphs (across sections) and the overview shows just those, with "Show all" to go back. Double-click in the navigator opens the pick -- or the whole section from its header -- as editor tabs (one per glyph, x to close). The inspector follows the glyph you last clicked.
 
 ## Decisions made in s03
-- Context glyphs fixed (Scott), not glyph-order neighbours.
-- Left-sidebearing drag moves the origin, drawing fixed; modifier slides the drawing (Scott). Alt by default, a preference since M4b.
-- Preferences are app state, not undoable; one tolerant JSON file; the views' own toggles write through to it (M4b).
-- Shading is a toggle (Scott), on by default.
-- `geom/` works on `model::Contour` directly -- no BezierPath type; Curvz's node rules kept verbatim, including its Cusp meaning (handles locked to the arriving tangent).
-- Clicking a segment picks its two end nodes (my call; no curve-bending drag yet).
-- Overlay drawn in screen space (crisp at any zoom); paths built under the y-up matrix.
+- Context glyphs fixed (H / n), a preference since M4b.
+- Left-sidebearing drag moves the origin, drawing fixed; a modifier (Alt by default, a preference) slides the drawing.
+- Shading is a toggle, remembered.
+- `geom/` works on `model::Contour` directly; Curvz's node rules verbatim (its Cusp included). One change: a corner WITH handles going smooth keeps their lengths (Curvz re-seeded from the chord).
+- Precision split (M5b now, M5c rulers / guides / align / measure next). Handle numbers relative or absolute by a toggle; the grid adapts to zoom with whole units distinct; Snap catches metrics, sidebearings, nodes, grid; Shift / Alt / Ctrl on drags follow Curvz.
+- Preferences are app state, not undoable; one tolerant JSON file; the views' own toggles write through to it.
+- Composites from canonical decomposition, anchor-placed, with no-anchor fallbacks; spacing accents stand in for missing combining marks; `.case` / `.cap` for capitals; dotless i / j. Missing parts -> nothing built, the parts named.
+- A drawn glyph with no Granjon status loads Drafted; Granjon writes Empty explicitly on a drawn glyph so it round-trips.
+- Delete takes anchors and components only until the pen tool (nodes).
 
-## s04 goal — Milestone M5: Components & anchors
-- Components as canvas objects: pick, move (a verb), decompose; add a component by name.
-- Anchors: add / rename / delete (verbs); mark-to-base preview (a "_top" mark sits on "top").
-- Auto-build composites from the UCD decomposition (é = e + acutecomb on anchors); "Create N missing" can build composites instead of empty glyphs where the parts exist.
-- Inspector: a card for the picked point / component / anchor (coordinates you can type).
+## s04 goal — Milestone M5c: guides and rulers (then M6)
+- Rulers along the canvas top and left (font units, following zoom / pan); drag out of a ruler to make a guide, drag one back to delete it.
+- Guides saved in the UFO: glyph guidelines (GLIF `<guideline>`) and font guidelines (fontinfo `guidelines`); horizontal, vertical, angled; pickable and typed in the PICK card; all through verbs.
+- Snap to guides (joins M5b's snapping).
+- Align / distribute picked nodes (left / centre / right, top / middle / bottom; distribute H / V), one step each.
+- A measure tool: distance and angle between two points, and the thickness across a stem at the pointer.
+**Stop at M5c**, then M6 below.
 
-**Stop at M5** for a compile/run report.
+## Then — Milestone M6: Spacing
+- A HarfBuzz-shaped strip (sample text / glyph string, `/name` syntax): click a glyph to select it, drag its sidebearings, click a pair and drag to kern (class kerning through the groups).
+- Metrics keys ("n: L=R=60", "m=n", "b.L=l.L") parsed and propagated, through verbs.
+- **New packages:** `harfbuzz-devel` (Fedora) / `libharfbuzz-dev`. HarfBuzz shapes from a font binary, so the strip needs a quick in-memory font build or a direct path -- the pre-implementation message settles which.
+
+**Stop at M6** for a compile/run report.
 
 ## Still open
-- Packages, Fedora (confirm): later `freetype-devel harfbuzz-devel brotli-devel`; Clipper2 via FetchContent.
+- Packages, Fedora (confirm): `harfbuzz-devel` (M6), later `freetype-devel brotli-devel`; Clipper2 via FetchContent.
 - granjon-cli scope (ARC backlog).
-- Editor follow-ons in the ARC backlog (pen, insert / delete node, node type change, typed context string, Shift-constrained drags).
-- Overview follow-ons in the ARC backlog.
+- Editor follow-ons (pen, insert / delete node, node type change, Shift-constrained drags), composite follow-ons (Greek tonos, stacking, ogonek anchor, rebuild), overview follow-ons -- all in the ARC backlog.
 - `GRANJON_SAMPLE` env still there.
-- Seen on Termes (not acted on, Scott to rule): an opened font's glyphs all load as status Empty, so the overview dims every drawn glyph -- suggest a drawn glyph loads as Drafted; the navigator sorts a block by name (A, a, ampersand) while the overview uses code point order.
 
 ---
 

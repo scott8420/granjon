@@ -121,7 +121,11 @@ std::string write_glif(const Glyph& g) {
     }
 
     PValue lib = PValue::dictionary();
-    if (g.status != model::GlyphStatus::Empty) lib.set("granjon.status", PValue::str(model::status_name(g.status)));
+    // Empty is the default -- except on a glyph with a drawing, where a missing
+    // status now reads as Drafted (a foreign glyph), so Empty must be said.
+    const bool drawn = !g.contours.empty() || !g.components.empty();
+    if (g.status != model::GlyphStatus::Empty || drawn)
+        lib.set("granjon.status", PValue::str(model::status_name(g.status)));
     if (special_types) {
         PValue arr = PValue::array();
         for (const auto& c : g.contours) {
@@ -269,6 +273,7 @@ std::optional<Glyph> read_glif(const std::string& xml, std::string* err) {
     if (g.name.empty()) return fail("<glyph> has no name");
     bool ok = true;
     std::vector<std::string> node_types;
+    bool had_status = false;   // granjon.status in the lib
 
     for (xmlNode* c = root->children; c; c = c->next) {
         if (c->type != XML_ELEMENT_NODE) continue;
@@ -315,6 +320,7 @@ std::optional<Glyph> read_glif(const std::string& xml, std::string* err) {
             auto lib = read_plist_value(d, &e);
             if (!lib) return fail("<lib>: " + e);
             if (auto s = lib->get_string("granjon.status")) {
+                had_status = true;
                 for (auto st : {model::GlyphStatus::Empty, model::GlyphStatus::Drafted,
                                 model::GlyphStatus::Done, model::GlyphStatus::Review})
                     if (*s == model::status_name(st)) g.status = st;
@@ -325,6 +331,9 @@ std::optional<Glyph> read_glif(const std::string& xml, std::string* err) {
     }
     xmlFreeDoc(doc);
     if (!ok) { if (err) *err = "a number attribute did not parse"; return std::nullopt; }
+    // A glyph from another tool carries no Granjon status. One that already
+    // has a drawing is not "Empty" -- call it Drafted (Scott, s03).
+    if (!had_status && (!g.contours.empty() || !g.components.empty())) g.status = model::GlyphStatus::Drafted;
 
     // Restore Cusp / Symmetric where the lib recorded them (only if the
     // contour shape still matches what was written).

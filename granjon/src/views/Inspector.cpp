@@ -11,8 +11,13 @@
 #include <gtkmm/grid.h>
 #include <gtkmm/label.h>
 #include <gtkmm/stringlist.h>
+#include <gtkmm/togglebutton.h>
 
 #include <cmath>
+#include <initializer_list>
+#include <optional>
+#include <set>
+#include <functional>
 
 namespace granjon::views {
 
@@ -54,13 +59,14 @@ struct Card {
         box->append(*grid);
         parent.append(*box);
     }
-    void field(const char* label, Gtk::Widget& w) {
+    Gtk::Label* field(const char* label, Gtk::Widget& w) {
         auto l = Gtk::make_managed<Gtk::Label>(label);
         l->set_xalign(0.0f);
         l->add_css_class("field-label");
         w.set_hexpand(true);
         grid->attach(*l, 0, row);
         grid->attach(w, 1, row++);
+        return l;
     }
     void wide(Gtk::Widget& w) { w.set_hexpand(true); grid->attach(w, 0, row++, 2, 1); }
 };
@@ -114,7 +120,23 @@ Inspector::Inspector(ViewContext& ctx)
       m_uname("inspector.uname"),
       m_category("inspector.category"),
       m_case("inspector.case"),
-      m_note("inspector.note") {
+      m_note("inspector.note"),
+      m_pick_what("inspector.pick_what"),
+      m_px("inspector.pick_x"),
+      m_py("inspector.pick_y"),
+      m_anchor_name("inspector.anchor_name"),
+      m_types("inspector.node_types", Gtk::Orientation::HORIZONTAL, 0),
+      m_relative("inspector.handles_relative"),
+      m_inx("inspector.in_x"),
+      m_iny("inspector.in_y"),
+      m_outx("inspector.out_x"),
+      m_outy("inspector.out_y"),
+      m_comp_list("inspector.components", Gtk::Orientation::VERTICAL, 2),
+      m_comp_add("inspector.component_add"),
+      m_decompose("inspector.decompose"),
+      m_anchor_list("inspector.anchors", Gtk::Orientation::VERTICAL, 2),
+      m_anchor_add("inspector.anchor_add"),
+      m_default_anchors("inspector.default_anchors") {
     add_css_class("inspector");
     set_policy(Gtk::PolicyType::NEVER, Gtk::PolicyType::AUTOMATIC);
     set_size_request(290, -1);
@@ -125,6 +147,7 @@ Inspector::Inspector(ViewContext& ctx)
     build_glyph_page();
     set_child(m_pages);
     m_ctx.selection_changed.connect([this] { refresh(); });
+    m_ctx.pick_changed.connect([this] { refresh_pick(); });
 }
 
 void Inspector::build_font_page() {
@@ -214,6 +237,134 @@ void Inspector::build_glyph_page() {
     metrics.field("Left side", m_lsb);
     metrics.field("Right side", m_rsb);
 
+    // ── PICK: one picked point, typed coordinates ───────────────────────────
+    Card pick(*page, "PICK");
+    m_pick_card = pick.box;
+    m_pick_what.set_xalign(0.0f);
+    m_pick_what.add_css_class("hint");
+    pick.wide(m_pick_what);
+    spin_setup(m_px, -32768, 32767);
+    spin_setup(m_py, -32768, 32767);
+    m_px.signal_value_changed().connect([this] { on_pick_xy(); });
+    m_py.signal_value_changed().connect([this] { on_pick_xy(); });
+    // Node type: a linked row, applied to every picked node.
+    {
+        static const char* names[] = {"Corner", "Smooth", "Sym.", "Cusp"};
+        static const char* tips[]  = {"Corner: handles move freely",
+                                      "Smooth: one handle drags the other into line, lengths kept",
+                                      "Symmetric: the handles mirror",
+                                      "Cusp: handles locked to the arriving tangent, length only"};
+        m_types.add_css_class("linked");
+        m_types.add_css_class("node-types");
+        m_types.set_homogeneous(true);
+        for (int i = 0; i < 4; ++i) {
+            auto b = Gtk::make_managed<Gtk::ToggleButton>(names[i]);
+            b->set_tooltip_text(tips[i]);
+            b->signal_clicked().connect([this, i] { on_node_type(i); });
+            m_type_buttons[i] = b;
+            m_types.append(*b);
+        }
+        pick.wide(m_types);   // full width: four buttons beside a label overflow the panel
+    }
+    m_x_label = pick.field("X", m_px);
+    m_y_label = pick.field("Y", m_py);
+    // A picked node's handles: two spins a row, relative to the node by default.
+    auto pair_row = [](Gtk::Entry& a, Gtk::Entry& b) {
+        auto row = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::HORIZONTAL, 6);
+        a.set_hexpand(true);
+        b.set_hexpand(true);
+        row->append(a);
+        row->append(b);
+        return row;
+    };
+    for (auto* e : {&m_inx, &m_iny, &m_outx, &m_outy}) {
+        e->set_width_chars(5);
+        e->set_input_purpose(Gtk::InputPurpose::NUMBER);
+    }
+    m_inx.set_placeholder_text("x");  m_iny.set_placeholder_text("y");
+    m_outx.set_placeholder_text("x"); m_outy.set_placeholder_text("y");
+    on_commit(m_inx, [this] { on_handle_xy(false); });
+    on_commit(m_iny, [this] { on_handle_xy(false); });
+    on_commit(m_outx, [this] { on_handle_xy(true); });
+    on_commit(m_outy, [this] { on_handle_xy(true); });
+    m_in_row = pair_row(m_inx, m_iny);
+    m_out_row = pair_row(m_outx, m_outy);
+    m_in_label = pick.field("In", *m_in_row);
+    m_out_label = pick.field("Out", *m_out_row);
+    m_relative.set_label("Relative to the node");
+    m_relative.set_active(m_ctx.settings.handles_relative);
+    m_relative.set_halign(Gtk::Align::START);
+    m_relative.set_tooltip_text("Handles as offsets from their node (on) or font coordinates (off). Remembered.");
+    m_relative.signal_toggled().connect([this] {
+        if (m_ctx.settings.handles_relative != m_relative.get_active()) {
+            m_ctx.settings.handles_relative = m_relative.get_active();
+            if (m_ctx.save_settings) m_ctx.save_settings();
+            m_ctx.settings_changed.emit();
+        }
+        refresh_pick();
+    });
+    pick.wide(m_relative);
+    m_ctx.settings_changed.connect([this] {
+        if (m_relative.get_active() != m_ctx.settings.handles_relative) m_relative.set_active(m_ctx.settings.handles_relative);
+    });
+    on_commit(m_anchor_name, [this] { on_anchor_name(); });
+    m_anchor_name_label = pick.field("Name", m_anchor_name);
+
+    // ── COMPONENTS ──────────────────────────────────────────────────────────
+    Card comps(*page, "COMPONENTS");
+    comps.wide(m_comp_list);
+    m_comp_add.set_placeholder_text("Add a component: glyph name");
+    on_commit(m_comp_add, [this] {
+        const std::string base = m_comp_add.get_text();
+        if (base.empty() || m_ctx.selected.empty()) return;
+        std::string why;
+        if (command::add_component(m_ctx.doc.journal, m_ctx.doc.font, m_ctx.selected, base, 0, 0, &why))
+            m_comp_add.set_text("");
+        else if (!why.empty())
+            m_ctx.say(why, true);
+    });
+    comps.wide(m_comp_add);
+    m_decompose.set_label("Decompose");
+    m_decompose.set_halign(Gtk::Align::START);
+    m_decompose.set_tooltip_text("Turn the components into plain outlines -- one undo step");
+    m_decompose.signal_clicked().connect([this] {
+        std::string why;
+        if (!command::decompose(m_ctx.doc.journal, m_ctx.doc.font, m_ctx.selected, &why) && !why.empty())
+            m_ctx.say(why, false);
+    });
+    comps.wide(m_decompose);
+
+    // ── ANCHORS ─────────────────────────────────────────────────────────────
+    Card anchors(*page, "ANCHORS");
+    anchors.wide(m_anchor_list);
+    m_anchor_add.set_placeholder_text("Add an anchor: name");
+    on_commit(m_anchor_add, [this] {
+        const std::string name = m_anchor_add.get_text();
+        const model::Glyph* g = m_ctx.doc.font.glyph(m_ctx.selected);
+        if (name.empty() || !g) return;
+        // Where to put it: over the drawing's centre, at the top (or the
+        // baseline for a "bottom"-ish name); the designer drags it from there.
+        const auto box = model::bounds(m_ctx.doc.font, *g);
+        const double x = box ? (box->x0 + box->x1) / 2.0 : g->advance / 2.0;
+        const bool low = name.find("bottom") != std::string::npos || name.find("ogonek") != std::string::npos;
+        const double y = low ? 0.0 : (box ? box->y1 : m_ctx.doc.font.metrics().x_height);
+        std::string why;
+        if (command::add_anchor(m_ctx.doc.journal, m_ctx.doc.font, m_ctx.selected, name, x, y, &why))
+            m_anchor_add.set_text("");
+        else if (!why.empty())
+            m_ctx.say(why, true);
+    });
+    anchors.wide(m_anchor_add);
+    m_default_anchors.set_label("Add default anchors");
+    m_default_anchors.set_halign(Gtk::Align::START);
+    m_default_anchors.set_tooltip_text("top / bottom on a letter, _top / _bottom on a mark -- one undo step");
+    m_default_anchors.signal_clicked().connect([this] {
+        std::string why;
+        if (!command::add_default_anchors(m_ctx.doc.journal, m_ctx.doc.font, {m_ctx.selected}, &why) && !why.empty())
+            m_ctx.say(why, false);
+    });
+    anchors.wide(m_default_anchors);
+
     Card uni(*page, "UNICODE");
     m_unicodes.set_placeholder_text("U+0041  or  A");
     on_commit(m_unicodes, [this] { on_unicodes(); });
@@ -284,9 +435,186 @@ void Inspector::refresh() {
                          : !to.empty() ? "Go to " + to
                                        : unicode::utf8(other) + "  " + unicode::format_cp(other) + "  (none yet)");
         if (!m_note.has_focus()) m_note.set_text(g->note);
+        refresh_parts(*g);
         m_preview.queue_draw();
     }
     m_painting = false;
+    refresh_pick();
+}
+
+namespace {
+std::string xy(double x, double y) { return fmt_units(x) + ", " + fmt_units(y); }
+// A flat list row: clicking it picks that item on the canvas.
+Gtk::Button* part_row(const std::string& text, std::function<void()> pick) {
+    auto b = Gtk::make_managed<Gtk::Button>();
+    auto l = Gtk::make_managed<Gtk::Label>(text);
+    l->set_xalign(0.0f);
+    b->set_child(*l);
+    b->add_css_class("flat");
+    b->add_css_class("part-row");
+    b->signal_clicked().connect(std::move(pick));
+    return b;
+}
+}  // namespace
+
+void Inspector::refresh_parts(const model::Glyph& g) {
+    using Part = geom::PointRef::Part;
+    auto pick = [this](geom::PointRef r) {
+        return [this, r] {
+            m_ctx.pick = {r};
+            m_ctx.pick_changed.emit();
+            if (m_ctx.show_view) m_ctx.show_view("editor");
+        };
+    };
+    while (auto* c = m_comp_list.get_first_child()) m_comp_list.remove(*c);
+    for (int i = 0; i < static_cast<int>(g.components.size()); ++i) {
+        const auto& k = g.components[i];
+        m_comp_list.append(*part_row(k.base + "    " + xy(k.dx, k.dy), pick({-1, i, Part::Component})));
+    }
+    if (g.components.empty()) {
+        auto none = Gtk::make_managed<Gtk::Label>("None");
+        none->set_xalign(0.0f);
+        none->add_css_class("hint");
+        m_comp_list.append(*none);
+    }
+    m_decompose.set_sensitive(!g.components.empty());
+    while (auto* c = m_anchor_list.get_first_child()) m_anchor_list.remove(*c);
+    for (int i = 0; i < static_cast<int>(g.anchors.size()); ++i) {
+        const auto& a = g.anchors[i];
+        m_anchor_list.append(*part_row(a.name + "    " + xy(a.x, a.y), pick({-1, i, Part::Anchor})));
+    }
+    if (g.anchors.empty()) {
+        auto none = Gtk::make_managed<Gtk::Label>("None");
+        none->set_xalign(0.0f);
+        none->add_css_class("hint");
+        m_anchor_list.append(*none);
+    }
+}
+
+void Inspector::refresh_pick() {
+    if (!m_pick_card) return;
+    using Part = geom::PointRef::Part;
+    const model::Glyph* g = m_ctx.selected.empty() ? nullptr : m_ctx.doc.font.glyph(m_ctx.selected);
+    // The nodes in the pick (a picked handle counts its node) -- the Type row.
+    std::set<std::pair<int, int>> nodes;
+    if (g)
+        for (const auto& p : m_ctx.pick)
+            if (geom::valid(*g, p) && (p.part == Part::Node || p.part == Part::In || p.part == Part::Out))
+                nodes.insert({p.contour, p.index});
+    const bool one = g && m_ctx.pick.size() == 1 && geom::valid(*g, *m_ctx.pick.begin());
+    m_pick_card->set_visible(one || !nodes.empty());
+    if (!g || (!one && nodes.empty())) return;
+    const bool was = m_painting;
+    m_painting = true;
+
+    // Type: the shared type lights its button; a mix lights none.
+    std::optional<model::Node::Type> shared;
+    bool mixed = false;
+    for (const auto& [c, i] : nodes) {
+        const auto t = g->contours[c].nodes[i].type;
+        if (!shared) shared = t;
+        else if (*shared != t) mixed = true;
+    }
+    static const model::Node::Type order[] = {model::Node::Type::Corner, model::Node::Type::Smooth,
+                                              model::Node::Type::Symmetric, model::Node::Type::Cusp};
+    for (int k = 0; k < 4; ++k) m_type_buttons[k]->set_active(!mixed && shared && *shared == order[k]);
+    m_types.set_visible(!nodes.empty());
+    if (m_types_label) m_types_label->set_visible(!nodes.empty());
+
+    const bool rel = m_relative.get_active();
+    const auto& p = *m_ctx.pick.begin();
+    const bool node = one && p.part == Part::Node;
+    const bool handle = one && (p.part == Part::In || p.part == Part::Out);
+    for (auto* w : std::initializer_list<Gtk::Widget*>{&m_px, &m_py, m_x_label, m_y_label}) w->set_visible(one);
+    for (auto* w : std::initializer_list<Gtk::Widget*>{m_in_row, m_out_row, m_in_label, m_out_label}) w->set_visible(node);
+    m_relative.set_visible(node || handle);
+
+    std::string what = std::to_string(nodes.size()) + " nodes";
+    if (one) {
+        geom::Vec2 v = geom::position(*g, p);
+        if (handle && rel) {
+            const auto& n = g->contours[p.contour].nodes[p.index];
+            v = v - geom::Vec2{n.x, n.y};
+        }
+        if (!m_px.has_focus()) m_px.set_value(v.x);
+        if (!m_py.has_focus()) m_py.set_value(v.y);
+        switch (p.part) {
+            case Part::Node:      what = "Node " + std::to_string(p.index) + " of contour " + std::to_string(p.contour); break;
+            case Part::In:        what = std::string("In-handle of node ") + std::to_string(p.index) + (rel ? " (from the node)" : ""); break;
+            case Part::Out:       what = std::string("Out-handle of node ") + std::to_string(p.index) + (rel ? " (from the node)" : ""); break;
+            case Part::Anchor:    what = "Anchor"; break;
+            case Part::Component: what = "Component on " + g->components[p.index].base + " (its offset)"; break;
+        }
+    }
+    if (node) {
+        const auto& n = g->contours[p.contour].nodes[p.index];
+        const double ox = rel ? n.x : 0, oy = rel ? n.y : 0;
+        auto put = [](Gtk::Entry& e, double v) { if (!e.has_focus()) e.set_text(fmt_units(v)); };
+        put(m_inx, n.cx1 - ox);
+        put(m_iny, n.cy1 - oy);
+        put(m_outx, n.cx2 - ox);
+        put(m_outy, n.cy2 - oy);
+    }
+    m_pick_what.set_text(what);
+    const bool anchor = one && p.part == Part::Anchor;
+    m_anchor_name.set_visible(anchor);
+    if (m_anchor_name_label) m_anchor_name_label->set_visible(anchor);
+    if (anchor && !m_anchor_name.has_focus()) m_anchor_name.set_text(g->anchors[p.index].name);
+    m_painting = was;
+}
+
+void Inspector::on_pick_xy() {
+    if (m_painting || m_ctx.pick.size() != 1) return;
+    using Part = geom::PointRef::Part;
+    const auto& p = *m_ctx.pick.begin();
+    double x = m_px.get_value(), y = m_py.get_value();
+    const model::Glyph* g = m_ctx.doc.font.glyph(m_ctx.selected);
+    if (g && geom::valid(*g, p) && (p.part == Part::In || p.part == Part::Out) && m_relative.get_active()) {
+        const auto& n = g->contours[p.contour].nodes[p.index];
+        x += n.x;
+        y += n.y;
+    }
+    command::set_position(m_ctx.doc.journal, m_ctx.doc.font, m_ctx.selected, p, x, y);
+}
+
+void Inspector::on_handle_xy(bool out) {
+    if (m_painting || m_ctx.pick.size() != 1) return;
+    const auto& p = *m_ctx.pick.begin();
+    const model::Glyph* g = m_ctx.doc.font.glyph(m_ctx.selected);
+    if (!g || !geom::valid(*g, p) || p.part != geom::PointRef::Part::Node) return;
+    const auto& n = g->contours[p.contour].nodes[p.index];
+    const double ox = m_relative.get_active() ? n.x : 0, oy = m_relative.get_active() ? n.y : 0;
+    const geom::PointRef h{p.contour, p.index, out ? geom::PointRef::Part::Out : geom::PointRef::Part::In};
+    // A field that does not read as a number puts the old value back.
+    auto num = [](Gtk::Entry& e, double& v) {
+        try { std::size_t used = 0; v = std::stod(std::string(e.get_text()), &used); return used > 0; }
+        catch (...) { return false; }
+    };
+    double fx = 0, fy = 0;
+    if (!num(out ? m_outx : m_inx, fx) || !num(out ? m_outy : m_iny, fy)) { refresh_pick(); return; }
+    const double x = fx + ox;
+    const double y = fy + oy;
+    command::set_position(m_ctx.doc.journal, m_ctx.doc.font, m_ctx.selected, h, x, y);
+}
+
+void Inspector::on_node_type(int k) {
+    if (m_painting) return;
+    static const model::Node::Type order[] = {model::Node::Type::Corner, model::Node::Type::Smooth,
+                                              model::Node::Type::Symmetric, model::Node::Type::Cusp};
+    if (!command::set_node_type(m_ctx.doc.journal, m_ctx.doc.font, m_ctx.selected, m_ctx.pick, order[k]))
+        refresh_pick();   // nothing changed: put the buttons back
+}
+
+void Inspector::on_anchor_name() {
+    if (m_painting || m_ctx.pick.size() != 1) return;
+    const auto& p = *m_ctx.pick.begin();
+    if (p.part != geom::PointRef::Part::Anchor) return;
+    std::string why;
+    if (!command::rename_anchor(m_ctx.doc.journal, m_ctx.doc.font, m_ctx.selected, p.index, m_anchor_name.get_text(), &why) &&
+        !why.empty()) {
+        m_ctx.say(why, true);
+        refresh_pick();
+    }
 }
 
 void Inspector::focus_name() {

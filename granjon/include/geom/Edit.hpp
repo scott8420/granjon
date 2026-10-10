@@ -14,10 +14,13 @@
 // All coordinates are font units, y-up. Tolerances come in font units too --
 // the canvas divides its pixel tolerance by its scale.
 #include "geom/CubicSegment.hpp"
+#include "model/Font.hpp"
 #include "model/Glyph.hpp"
 
 #include <compare>
+#include <optional>
 #include <set>
+#include <vector>
 
 namespace granjon::geom {
 
@@ -28,12 +31,19 @@ void move_node(model::Contour& c, int idx, Vec2 pos);   // handles ride along; c
 void move_handle_in(model::Contour& c, int idx, Vec2 pos);
 void move_handle_out(model::Contour& c, int idx, Vec2 pos);
 void recompute_cusp_handles(model::Contour& c, int idx);
+// Change a node's type and make its handles honour it (Curvz
+// BezierPath::set_node_type): Corner leaves them; Cusp locks to the arriving
+// tangent; Symmetric mirrors (seeding from the neighbours when both are
+// absent; from Corner it keeps what is there); Smooth aligns (Cusp -> Smooth)
+// or seeds handles along the neighbour chord (Corner -> Smooth).
+void set_node_type(model::Contour& c, int idx, model::Node::Type type);
 
 // ── a point the designer can pick ──────────────────────────────────────────
-// A node's anchor, one of its handles, or one of the glyph's anchors (then
-// `contour` is -1 and `index` is the anchor's index).
+// A node's anchor, one of its handles, one of the glyph's anchors, or one of
+// its components (for the last two `contour` is -1 and `index` is the
+// anchor's / component's index; a component's "position" is its offset).
 struct PointRef {
-    enum class Part { Node, In, Out, Anchor };
+    enum class Part { Node, In, Out, Anchor, Component };
     int  contour = -1;
     int  index   = -1;
     Part part    = Part::Node;
@@ -49,10 +59,37 @@ bool valid(const model::Glyph& g, const PointRef& p);
 // always "press + d", never cumulative). Picked nodes carry their handles; a
 // picked handle whose node is not picked moves under its node's type rule;
 // cusps next to a moved node re-aim. Stale refs are skipped.
-void move_points(model::Glyph& g, const model::Glyph& at_press, const Points& pts, Vec2 d);
+// `free_handles` (Alt on a handle): a dragged handle moves alone -- its node
+// becomes a Corner, because its handles are no longer in line.
+void move_points(model::Glyph& g, const model::Glyph& at_press, const Points& pts, Vec2 d,
+                 bool free_handles = false);
 
 // Shift everything that draws (contours, anchors, component offsets) by dx.
 void shift_x(model::Glyph& g, double dx);
+
+// ── components ─────────────────────────────────────────────────────────────
+// Apply a component's affine (UFO order) to a contour, in place.
+void transform(model::Contour& c, const model::Component& k);
+// A component's drawing as plain contours, nested components resolved (depth
+// capped at 8 -- a cycle draws nothing more, it never hangs).
+std::vector<model::Contour> component_contours(const model::Font& f, const model::Component& k, int depth = 0);
+// The topmost component whose filled drawing contains pt (nonzero winding),
+// or -1.
+int component_at(const model::Font& f, const model::Glyph& g, Vec2 pt);
+// Nonzero-winding inside test against contours (cubics flattened).
+bool inside(const std::vector<model::Contour>& cs, Vec2 pt);
+
+// ── precision (M5b) ────────────────────────────────────────────────────────
+// The grid step for a zoom (px per font unit): the smallest of 0.1, 0.2,
+// 0.5, 1, 2, 5, 10, 20, 50, 100 ... whose lines are at least `min_px` apart.
+double grid_step(double px_per_unit, double min_px = 8.0);
+// Snap one axis: the nearest target within tol, else the nearest grid line
+// (grid > 0) within tol, else v. `snapped` (when given) gets what it snapped
+// to, or nullopt.
+double snap_axis(double v, const std::vector<double>& targets, double grid, double tol,
+                 std::optional<double>* snapped = nullptr);
+// Shift's axis lock: keep the larger component of d, zero the other.
+Vec2 axis_lock(Vec2 d);
 
 // ── hit testing ────────────────────────────────────────────────────────────
 struct Hit {

@@ -1,8 +1,12 @@
 #include "command/Verbs.hpp"
 
+#include "model/Composite.hpp"
+
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <map>
+#include <set>
 
 namespace granjon::command {
 
@@ -82,11 +86,32 @@ bool add_glyphs(FontJournal& j, Font& f, const std::vector<model::NewGlyph>& gly
             Glyph g;
             g.name     = ng.name;
             g.unicodes = ng.unicodes;
-            g.advance  = 500;
+            g.advance  = ng.advance >= 0 ? ng.advance : 500;
+            g.components = ng.components;
+            if (!g.components.empty()) g.status = model::GlyphStatus::Drafted;   // built, not blank
             g.order    = order;
             order += 1.0;
             f.put(ng.name, Record{g});
         }
+    });
+}
+
+bool create_glyph_for(FontJournal& j, Font& f, const std::string& name, char32_t cp,
+                      const std::string& after, bool* built, std::string* why) {
+    const auto plan = model::plan_composite(f, cp);
+    if (built) *built = plan.ok();
+    if (!plan.ok()) return add_glyph(j, f, name, {cp}, after, why);
+    if (!model::valid_glyph_name(name)) return add_glyph(j, f, name, {cp}, after, why);   // its refusal
+    if (f.glyph(name)) { say(why, "There is already a glyph named " + q(name) + "."); return false; }
+    return j.run("Add glyph " + q(name), {name}, [&] {
+        Glyph g;
+        g.name       = name;
+        g.unicodes   = {cp};
+        g.advance    = plan.advance;
+        g.components = plan.components;
+        g.status     = model::GlyphStatus::Drafted;
+        g.order      = f.order_after(after);
+        f.put(name, Record{g});
     });
 }
 
@@ -216,12 +241,12 @@ void drag_translate(FontJournal& j, Font& f, double dx, double dy) {
     });
 }
 
-void drag_points(FontJournal& j, Font& f, const geom::Points& pts, double dx, double dy) {
+void drag_points(FontJournal& j, Font& f, const geom::Points& pts, double dx, double dy, bool free_handles) {
     Drag& d = drag();
     if (!j.in_gesture() || d.names.empty()) return;
     j.run("Move", {d.names[0]}, [&] {
         Glyph g = glyph_copy(f, d.names[0]);
-        geom::move_points(g, d.at_press[0], pts, {dx, dy});
+        geom::move_points(g, d.at_press[0], pts, {dx, dy}, free_handles);
         f.put(d.names[0], Record{g});
     });
 }
@@ -276,6 +301,188 @@ void drag_cancel(FontJournal& j) {
     drag().names.clear();
     drag().at_press.clear();
     j.cancel();
+}
+
+// ── components & anchors (M5) ──────────────────────────────────────────────
+
+namespace {
+// Does `from` reach `target` through its components (any depth)?
+bool reaches(const Font& f, const std::string& from, const std::string& target, int depth = 0) {
+    if (from == target) return true;
+    const Glyph* g = f.glyph(from);
+    if (!g || depth > 16) return false;
+    for (const auto& k : g->components)
+        if (reaches(f, k.base, target, depth + 1)) return true;
+    return false;
+}
+bool valid_anchor_name(const std::string& n) {
+    if (n.empty() || n.size() > 63) return false;
+    return std::all_of(n.begin(), n.end(), [](unsigned char c) {
+        return std::isalnum(c) || c == '_' || c == '.' || c == '-';
+    });
+}
+}  // namespace
+
+bool add_component(FontJournal& j, Font& f, const std::string& glyph, const std::string& base,
+                   double dx, double dy, std::string* why) {
+    if (!f.glyph(glyph)) return false;
+    if (!f.glyph(base)) { say(why, "There is no glyph named " + q(base) + "."); return false; }
+    if (reaches(f, base, glyph)) {
+        say(why, q(base) + " already uses " + q(glyph) + " -- a component can't contain itself.");
+        return false;
+    }
+    return j.run("Add component " + q(base), {glyph}, [&] {
+        Glyph g = glyph_copy(f, glyph);
+        model::Component k{base};
+        k.dx = std::round(dx);
+        k.dy = std::round(dy);
+        g.components.push_back(k);
+        if (g.status == model::GlyphStatus::Empty) g.status = model::GlyphStatus::Drafted;
+        f.put(glyph, Record{g});
+    });
+}
+
+bool decompose(FontJournal& j, Font& f, const std::string& glyph, std::string* why) {
+    const Glyph* was = f.glyph(glyph);
+    if (!was) return false;
+    if (was->components.empty()) { say(why, q(glyph) + " has no components."); return false; }
+    return j.run("Decompose " + q(glyph), {glyph}, [&] {
+        Glyph g = glyph_copy(f, glyph);
+        for (const auto& k : g.components)
+            for (auto& c : geom::component_contours(f, k)) g.contours.push_back(std::move(c));
+        g.components.clear();
+        g.snap();
+        f.put(glyph, Record{g});
+    });
+}
+
+bool add_anchor(FontJournal& j, Font& f, const std::string& glyph, const std::string& name,
+                double x, double y, std::string* why) {
+    const Glyph* was = f.glyph(glyph);
+    if (!was) return false;
+    if (!valid_anchor_name(name)) {
+        say(why, "Anchor names use A-Z a-z 0-9 _ . - (\"top\", \"_top\" on a mark).");
+        return false;
+    }
+    for (const auto& a : was->anchors)
+        if (a.name == name) { say(why, q(glyph) + " already has an anchor " + q(name) + "."); return false; }
+    return j.run("Add anchor " + q(name), {glyph}, [&] {
+        Glyph g = glyph_copy(f, glyph);
+        g.anchors.push_back({name, std::round(x), std::round(y)});
+        f.put(glyph, Record{g});
+    });
+}
+
+bool rename_anchor(FontJournal& j, Font& f, const std::string& glyph, int index, const std::string& name,
+                   std::string* why) {
+    const Glyph* was = f.glyph(glyph);
+    if (!was || index < 0 || index >= static_cast<int>(was->anchors.size())) return false;
+    if (was->anchors[index].name == name) return false;
+    if (!valid_anchor_name(name)) {
+        say(why, "Anchor names use A-Z a-z 0-9 _ . - (\"top\", \"_top\" on a mark).");
+        return false;
+    }
+    for (const auto& a : was->anchors)
+        if (a.name == name) { say(why, q(glyph) + " already has an anchor " + q(name) + "."); return false; }
+    return j.run("Rename anchor " + q(was->anchors[index].name), {glyph}, [&] {
+        Glyph g = glyph_copy(f, glyph);
+        g.anchors[index].name = name;
+        f.put(glyph, Record{g});
+    });
+}
+
+bool delete_points(FontJournal& j, Font& f, const std::string& glyph, const geom::Points& pts,
+                   std::string* why) {
+    const Glyph* was = f.glyph(glyph);
+    if (!was) return false;
+    std::vector<int> anchors, comps;
+    for (const auto& p : pts) {
+        if (!geom::valid(*was, p)) continue;
+        if (p.part == geom::PointRef::Part::Anchor) anchors.push_back(p.index);
+        if (p.part == geom::PointRef::Part::Component) comps.push_back(p.index);
+    }
+    if (anchors.empty() && comps.empty()) {
+        say(why, "Delete takes anchors and components for now -- deleting nodes comes with the pen tool.");
+        return false;
+    }
+    const std::size_t n = anchors.size() + comps.size();
+    return j.run(n == 1 ? (anchors.empty() ? "Delete component" : "Delete anchor")
+                        : "Delete " + std::to_string(n) + " items",
+                 {glyph}, [&] {
+        Glyph g = glyph_copy(f, glyph);
+        std::sort(anchors.rbegin(), anchors.rend());   // back to front: indices stay good
+        std::sort(comps.rbegin(), comps.rend());
+        for (int i : anchors) g.anchors.erase(g.anchors.begin() + i);
+        for (int i : comps) g.components.erase(g.components.begin() + i);
+        f.put(glyph, Record{g});
+    });
+}
+
+bool set_node_type(FontJournal& j, Font& f, const std::string& glyph, const geom::Points& pts,
+                   model::Node::Type type) {
+    const Glyph* was = f.glyph(glyph);
+    if (!was) return false;
+    std::set<std::pair<int, int>> nodes;
+    for (const auto& p : pts) {
+        if (!geom::valid(*was, p)) continue;
+        using P = geom::PointRef::Part;
+        if (p.part == P::Node || p.part == P::In || p.part == P::Out) nodes.insert({p.contour, p.index});
+    }
+    Glyph g = *was;
+    for (const auto& [c, i] : nodes) geom::set_node_type(g.contours[c], i, type);
+    if (g == *was) return false;
+    static const char* names[] = {"Smooth", "Cusp", "Symmetric", "Corner"};
+    const std::string label = std::string(names[static_cast<int>(type)]) +
+                              (nodes.size() == 1 ? " node" : " (" + std::to_string(nodes.size()) + " nodes)");
+    return j.run(label, {glyph}, [&] {
+        Glyph h = glyph_copy(f, glyph);
+        for (const auto& [c, i] : nodes) geom::set_node_type(h.contours[c], i, type);
+        f.put(glyph, Record{h});
+    });
+}
+
+bool set_position(FontJournal& j, Font& f, const std::string& glyph, const geom::PointRef& p,
+                  double x, double y) {
+    const Glyph* was = f.glyph(glyph);
+    if (!was || !geom::valid(*was, p)) return false;
+    const geom::Vec2 at = geom::position(*was, p);
+    const double dx = std::round(x) - at.x, dy = std::round(y) - at.y;
+    if (dx == 0 && dy == 0) return false;
+    const std::string key = "pos:" + glyph + ":" + std::to_string(static_cast<int>(p.part)) + ":" +
+                            std::to_string(p.contour) + ":" + std::to_string(p.index);
+    return j.run("Position", {glyph}, [&] {
+        Glyph g = glyph_copy(f, glyph);
+        const Glyph press = g;
+        geom::move_points(g, press, {p}, {dx, dy});
+        g.snap();
+        f.put(glyph, Record{g});
+    }, key);
+}
+
+bool add_default_anchors(FontJournal& j, Font& f, const std::vector<std::string>& glyphs, std::string* why) {
+    std::vector<std::string> ids;
+    std::size_t count = 0;
+    for (const auto& n : glyphs) {
+        const Glyph* g = f.glyph(n);
+        if (!g) continue;
+        const auto add = model::default_anchors(f, *g);
+        if (add.empty()) continue;
+        ids.push_back(n);
+        count += add.size();
+    }
+    if (ids.empty()) {
+        say(why, "Nothing to add: the anchors are there already, or these are not letters or marks.");
+        return false;
+    }
+    const std::string label = "Default anchors (" + std::to_string(count) + " in " + std::to_string(ids.size()) +
+                              (ids.size() == 1 ? " glyph)" : " glyphs)");
+    return j.run(label, ids, [&] {
+        for (const auto& n : ids) {
+            Glyph g = glyph_copy(f, n);
+            for (auto& a : model::default_anchors(f, g)) g.anchors.push_back(std::move(a));
+            f.put(n, Record{g});
+        }
+    });
 }
 
 // ── font records ───────────────────────────────────────────────────────────
@@ -394,6 +601,23 @@ const std::vector<Verb>& verbs() {
              drag_end(j, f); }},
         {"nudge",        [](FontJournal& j, Font& f) {
              nudge(j, f, "H", {{0, 0, geom::PointRef::Part::Node}}, 10, 0); }},
+        {"add_component", [](FontJournal& j, Font& f) { add_component(j, f, "n", "o", 40, 0); }},
+        {"set_node_type", [](FontJournal& j, Font& f) {
+             set_node_type(j, f, "o", {{0, 0, geom::PointRef::Part::Node}, {0, 2, geom::PointRef::Part::Node}},
+                           model::Node::Type::Smooth); }},
+        {"create_glyph_for", [](FontJournal& j, Font& f) { create_glyph_for(j, f, "Odieresis", U'\u00D6', "O"); }},
+        {"decompose",    [](FontJournal& j, Font& f) { decompose(j, f, "Odotbelow"); }},
+        {"add_anchor",   [](FontJournal& j, Font& f) { add_anchor(j, f, "H", "top", 350, 700); }},
+        {"rename_anchor", [](FontJournal& j, Font& f) { rename_anchor(j, f, "Odotbelow", 0, "center"); }},
+        {"delete_points", [](FontJournal& j, Font& f) {
+             delete_points(j, f, "Odotbelow", {{-1, 0, geom::PointRef::Part::Component}}); }},
+        {"set_position", [](FontJournal& j, Font& f) {
+             set_position(j, f, "o", {0, 0, geom::PointRef::Part::Node}, 61, -9); }},
+        {"add_default_anchors", [](FontJournal& j, Font& f) { add_default_anchors(j, f, {"H", "n", "o"}); }},
+        {"drag_component", [](FontJournal& j, Font& f) {
+             drag_begin(j, f, {"Odotbelow"}, "Move component");
+             drag_points(j, f, {{-1, 0, geom::PointRef::Part::Component}}, 13.7, -4.2);
+             drag_end(j, f); }},
         {"set_family",   [](FontJournal& j, Font& f) { set_family(j, f, "Garamond Nova"); }},
         {"set_style",    [](FontJournal& j, Font& f) { set_style(j, f, "Italic"); }},
         {"set_units_per_em", [](FontJournal& j, Font& f) { set_units_per_em(j, f, 2048); }},

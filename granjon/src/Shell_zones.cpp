@@ -170,6 +170,10 @@ Glib::RefPtr<Gio::Menu> Shell::build_menu() {  // zone: hamburger model
     m_edit_menu->append("Redo", "win.redo");
     menu->append_section(m_edit_menu);
 
+    auto fontm = Gio::Menu::create();
+    fontm->append("Add default anchors to every letter and mark", "win.font-anchors");
+    menu->append_section(fontm);
+
     auto view = Gio::Menu::create();
     view->append("Navigator", "win.show-navigator");
     view->append("Inspector", "win.show-inspector");

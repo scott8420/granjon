@@ -97,6 +97,14 @@ void Shell::on_dump_registry() {  // handler: print the live widget tree
     registry::dump();
 }
 
+void Shell::on_font_anchors() {  // handler: the menu's "Add default anchors to every letter and mark"
+    std::string why;
+    if (command::add_default_anchors(m_doc.journal, m_doc.font, m_doc.font.glyph_order(), &why))
+        say(m_doc.journal.undo_label() + ". Ctrl+Z takes them all back.", false);
+    else
+        say(why, false);
+}
+
 void Shell::on_preferences() {  // handler: Ctrl+,
     if (!m_prefs) m_prefs = std::make_unique<PreferencesWindow>(*this, m_ctx, m_settings_file);
     // Follow the window's motif (the colour tokens hang off window.granjon-light).

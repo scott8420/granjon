@@ -1,6 +1,7 @@
 #include "views/OverviewGrid.hpp"
 
 #include "command/Verbs.hpp"
+#include "model/Composite.hpp"
 #include "model/Coverage.hpp"
 #include "model/Find.hpp"
 #include "unicode/Agl.hpp"
@@ -69,6 +70,8 @@ OverviewGrid::OverviewGrid(ViewContext& ctx)
       m_checklist("overview.checklist"),
       m_create("overview.create"),
       m_size("overview.size", Gtk::Orientation::HORIZONTAL),
+      m_scope_label("overview.scope"),
+      m_scope_all("overview.scope_all"),
       m_scroll("overview.scroll"),
       m_sections("overview.sections", Gtk::Orientation::VERTICAL, 0) {
     add_css_class("overview");
@@ -89,6 +92,7 @@ OverviewGrid::OverviewGrid(ViewContext& ctx)
     append(m_scroll);
     m_ctx.selection_changed.connect([this] { sync_selection(); });
     m_ctx.filter_changed.connect([this] { refresh(); });
+    m_ctx.scope_changed.connect([this] { refresh(); });
 }
 
 void OverviewGrid::build_toolbar() {
@@ -113,6 +117,13 @@ void OverviewGrid::build_toolbar() {
     m_create.signal_clicked().connect([this] { create_missing(); });
     m_create.add_css_class("create-missing");
     m_bar.append(m_create);
+
+    m_scope_label.add_css_class("dim");
+    m_scope_all.set_label("Show all");
+    m_scope_all.set_tooltip_text("Back to the whole font (clears the navigator's pick)");
+    m_scope_all.signal_clicked().connect([this] { m_ctx.set_scope(std::nullopt); });
+    m_bar.append(m_scope_label);
+    m_bar.append(m_scope_all);
 
     auto spacer = Gtk::make_managed<Gtk::Box>();
     spacer->set_hexpand(true);
@@ -204,7 +215,11 @@ void OverviewGrid::update_coverage_ui() {
     m_coverage.set_label(cs->name + (m_missing.empty() ? "  ·  complete"
                                                        : "  ·  " + std::to_string(m_missing.size()) + " missing"));
     m_create.set_visible(!m_missing.empty());
-    m_create.set_label("Create " + std::to_string(m_missing.size()) + " missing");
+    // How many of the gaps the font's own parts can build (é = e + ´).
+    std::size_t built = 0;
+    for (char32_t cp : m_missing) built += model::plan_composite(m_ctx.doc.font, cp).ok() ? 1 : 0;
+    m_create.set_label("Create " + std::to_string(m_missing.size()) + " missing" +
+                       (built ? ", " + std::to_string(built) + " as composites" : std::string{}));
 }
 
 Gtk::FlowBoxChild* OverviewGrid::glyph_cell(const std::string& name) {
@@ -301,7 +316,12 @@ void OverviewGrid::refresh() {
     const auto order = font.glyph_order();
     const auto* cs = unicode::charset(m_charset);
     m_missing = cs ? model::missing_from(font, cs->cps) : std::vector<char32_t>{};
-    const bool gaps = cs && !m_ctx.filter;
+    const bool gaps = cs && !m_ctx.filter && !m_ctx.scope;   // a narrowed overview shows glyphs only
+    m_scope_label.set_visible(m_ctx.scope.has_value());
+    m_scope_all.set_visible(m_ctx.scope.has_value());
+    if (m_ctx.scope)
+        m_scope_label.set_text("Showing " + std::to_string(m_ctx.scope->size()) +
+                               (m_ctx.scope->size() == 1 ? " glyph" : " glyphs") + " picked in the navigator");
 
     // A section's items in code point order: a glyph (by its first code
     // point), or a gap. Unencoded glyphs keep glyph order, last.
@@ -309,7 +329,7 @@ void OverviewGrid::refresh() {
     std::map<std::pair<int, std::string>, std::vector<Item>> sections;
     for (std::size_t i = 0; i < order.size(); ++i) {
         const auto& name = order[i];
-        if (!m_ctx.shows(name)) continue;
+        if (!m_ctx.shows(name) || !m_ctx.in_scope(name)) continue;
         const model::Glyph* g = font.glyph(name);
         const std::string sec = unicode::section_of(g->unicodes);
         sections[{unicode::section_rank(sec), sec}].push_back(
@@ -346,7 +366,7 @@ void OverviewGrid::refresh() {
         m_sections.append(*flow);
     }
     if (sections.empty()) {
-        auto l = Gtk::make_managed<Gtk::Label>(m_ctx.filter ? "No glyph matches." : "No glyphs yet.");
+        auto l = Gtk::make_managed<Gtk::Label>(m_ctx.filter || m_ctx.scope ? "No glyph matches." : "No glyphs yet.");
         l->add_css_class("hint");
         l->set_margin(32);
         m_sections.append(*l);
@@ -395,10 +415,11 @@ void OverviewGrid::on_activated(Gtk::FlowBoxChild* c) {
         const char32_t cp = gap_cp(id);
         const std::string name = model::name_for_codepoint(d.font, cp);
         std::string why;
-        if (command::add_glyph(d.journal, d.font, name, {cp}, {}, &why)) {
+        bool built = false;
+        if (command::create_glyph_for(d.journal, d.font, name, cp, {}, &built, &why)) {
             m_ctx.select(name);
             d.journal.reselect({name});
-            m_ctx.say("Created " + name + " for " + unicode::format_cp(cp) + ".", false);
+            m_ctx.say("Created " + name + " for " + unicode::format_cp(cp) + (built ? ", built from its parts." : "."), false);
         } else if (!why.empty()) {
             m_ctx.say(why, true);
         }
@@ -412,8 +433,10 @@ void OverviewGrid::create_missing() {
     const auto* cs = unicode::charset(m_charset);
     if (!cs || m_missing.empty()) return;
     auto& d = m_ctx.doc;
-    const auto todo = model::glyphs_for(d.font, m_missing);
-    const std::string label = "Create " + std::to_string(todo.size()) + " missing (" + cs->name + ")";
+    auto todo = model::glyphs_for(d.font, m_missing);
+    const std::size_t built = model::plan_composites(d.font, todo);
+    const std::string label = "Create " + std::to_string(todo.size()) + " missing (" + cs->name + ")" +
+                              (built ? ", " + std::to_string(built) + " as composites" : std::string{});
     std::string why;
     if (command::add_glyphs(d.journal, d.font, todo, label, &why))
         m_ctx.say(label + ". Ctrl+Z takes them all back.", false);

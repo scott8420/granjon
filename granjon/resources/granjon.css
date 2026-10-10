@@ -331,3 +331,54 @@ popover.checklist-popover .badge { margin-left: 4px; }
 .editor { background-color: var(--bg-base); }
 .glyph-canvas { background-color: var(--bg-base); color: var(--fg-primary); }
 .glyph-canvas:focus-visible { outline: none; }
+
+/* Inspector (M5): component / anchor rows -- click one to pick it on the canvas. */
+.inspector button.part-row {
+    min-height: 0;
+    padding: 3px 6px;
+    border-radius: 6px;
+    background: none;
+    color: var(--fg-primary);
+    font-variant-numeric: tabular-nums;
+}
+.inspector button.part-row:hover { background-color: var(--hover-bg); }
+
+/* Editor toolbar (M5b): an on toggle reads as on. */
+.editor-bar button.toggle:checked,
+.editor-bar button.toggle:checked:hover {
+    background-color: var(--accent);
+    background-image: none;
+    color: var(--accent-fg);
+    box-shadow: none;
+}
+.inspector .node-types > button { padding: 2px 4px; min-width: 0; }
+.inspector .node-types > button:checked { background-color: var(--accent); background-image: none; color: var(--accent-fg); }
+.inspector button.toggle:checked { background-color: var(--accent); background-image: none; color: var(--accent-fg); }
+
+/* Navigator (M5b+): section headers are rows of their own that fold. */
+.navigator row.section-row,
+.navigator row.section-row:hover,
+.navigator row.section-row:selected { background: none; padding: 0; margin: 0; min-height: 0; }
+.navigator row.section-row:hover .section-header { color: var(--fg-primary); }
+.navigator .section-header .chevron { min-width: 12px; color: var(--fg-muted); }
+.navigator .section-header { padding: 8px 16px 4px 10px; }
+
+/* Navigator: a picked section (its glyphs show in the overview). */
+.navigator row.section-row.picked .section-header {
+    color: var(--accent-fg);
+    background-color: var(--accent-dim);
+    border-radius: 6px;
+    margin: 4px 8px 0 8px;
+}
+
+/* Editor tabs: one per glyph opened from the navigator. */
+.editor-tabs { padding: 4px 8px 0 8px; background-color: var(--bg-surface); }
+.editor-tab {
+    border-radius: 6px 6px 0 0;
+    background-color: var(--bg-raised);
+    color: var(--fg-muted);
+}
+.editor-tab.active { background-color: var(--bg-base); color: var(--fg-primary); }
+.editor-tab button { min-height: 24px; padding: 0 6px; border-radius: 6px; background: none; color: inherit; }
+.editor-tab button.tab-close { min-width: 18px; padding: 0 4px; opacity: 0.6; }
+.editor-tab button.tab-close:hover { opacity: 1; background-color: var(--hover-bg); }

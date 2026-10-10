@@ -22,6 +22,13 @@ void get(const json& j, const char* key, int& out) {
 void get(const json& j, const char* key, std::string& out) {
     if (j.contains(key) && j[key].is_string()) out = j[key].get<std::string>();
 }
+void get(const json& j, const char* key, std::vector<std::string>& out) {
+    if (!j.contains(key) || !j[key].is_array()) return;
+    out.clear();
+    for (const auto& e : j[key])
+        if (e.is_string() && std::find(out.begin(), out.end(), e.get<std::string>()) == out.end())
+            out.push_back(e.get<std::string>());
+}
 }  // namespace
 
 Settings load_settings(const std::string& file) {
@@ -36,6 +43,8 @@ Settings load_settings(const std::string& file) {
     const json g = j.value("general", json::object());
     const json e = j.value("editor", json::object());
     const json o = j.value("overview", json::object());
+    const json n = j.value("navigator", json::object());
+    if (n.is_object()) get(n, "open", s.navigator_open);
     if (g.is_object()) {
         get(g, "reopen_last", s.reopen_last);
         get(g, "last_font", s.last_font);
@@ -47,6 +56,9 @@ Settings load_settings(const std::string& file) {
         get(e, "context_upper", s.context_upper);
         get(e, "context_lower", s.context_lower);
         get(e, "sidebearing_modifier", s.sidebearing_mod);
+        get(e, "grid", s.editor_grid);
+        get(e, "snap", s.editor_snap);
+        get(e, "handles_relative", s.handles_relative);
     }
     if (o.is_object()) {
         get(o, "cell", s.overview_cell);
@@ -68,8 +80,12 @@ bool save_settings(const std::string& file, const Settings& s) {
                     {"context", s.editor_context},
                     {"context_upper", s.context_upper},
                     {"context_lower", s.context_lower},
-                    {"sidebearing_modifier", s.sidebearing_mod}}},
+                    {"sidebearing_modifier", s.sidebearing_mod},
+                    {"grid", s.editor_grid},
+                    {"snap", s.editor_snap},
+                    {"handles_relative", s.handles_relative}}},
         {"overview", {{"cell", s.overview_cell}, {"charset", s.overview_charset}}},
+        {"navigator", {{"open", s.navigator_open}}},
     };
     std::error_code ec;
     const auto dir = std::filesystem::path(file).parent_path();

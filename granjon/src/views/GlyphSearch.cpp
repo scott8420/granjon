@@ -196,10 +196,11 @@ void GlyphSearch::on_activate_row(Gtk::ListBoxRow* row) {
         const model::FindCreate c = m_create[i];
         std::string why;
         clear();
-        if (command::add_glyph(d.journal, d.font, c.name, {c.cp}, m_ctx.selected, &why)) {
+        bool built = false;
+        if (command::create_glyph_for(d.journal, d.font, c.name, c.cp, m_ctx.selected, &built, &why)) {
             m_ctx.select(c.name);
             d.journal.reselect({c.name});
-            m_ctx.say("Created " + c.name + " for " + unicode::format_cp(c.cp) + ".", false);
+            m_ctx.say("Created " + c.name + " for " + unicode::format_cp(c.cp) + (built ? ", built from its parts." : "."), false);
         } else if (!why.empty()) {
             m_ctx.say(why, true);
         }

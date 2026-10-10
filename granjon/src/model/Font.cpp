@@ -27,6 +27,7 @@ void Font::put(const Id& id, const std::optional<Record>& v) {
     else if (id == kFeatures)    m_features = v ? std::get<Features>(*v)    : Features{};
     else if (v)                  m_glyphs[id] = std::get<Glyph>(*v);
     else                         m_glyphs.erase(id);
+    m_cmap_ok = false;
 
     if (m_changed) m_changed();
 }
@@ -57,11 +58,14 @@ double Font::order_after(const std::string& name) const {
 }
 
 const Glyph* Font::glyph_for(char32_t cp) const {
-    for (const auto& n : glyph_order()) {
-        const Glyph& g = m_glyphs.at(n);
-        if (std::find(g.unicodes.begin(), g.unicodes.end(), cp) != g.unicodes.end()) return &g;
+    if (!m_cmap_ok) {
+        m_cmap.clear();
+        for (const auto& n : glyph_order())          // first in glyph order wins
+            for (char32_t u : m_glyphs.at(n).unicodes) m_cmap.emplace(u, n);
+        m_cmap_ok = true;
     }
-    return nullptr;
+    const auto it = m_cmap.find(cp);
+    return it == m_cmap.end() ? nullptr : &m_glyphs.at(it->second);
 }
 
 std::map<Font::Id, Record> Font::snapshot() const {

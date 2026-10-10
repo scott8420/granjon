@@ -175,6 +175,8 @@ void Shell::open_path(const std::string& path) {  // helper (already confirmed)
 
 void Shell::after_document_swap() {  // helper: new / open
     m_ctx.set_filter(std::nullopt);
+    m_ctx.set_scope(std::nullopt);
+    m_editor.clear_tabs();
     m_ctx.select({});
     repaint();
     update_undo_ui();

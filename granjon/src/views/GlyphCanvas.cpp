@@ -61,14 +61,28 @@ const char* type_name(model::Node::Type t) {
 GlyphCanvas::GlyphCanvas(ViewContext& ctx)
     : widgets::Box("editor", Gtk::Orientation::VERTICAL, 0),
       m_ctx(ctx),
+      m_tab_scroll("editor.tab_scroll"),
+      m_tabs("editor.tabs", Gtk::Orientation::HORIZONTAL, 2),
       m_bar("editor.bar", Gtk::Orientation::HORIZONTAL, 8),
       m_title("editor.title"),
       m_context("editor.context"),
       m_fill("editor.fill"),
+      m_grid("editor.grid"),
+      m_snap("editor.snap"),
       m_fit_button("editor.fit"),
+      m_anchors("editor.anchors"),
+      m_readout("editor.readout"),
       m_zoom("editor.zoom"),
-      m_area("editor.canvas") {
+      m_area("editor.canvas"),
+      m_pick(ctx.pick) {
     add_css_class("editor");
+
+    // ── tabs ───────────────────────────────────────────────────────────────
+    m_tabs.add_css_class("editor-tabs");
+    m_tab_scroll.set_policy(Gtk::PolicyType::AUTOMATIC, Gtk::PolicyType::NEVER);
+    m_tab_scroll.set_child(m_tabs);
+    m_tab_scroll.set_visible(false);
+    append(m_tab_scroll);
 
     // ── toolbar ────────────────────────────────────────────────────────────
     m_bar.add_css_class("overview-bar");   // the same strip the overview wears
@@ -76,6 +90,7 @@ GlyphCanvas::GlyphCanvas(ViewContext& ctx)
     m_title.set_xalign(0.0f);
     m_title.set_hexpand(true);
     m_title.set_ellipsize(Pango::EllipsizeMode::END);
+    m_title.set_width_chars(10);
     m_context.set_label("Context");
     m_context.set_active(m_ctx.settings.editor_context);
     m_context.set_tooltip_text("Ghost a context glyph either side: H beside capitals and figures, n beside the rest");
@@ -85,12 +100,35 @@ GlyphCanvas::GlyphCanvas(ViewContext& ctx)
     m_fit_button.set_label("Fit");
     m_fit_button.set_tooltip_text("Fit the glyph (Ctrl+0)");
     m_zoom.add_css_class("dim");
-    m_zoom.set_width_chars(6);
+    m_zoom.set_width_chars(16);
     m_zoom.set_xalign(1.0f);
     m_bar.append(m_title);
+    m_anchors.set_label("Anchors");
+    m_anchors.set_tooltip_text("Add default anchors to this glyph (top / bottom; _top / _bottom on a mark) -- one undo step");
+    m_anchors.signal_clicked().connect([this] {
+        if (!glyph()) return;
+        std::string why;
+        if (!command::add_default_anchors(m_ctx.doc.journal, m_ctx.doc.font, {m_shown}, &why) && m_ctx.say)
+            m_ctx.say(why, false);
+        m_area.grab_focus();
+    });
+    m_bar.append(m_anchors);
     m_bar.append(m_context);
     m_bar.append(m_fill);
+    m_grid.set_label("Grid");
+    m_grid.set_active(m_ctx.settings.editor_grid);
+    m_grid.set_tooltip_text("A grid that follows the zoom: tenths of a unit close in, whole units drawn stronger");
+    m_snap.set_label("Snap");
+    m_snap.set_active(m_ctx.settings.editor_snap);
+    m_snap.set_tooltip_text("Drags snap to the grid (when shown), the metric lines, the sidebearings and the other nodes. "
+                            "Ctrl (fine drag) never snaps.");
+    m_bar.append(m_grid);
+    m_bar.append(m_snap);
     m_bar.append(m_fit_button);
+    m_readout.add_css_class("dim");
+    m_readout.set_width_chars(11);
+    m_readout.set_xalign(1.0f);
+    m_bar.append(m_readout);
     m_bar.append(m_zoom);
     append(m_bar);
     // The toggles ARE the preferences: flipping one is remembered.
@@ -103,9 +141,16 @@ GlyphCanvas::GlyphCanvas(ViewContext& ctx)
     };
     m_context.signal_toggled().connect([this, remember] { remember(m_ctx.settings.editor_context, m_context.get_active()); });
     m_fill.signal_toggled().connect([this, remember] { remember(m_ctx.settings.editor_fill, m_fill.get_active()); });
+    m_grid.signal_toggled().connect([this, remember] {
+        remember(m_ctx.settings.editor_grid, m_grid.get_active());
+        update_zoom_label();
+    });
+    m_snap.signal_toggled().connect([this, remember] { remember(m_ctx.settings.editor_snap, m_snap.get_active()); });
     m_ctx.settings_changed.connect([this] {
         if (m_context.get_active() != m_ctx.settings.editor_context) m_context.set_active(m_ctx.settings.editor_context);
         if (m_fill.get_active() != m_ctx.settings.editor_fill) m_fill.set_active(m_ctx.settings.editor_fill);
+        if (m_grid.get_active() != m_ctx.settings.editor_grid) m_grid.set_active(m_ctx.settings.editor_grid);
+        if (m_snap.get_active() != m_ctx.settings.editor_snap) m_snap.set_active(m_ctx.settings.editor_snap);
         m_area.queue_draw();   // context names may have changed
     });
     m_fit_button.signal_clicked().connect([this] { fit(); m_area.grab_focus(); });
@@ -124,6 +169,22 @@ GlyphCanvas::GlyphCanvas(ViewContext& ctx)
     m_drag->signal_drag_update().connect([this](double dx, double dy) { on_drag(dx, dy); });
     m_drag->signal_drag_end().connect([this](double dx, double dy) { on_release(dx, dy); });
     m_area.add_controller(m_drag);
+
+    m_click = Gtk::GestureClick::create();
+    m_click->set_button(GDK_BUTTON_PRIMARY);
+    m_click->signal_pressed().connect([this](int n, double x, double y) {
+        if (n != 2) return;
+        const model::Glyph* g = glyph();
+        if (!g) return;
+        const geom::Hit hit = geom::hit_test(*g, to_font(x, y), kHitPx / m_s);
+        if (hit.kind != geom::Hit::Kind::Node) return;
+        // Corner <-> smooth (any other type goes to corner).
+        const auto t = g->contours[hit.contour].nodes[hit.index].type;
+        const auto to = t == model::Node::Type::Corner ? model::Node::Type::Smooth : model::Node::Type::Corner;
+        command::set_node_type(m_ctx.doc.journal, m_ctx.doc.font, m_shown, {{hit.contour, hit.index, Part::Node}}, to);
+        say_pick();
+    });
+    m_area.add_controller(m_click);
 
     m_pan = Gtk::GestureDrag::create();
     m_pan->set_button(GDK_BUTTON_MIDDLE);
@@ -160,10 +221,65 @@ GlyphCanvas::GlyphCanvas(ViewContext& ctx)
     m_area.add_controller(keys);
 
     m_ctx.selection_changed.connect([this] { refresh(); });
+    m_ctx.pick_changed.connect([this] { m_area.queue_draw(); });   // the inspector can pick too
     refresh();
 }
 
-void GlyphCanvas::focus_canvas() { m_area.grab_focus(); }
+void GlyphCanvas::focus_canvas() {
+    // Coming to the front (Ctrl+2, a double-click): the glyph in hand gets a tab.
+    if (glyph() && std::find(m_tab_names.begin(), m_tab_names.end(), m_ctx.selected) == m_tab_names.end()) {
+        m_tab_names.push_back(m_ctx.selected);
+        rebuild_tabs();
+    }
+    m_area.grab_focus();
+}
+
+void GlyphCanvas::open_tabs(const std::vector<std::string>& names, const std::string& active) {
+    for (const auto& n : names)
+        if (m_ctx.doc.font.glyph(n) && std::find(m_tab_names.begin(), m_tab_names.end(), n) == m_tab_names.end())
+            m_tab_names.push_back(n);
+    rebuild_tabs();
+    if (!active.empty()) m_ctx.select(active);
+}
+
+void GlyphCanvas::clear_tabs() {
+    m_tab_names.clear();
+    rebuild_tabs();
+}
+
+void GlyphCanvas::close_tab(const std::string& name) {
+    const auto it = std::find(m_tab_names.begin(), m_tab_names.end(), name);
+    if (it == m_tab_names.end()) return;
+    const std::size_t at = static_cast<std::size_t>(it - m_tab_names.begin());
+    m_tab_names.erase(it);
+    rebuild_tabs();
+    if (name == m_ctx.selected) {   // the front tab closed: its neighbour comes forward
+        if (m_tab_names.empty()) m_ctx.select({});
+        else m_ctx.select(m_tab_names[std::min(at, m_tab_names.size() - 1)]);
+    }
+}
+
+void GlyphCanvas::rebuild_tabs() {
+    while (auto* c = m_tabs.get_first_child()) m_tabs.remove(*c);
+    for (const auto& n : m_tab_names) {
+        auto tab = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::HORIZONTAL, 0);
+        tab->add_css_class("editor-tab");
+        if (n == m_ctx.selected) tab->add_css_class("active");
+        auto label = Gtk::make_managed<Gtk::Button>(n);
+        label->set_has_frame(false);
+        label->add_css_class("tab-label");
+        label->signal_clicked().connect([this, n] { m_ctx.select(n); focus_canvas(); });
+        auto close = Gtk::make_managed<Gtk::Button>("\u00D7");
+        close->set_has_frame(false);
+        close->add_css_class("tab-close");
+        close->set_tooltip_text("Close this tab");
+        close->signal_clicked().connect([this, n] { close_tab(n); });
+        tab->append(*label);
+        tab->append(*close);
+        m_tabs.append(*tab);
+    }
+    m_tab_scroll.set_visible(!m_tab_names.empty());
+}
 
 const model::Glyph* GlyphCanvas::glyph() const {
     return m_ctx.selected.empty() ? nullptr : m_ctx.doc.font.glyph(m_ctx.selected);
@@ -173,16 +289,30 @@ const model::Glyph* GlyphCanvas::glyph() const {
 
 void GlyphCanvas::refresh() {
     const model::Glyph* g = glyph();
+    // Tabs: drop the ones whose glyph is gone (undo of an add, a rename).
+    {
+        const auto before = m_tab_names.size();
+        std::erase_if(m_tab_names, [&](const std::string& n) { return !m_ctx.doc.font.glyph(n); });
+        // Selected elsewhere WHILE the editor is in front: it joins the tabs.
+        // (Browsing the overview or navigator does not collect tabs.)
+        const bool joined = g && get_mapped() &&
+                            std::find(m_tab_names.begin(), m_tab_names.end(), g->name) == m_tab_names.end();
+        if (joined) m_tab_names.push_back(g->name);
+        if (joined || before != m_tab_names.size() || m_ctx.selected != m_shown) rebuild_tabs();
+    }
     if (m_ctx.selected != m_shown) {
         if (m_mode != Mode::None) cancel_drag();
         m_shown = m_ctx.selected;
         m_pick.clear();
+        m_ctx.pick_changed.emit();
         m_fitted = false;   // a new glyph: fit it on the next draw
     }
     if (g) {
         // Undo / redo may have taken points away: drop the stale ones.
+        const std::size_t had = m_pick.size();
         for (auto it = m_pick.begin(); it != m_pick.end();)
             it = geom::valid(*g, *it) ? std::next(it) : m_pick.erase(it);
+        if (m_pick.size() != had) m_ctx.pick_changed.emit();
         std::string t = g->name;
         if (!g->unicodes.empty()) {
             std::ostringstream o;
@@ -216,7 +346,9 @@ void GlyphCanvas::update_zoom_label() {
     // fit() can run inside the draw (first draw after a glyph change), and a
     // label changed mid-snapshot doesn't relayout -- set it on the next idle.
     Glib::signal_idle().connect_once([this] {
-        m_zoom.set_text(std::to_string(static_cast<int>(std::lround(m_s * 100))) + "%");
+        std::string t = std::to_string(static_cast<int>(std::lround(m_s * 100))) + "%";
+        if (m_grid.get_active()) t += "  \u00B7  grid " + fmt(geom::grid_step(m_s));
+        m_zoom.set_text(t);
     });
 }
 
@@ -267,6 +399,7 @@ void GlyphCanvas::on_draw(const Cairo::RefPtr<Cairo::Context>& cr, int w, int h)
     }
     const auto& font = m_ctx.doc.font;
 
+    if (m_grid.get_active()) draw_grid(cr, w, h);
     draw_guides(cr, w, h, *g);
 
     // A path in font units, built under the y-up matrix, stroked in pixels.
@@ -305,6 +438,18 @@ void GlyphCanvas::on_draw(const Cairo::RefPtr<Cairo::Context>& cr, int w, int h)
         cr->set_dash(dash, 0);
         cr->stroke();
         cr->unset_dash();
+        // Picked components: an accent outline.
+        for (int i = 0; i < static_cast<int>(g->components.size()); ++i) {
+            if (!m_pick.count({-1, i, Part::Component})) continue;
+            model::Glyph one;
+            one.components = {g->components[i]};
+            font_path(one, 0);
+            cr->set_source_rgba(NS[0], NS[1], NS[2], 0.18);
+            cr->fill_preserve();
+            cr->set_source_rgba(NS[0], NS[1], NS[2], 0.95);
+            cr->set_line_width(2.0);
+            cr->stroke();
+        }
     }
 
     // The outline.
@@ -322,6 +467,26 @@ void GlyphCanvas::on_draw(const Cairo::RefPtr<Cairo::Context>& cr, int w, int h)
     draw_overlay(cr, *g);
     draw_anchors(cr, *g);
 
+    // What the lead point snapped to, while dragging: a dashed accent line.
+    if (m_mode == Mode::Points && (m_snap_x || m_snap_y)) {
+        std::vector<double> dash{4.0, 3.0};
+        cr->set_dash(dash, 0);
+        cr->set_source_rgba(NS[0], NS[1], NS[2], 0.9);
+        cr->set_line_width(1.0);
+        if (m_snap_x) {
+            const double x = std::round(to_screen({*m_snap_x, 0}).x) + 0.5;
+            cr->move_to(x, 0);
+            cr->line_to(x, h);
+        }
+        if (m_snap_y) {
+            const double y = std::round(to_screen({0, *m_snap_y}).y) + 0.5;
+            cr->move_to(0, y);
+            cr->line_to(w, y);
+        }
+        cr->stroke();
+        cr->unset_dash();
+    }
+
     if (m_mode == Mode::Marquee) {
         const double x0 = std::min(m_press_x, m_mx), y0 = std::min(m_press_y, m_my);
         cr->rectangle(std::round(x0) + 0.5, std::round(y0) + 0.5, std::round(std::abs(m_mx - m_press_x)),
@@ -330,6 +495,40 @@ void GlyphCanvas::on_draw(const Cairo::RefPtr<Cairo::Context>& cr, int w, int h)
         cr->fill_preserve();
         cr->set_source_rgba(NS[0], NS[1], NS[2], 0.8);
         cr->set_line_width(1.0);
+        cr->stroke();
+    }
+}
+
+// The grid follows the zoom: tenths of a unit close in, 20s / 50s far out.
+// Every tenth line is stronger; when the step is under a unit, whole units are
+// stronger still -- the "obvious way to tell whole values" (Scott).
+void GlyphCanvas::draw_grid(const Cairo::RefPtr<Cairo::Context>& cr, int w, int h) {
+    const auto fg = m_area.get_color();
+    const double r = fg.get_red(), gr = fg.get_green(), b = fg.get_blue();
+    const double step = geom::grid_step(m_s);
+    const geom::Vec2 lo = to_font(0, h), hi = to_font(w, 0);
+    const long x0 = static_cast<long>(std::floor(lo.x / step)), x1 = static_cast<long>(std::ceil(hi.x / step));
+    const long y0 = static_cast<long>(std::floor(lo.y / step)), y1 = static_cast<long>(std::ceil(hi.y / step));
+    if ((x1 - x0) + (y1 - y0) > 4000) return;
+    auto alpha = [&](long k) {
+        if (k % 10 == 0) return 0.13;                                  // major
+        const double v = k * step;
+        if (step < 1 && std::abs(v - std::round(v)) < 1e-9) return 0.10;   // a whole unit
+        return 0.045;
+    };
+    cr->set_line_width(1.0);
+    for (long k = x0; k <= x1; ++k) {
+        const double x = std::round(to_screen({k * step, 0}).x) + 0.5;
+        cr->set_source_rgba(r, gr, b, alpha(k));
+        cr->move_to(x, 0);
+        cr->line_to(x, h);
+        cr->stroke();
+    }
+    for (long k = y0; k <= y1; ++k) {
+        const double y = std::round(to_screen({0, k * step}).y) + 0.5;
+        cr->set_source_rgba(r, gr, b, alpha(k));
+        cr->move_to(0, y);
+        cr->line_to(w, y);
         cr->stroke();
     }
 }
@@ -548,11 +747,17 @@ void GlyphCanvas::on_press(double x, double y) {
     const auto st = m_drag->get_current_event_state();
     const bool shift = (st & Gdk::ModifierType::SHIFT_MASK) == Gdk::ModifierType::SHIFT_MASK;
     const geom::Hit hit = geom::hit_test(*g, to_font(x, y), kHitPx / m_s);
+    m_press_glyph = *g;
+    m_lead = {};   // invalid: nothing snaps unless a point was grabbed
+    m_unpick.reset();
 
     auto pick_one = [&](PointRef ref) {
+        if (ref.part != Part::Component) m_lead = ref;   // a component's offset does not snap
         if (shift) {
-            if (m_pick.erase(ref)) { m_mode = Mode::None; return; }   // Shift on a picked one: drop it
-            m_pick.insert(ref);
+            // Shift on a picked one: a Shift-DRAG constrains the move; only a
+            // Shift-CLICK (no drag by the release) drops it from the pick.
+            if (m_pick.count(ref)) m_unpick = ref;
+            else m_pick.insert(ref);
         } else if (!m_pick.count(ref)) {
             m_pick = {ref};
         }
@@ -569,13 +774,30 @@ void GlyphCanvas::on_press(double x, double y) {
         m_mode = Mode::Sidebearing;
         m_side = side;
         m_press_advance = g->advance;
-    } else if (hit.kind == K::Segment) {
+    } else if (hit.kind == K::Segment || hit.kind == K::None) {
+        if (hit.kind == K::None) {
+            // Inside a component's drawing: pick the whole component.
+            const int ci = geom::component_at(m_ctx.doc.font, *g, to_font(x, y));
+            if (ci >= 0) {
+                pick_one({-1, ci, Part::Component});
+                say_pick();
+                m_area.queue_draw();
+                return;
+            }
+            m_mode = Mode::Marquee;
+            m_press_pick = shift ? m_pick : geom::Points{};
+            if (!shift) m_pick.clear();
+            say_pick();
+            m_area.queue_draw();
+            return;
+        }
         const int n = static_cast<int>(g->contours[hit.contour].nodes.size());
         const PointRef a{hit.contour, hit.index, Part::Node};
         const PointRef b{hit.contour, (hit.index + 1) % n, Part::Node};
         if (!shift && !(m_pick.count(a) && m_pick.count(b))) m_pick.clear();
         m_pick.insert(a);
         m_pick.insert(b);
+        m_lead = a;
         m_mode = Mode::Points;
     } else {
         m_mode = Mode::Marquee;
@@ -618,7 +840,62 @@ void GlyphCanvas::on_drag(double dx, double dy) {
             }
             const double fdx = dx / m_s, fdy = -dy / m_s;
             if (m_mode == Mode::Points) {
-                command::drag_points(doc.journal, doc.font, m_pick, fdx, fdy);
+                const auto st = m_drag->get_current_event_state();
+                auto has = [&](Gdk::ModifierType m) { return (st & m) == m; };
+                const bool shift = has(Gdk::ModifierType::SHIFT_MASK);
+                const bool alt   = has(Gdk::ModifierType::ALT_MASK);
+                const bool ctrl  = has(Gdk::ModifierType::CONTROL_MASK);
+                bool handles_only = !m_pick.empty();
+                for (const auto& p : m_pick)
+                    if (p.part != Part::In && p.part != Part::Out) handles_only = false;
+                geom::Vec2 d{fdx, fdy};
+                if (ctrl) d = d * 0.1;   // fine drag
+                bool lock_x = false, lock_y = false;   // the axis Shift holds still
+                if (shift) {
+                    if (handles_only && m_pick.size() == 1 && geom::valid(m_press_glyph, *m_pick.begin())) {
+                        // A handle locks to horizontal / vertical FROM ITS NODE (Curvz).
+                        const auto& p = *m_pick.begin();
+                        const auto& n = m_press_glyph.contours[p.contour].nodes[p.index];
+                        const geom::Vec2 a{n.x, n.y}, h0 = geom::position(m_press_glyph, p);
+                        const geom::Vec2 v = geom::axis_lock(h0 + d - a);
+                        d = a + v - h0;
+                        lock_x = v.x == 0;
+                        lock_y = v.y == 0;
+                    } else {
+                        d = geom::axis_lock(d);
+                        lock_x = d.x == 0;
+                        lock_y = d.y == 0;
+                    }
+                }
+                // Snap the lead point (the one that was under the pointer).
+                m_snap_x.reset();
+                m_snap_y.reset();
+                if (m_snap.get_active() && !ctrl && geom::valid(m_press_glyph, m_lead)) {
+                    const auto& m = doc.font.metrics();
+                    const double os = m.overshoot;
+                    std::vector<double> xs{0.0, m_press_glyph.advance};
+                    std::vector<double> ys{0.0, double(m.x_height), double(m.cap_height), double(m.ascender),
+                                           double(m.descender), -os, m.x_height + os, m.cap_height + os};
+                    for (int ci = 0; ci < static_cast<int>(m_press_glyph.contours.size()); ++ci)
+                        for (int ni = 0; ni < static_cast<int>(m_press_glyph.contours[ci].nodes.size()); ++ni) {
+                            if (m_pick.count({ci, ni, Part::Node})) continue;   // moving with us
+                            const auto& n = m_press_glyph.contours[ci].nodes[ni];
+                            xs.push_back(n.x);
+                            ys.push_back(n.y);
+                        }
+                    const double grid = m_grid.get_active() ? std::max(1.0, geom::grid_step(m_s)) : 0.0;
+                    const double tol = kHitPx / m_s;
+                    const geom::Vec2 p0 = geom::position(m_press_glyph, m_lead);
+                    geom::Vec2 p = p0 + d;
+                    if (!lock_x) p.x = geom::snap_axis(p.x, xs, grid, tol, &m_snap_x);
+                    if (!lock_y) p.y = geom::snap_axis(p.y, ys, grid, tol, &m_snap_y);
+                    d = p - p0;
+                }
+                command::drag_points(doc.journal, doc.font, m_pick, d.x, d.y, alt && handles_only);
+                std::ostringstream o;
+                o << "\u0394 " << fmt(std::round(d.x)) << ", " << fmt(std::round(d.y));
+                m_readout.set_text(o.str());
+                m_area.queue_draw();
             } else {
                 const auto st = m_drag->get_current_event_state();
                 const auto& mod = m_ctx.settings.sidebearing_mod;
@@ -644,6 +921,8 @@ void GlyphCanvas::on_drag(double dx, double dy) {
 void GlyphCanvas::on_release(double /*dx*/, double /*dy*/) {
     const Mode was = m_mode;
     m_mode = Mode::None;
+    if (m_unpick && !m_began) m_pick.erase(*m_unpick);   // it was a Shift-click, not a drag
+    m_unpick.reset();
     if ((was == Mode::Points || was == Mode::Sidebearing) && m_began) {
         auto& doc = m_ctx.doc;
         command::drag_end(doc.journal, doc.font);   // snaps, then one step
@@ -652,6 +931,9 @@ void GlyphCanvas::on_release(double /*dx*/, double /*dy*/) {
     }
     m_began = false;
     m_side = -1;
+    m_snap_x.reset();
+    m_snap_y.reset();
+    m_readout.set_text("");
     say_pick();
     m_area.queue_draw();
 }
@@ -678,6 +960,17 @@ bool GlyphCanvas::on_key(guint keyval, guint, Gdk::ModifierType state) {
         else { m_pick.clear(); say_pick(); m_area.queue_draw(); }
         return true;
     }
+    if ((keyval == GDK_KEY_Delete || keyval == GDK_KEY_KP_Delete || keyval == GDK_KEY_BackSpace) && !ctrl) {
+        if (!g || m_pick.empty() || m_mode != Mode::None) return true;
+        std::string why;
+        if (command::delete_points(m_ctx.doc.journal, m_ctx.doc.font, m_shown, m_pick, &why)) {
+            m_pick.clear();
+            say_pick();
+        } else if (!why.empty() && m_ctx.say) {
+            m_ctx.say(why, true);
+        }
+        return true;
+    }
     if (keyval == GDK_KEY_space && !ctrl) {
         if (!m_space) { m_space = true; m_area.set_cursor("grab"); }
         return true;
@@ -700,6 +993,8 @@ bool GlyphCanvas::on_key(guint keyval, guint, Gdk::ModifierType state) {
                     for (int i = 0; i < static_cast<int>(g->contours[c].nodes.size()); ++i)
                         m_pick.insert({c, i, Part::Node});
                 for (int i = 0; i < static_cast<int>(g->anchors.size()); ++i) m_pick.insert({-1, i, Part::Anchor});
+                for (int i = 0; i < static_cast<int>(g->components.size()); ++i)
+                    m_pick.insert({-1, i, Part::Component});
                 say_pick();
                 m_area.queue_draw();
                 return true;
@@ -729,8 +1024,14 @@ void GlyphCanvas::on_key_released(guint keyval, guint, Gdk::ModifierType) {
     }
 }
 
+void GlyphCanvas::update_readout(double sx, double sy) {
+    if (!glyph()) { m_readout.set_text(""); return; }
+    const geom::Vec2 p = to_font(sx, sy);
+    m_readout.set_text(fmt(std::round(p.x)) + ", " + fmt(std::round(p.y)));
+}
+
 void GlyphCanvas::on_motion(double x, double y) {
-    if (m_mode == Mode::None) { m_mx = x; m_my = y; }
+    if (m_mode == Mode::None) { m_mx = x; m_my = y; update_readout(x, y); }
     if (m_mode == Mode::Marquee || m_mode == Mode::Points) return;
     const int side = m_mode == Mode::None ? sidebearing_at(x, y) : m_side;
     if (m_space) {
@@ -752,6 +1053,7 @@ void GlyphCanvas::on_motion(double x, double y) {
 
 // The status line speaks for the pick: one point's coordinates, else a count.
 void GlyphCanvas::say_pick() {
+    m_ctx.pick_changed.emit();
     if (!m_ctx.say) return;
     const model::Glyph* g = glyph();
     if (!g) return;
@@ -770,6 +1072,7 @@ void GlyphCanvas::say_pick() {
         std::string what;
         switch (p.part) {
             case Part::Anchor: what = "Anchor “" + g->anchors[p.index].name + "”"; break;
+            case Part::Component: what = "Component “" + g->components[p.index].base + "”, offset"; break;
             case Part::In:     what = "In-handle"; break;
             case Part::Out:    what = "Out-handle"; break;
             default:

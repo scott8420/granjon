@@ -19,6 +19,7 @@
 
 #include <functional>
 #include <map>
+#include <unordered_map>
 #include <optional>
 #include <string>
 #include <variant>
@@ -82,6 +83,11 @@ private:
     int                          m_loading = 0;
     std::function<bool()>        m_door;
     std::function<void()>        m_changed;
+    // glyph_for's map (code point -> first glyph in glyph order), built on
+    // first use, dropped by every put. Without it each lookup sorted the
+    // whole glyph order (~14 ms per call on a 1000-glyph font).
+    mutable std::unordered_map<char32_t, std::string> m_cmap;
+    mutable bool                                      m_cmap_ok = false;
 };
 
 using FontJournal = core::Journal<Font>;

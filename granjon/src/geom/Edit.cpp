@@ -108,11 +108,91 @@ void move_handle_out(Contour& c, int idx, Vec2 pos) {
     move_handle(n, n.cx2, n.cy2, n.cx1, n.cy1, pos);
 }
 
+
+// ── node type (Curvz BezierPath::set_node_type, on a Contour) ────────────────
+
+namespace {
+// Handles along the bisector of the neighbour directions, a third of the
+// average chord -- Curvz's seed for a node that has none.
+void seed_bisect(Contour& c, int idx) {
+    const int nn = static_cast<int>(c.nodes.size());
+    Node& n = c.nodes[idx];
+    const bool has_prev = idx > 0 || c.closed;
+    const bool has_next = idx < nn - 1 || c.closed;
+    const Vec2 a = anchor(n);
+    if (has_prev && has_next) {
+        const Vec2 pa = anchor(c.nodes[wrap(idx - 1, nn)]), na = anchor(c.nodes[wrap(idx + 1, nn)]);
+        const double len = ((a - pa).length() + (na - a).length()) * 0.5 * 0.333;
+        Vec2 bis = ((a - pa).normalised() + (na - a).normalised()).normalised();
+        if (bis.length() < 1e-9) bis = (na - a).normalised();
+        n.cx1 = n.x - bis.x * len; n.cy1 = n.y - bis.y * len;
+        n.cx2 = n.x + bis.x * len; n.cy2 = n.y + bis.y * len;
+    } else if (has_next) {
+        const Vec2 na = anchor(c.nodes[wrap(idx + 1, nn)]);
+        const Vec2 dir = (na - a).normalised();
+        const double len = (na - a).length() * 0.333;
+        n.cx1 = n.x - dir.x * len; n.cy1 = n.y - dir.y * len;
+        n.cx2 = n.x + dir.x * len; n.cy2 = n.y + dir.y * len;
+    } else if (has_prev) {
+        const Vec2 pa = anchor(c.nodes[wrap(idx - 1, nn)]);
+        const Vec2 dir = (a - pa).normalised();
+        const double len = (a - pa).length() * 0.333;
+        n.cx1 = n.x - dir.x * len; n.cy1 = n.y - dir.y * len;
+        n.cx2 = n.x + dir.x * len; n.cy2 = n.y + dir.y * len;
+    }
+}
+}  // namespace
+
+void set_node_type(Contour& c, int idx, Type type) {
+    const int nn = static_cast<int>(c.nodes.size());
+    if (idx < 0 || idx >= nn) return;
+    Node& n = c.nodes[idx];
+    const Type old = n.type;
+    n.type = type;
+    const Vec2 in{n.cx1 - n.x, n.cy1 - n.y}, out{n.cx2 - n.x, n.cy2 - n.y};
+    const bool in_degen = in.length() < 1e-9, out_degen = out.length() < 1e-9;
+    switch (type) {
+        case Type::Corner:
+            break;   // handles stay exactly where they are
+        case Type::Cusp:
+            recompute_cusp_handles(c, idx);
+            break;
+        case Type::Symmetric:
+            if (old == Type::Symmetric) break;
+            if (in_degen && out_degen) { seed_bisect(c, idx); break; }
+            if (old == Type::Corner) break;   // keep the geometry; enforced on the next handle drag
+            if (!in_degen) { n.cx2 = n.x - in.x;  n.cy2 = n.y - in.y; }
+            else           { n.cx1 = n.x - out.x; n.cy1 = n.y - out.y; }
+            break;
+        case Type::Smooth:
+            if (old == Type::Cusp && !in_degen && !out_degen) {
+                const Vec2 dir = out.normalised();
+                n.cx1 = n.x - dir.x * in.length();
+                n.cy1 = n.y - dir.y * in.length();
+            } else if (old == Type::Corner) {
+                if (in_degen && out_degen) { seed_bisect(c, idx); break; }
+                // Granjon addition: a corner with handles goes smooth by lining
+                // them up on their average direction, lengths kept (Curvz
+                // re-seeded from the chord, throwing the designer's lengths away).
+                const Vec2 dir = in_degen ? out.normalised() : out_degen ? (in * -1.0).normalised()
+                                                                         : (out.normalised() - in.normalised()).normalised();
+                if (dir.length() < 1e-9) break;
+                const double li = in_degen ? out.length() : in.length();
+                const double lo = out_degen ? in.length() : out.length();
+                n.cx1 = n.x - dir.x * li; n.cy1 = n.y - dir.y * li;
+                n.cx2 = n.x + dir.x * lo; n.cy2 = n.y + dir.y * lo;
+            }
+            break;
+    }
+}
+
 // ── points ─────────────────────────────────────────────────────────────────
 
 bool valid(const model::Glyph& g, const PointRef& p) {
     if (p.part == PointRef::Part::Anchor)
         return p.index >= 0 && p.index < static_cast<int>(g.anchors.size());
+    if (p.part == PointRef::Part::Component)
+        return p.index >= 0 && p.index < static_cast<int>(g.components.size());
     return p.contour >= 0 && p.contour < static_cast<int>(g.contours.size()) && p.index >= 0 &&
            p.index < static_cast<int>(g.contours[p.contour].nodes.size());
 }
@@ -120,6 +200,7 @@ bool valid(const model::Glyph& g, const PointRef& p) {
 Vec2 position(const model::Glyph& g, const PointRef& p) {
     if (!valid(g, p)) return {};
     if (p.part == PointRef::Part::Anchor) return {g.anchors[p.index].x, g.anchors[p.index].y};
+    if (p.part == PointRef::Part::Component) return {g.components[p.index].dx, g.components[p.index].dy};
     const Node& n = g.contours[p.contour].nodes[p.index];
     switch (p.part) {
         case PointRef::Part::In:  return {n.cx1, n.cy1};
@@ -128,10 +209,11 @@ Vec2 position(const model::Glyph& g, const PointRef& p) {
     }
 }
 
-void move_points(model::Glyph& g, const model::Glyph& at_press, const Points& pts, Vec2 d) {
+void move_points(model::Glyph& g, const model::Glyph& at_press, const Points& pts, Vec2 d, bool free_handles) {
     // Start from the press every time.
-    g.contours = at_press.contours;
-    g.anchors  = at_press.anchors;
+    g.contours   = at_press.contours;
+    g.anchors    = at_press.anchors;
+    g.components = at_press.components;
     using Part = PointRef::Part;
     auto node_picked = [&](int c, int i) { return pts.count({c, i, Part::Node}) > 0; };
 
@@ -149,6 +231,7 @@ void move_points(model::Glyph& g, const model::Glyph& at_press, const Points& pt
         if ((p.part != Part::In && p.part != Part::Out) || !valid(g, p)) continue;
         if (node_picked(p.contour, p.index)) continue;   // already rode along
         const Node& was = at_press.contours[p.contour].nodes[p.index];
+        if (free_handles) g.contours[p.contour].nodes[p.index].type = Type::Corner;   // the rule no longer holds
         if (p.part == Part::In) move_handle_in(g.contours[p.contour], p.index, Vec2{was.cx1, was.cy1} + d);
         else                    move_handle_out(g.contours[p.contour], p.index, Vec2{was.cx2, was.cy2} + d);
     }
@@ -161,11 +244,16 @@ void move_points(model::Glyph& g, const model::Glyph& at_press, const Points& pt
         if (p.index > 0 || c.closed)      recompute_cusp_handles(c, wrap(p.index - 1, nn));
         if (p.index < nn - 1 || c.closed) recompute_cusp_handles(c, wrap(p.index + 1, nn));
     }
-    // 4. Glyph anchors.
+    // 4. Glyph anchors and components (a component moves by its offset).
     for (const auto& p : pts) {
-        if (p.part != Part::Anchor || !valid(g, p)) continue;
-        g.anchors[p.index].x += d.x;
-        g.anchors[p.index].y += d.y;
+        if (!valid(g, p)) continue;
+        if (p.part == Part::Anchor) {
+            g.anchors[p.index].x += d.x;
+            g.anchors[p.index].y += d.y;
+        } else if (p.part == Part::Component) {
+            g.components[p.index].dx += d.x;
+            g.components[p.index].dy += d.y;
+        }
     }
 }
 
@@ -175,6 +263,89 @@ void shift_x(model::Glyph& g, double dx) {
     for (auto& a : g.anchors) a.x += dx;
     for (auto& k : g.components) k.dx += dx;
 }
+
+// ── components ─────────────────────────────────────────────────────────────
+
+void transform(Contour& c, const model::Component& k) {
+    auto xf = [&](double& x, double& y) {
+        const double nx = k.xx * x + k.yx * y + k.dx;
+        const double ny = k.xy * x + k.yy * y + k.dy;
+        x = nx;
+        y = ny;
+    };
+    for (auto& n : c.nodes) { xf(n.x, n.y); xf(n.cx1, n.cy1); xf(n.cx2, n.cy2); }
+}
+
+std::vector<Contour> component_contours(const model::Font& f, const model::Component& k, int depth) {
+    std::vector<Contour> out;
+    const model::Glyph* base = f.glyph(k.base);
+    if (!base || depth >= 8) return out;
+    out = base->contours;
+    for (const auto& inner : base->components)
+        for (auto& c : component_contours(f, inner, depth + 1)) out.push_back(std::move(c));
+    for (auto& c : out) transform(c, k);
+    return out;
+}
+
+bool inside(const std::vector<Contour>& cs, Vec2 pt) {
+    int wind = 0;
+    auto edge = [&](Vec2 a, Vec2 b) {   // crossing number, signed
+        if (a.y <= pt.y) {
+            if (b.y > pt.y && (b - a).cross(pt - a) > 0) ++wind;
+        } else if (b.y <= pt.y && (b - a).cross(pt - a) < 0) {
+            --wind;
+        }
+    };
+    for (const auto& c : cs) {
+        const int n = segment_count(c);
+        if (n == 0) continue;
+        for (int s = 0; s < n; ++s) {
+            const CubicSegment seg = segment(c, s);
+            Vec2 prev = seg.p0;
+            for (int i = 1; i <= 16; ++i) {
+                const Vec2 cur = seg.at(i / 16.0);
+                edge(prev, cur);
+                prev = cur;
+            }
+        }
+        if (!c.closed) edge(segment(c, n - 1).p3, segment(c, 0).p0);
+    }
+    return wind != 0;
+}
+
+int component_at(const model::Font& f, const model::Glyph& g, Vec2 pt) {
+    for (int i = static_cast<int>(g.components.size()) - 1; i >= 0; --i)
+        if (inside(component_contours(f, g.components[i]), pt)) return i;
+    return -1;
+}
+
+// ── precision ──────────────────────────────────────────────────────────────
+
+double grid_step(double px_per_unit, double min_px) {
+    if (px_per_unit <= 0) return 1000;
+    static const double mant[] = {1, 2, 5};
+    for (double decade = 0.1; decade < 1e6; decade *= 10)
+        for (double m : mant)
+            if (m * decade * px_per_unit >= min_px) return m * decade;
+    return 1e6;
+}
+
+double snap_axis(double v, const std::vector<double>& targets, double grid, double tol,
+                 std::optional<double>* snapped) {
+    if (snapped) snapped->reset();
+    double best = v, best_d = tol;
+    bool hit = false;
+    for (double t : targets)
+        if (std::abs(t - v) <= best_d) { best = t; best_d = std::abs(t - v); hit = true; }
+    if (!hit && grid > 0) {
+        const double g = std::round(v / grid) * grid;
+        if (std::abs(g - v) <= tol) { best = g; hit = true; }
+    }
+    if (hit && snapped) *snapped = best;
+    return best;
+}
+
+Vec2 axis_lock(Vec2 d) { return std::abs(d.x) >= std::abs(d.y) ? Vec2{d.x, 0} : Vec2{0, d.y}; }
 
 // ── hit testing ────────────────────────────────────────────────────────────
 

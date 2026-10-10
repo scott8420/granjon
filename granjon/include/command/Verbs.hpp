@@ -33,6 +33,10 @@ bool add_glyph(FontJournal& j, Font& f, const std::string& name,
 // or taken. `label` names the step ("Create 17 missing (Adobe Latin 2)").
 bool add_glyphs(FontJournal& j, Font& f, const std::vector<model::NewGlyph>& glyphs,
                 const std::string& label = {}, std::string* why = nullptr);
+// One new glyph for a character, built from parts when it can be (é = e +
+// acutecomb, model::plan_composite) and empty otherwise. `built` says which.
+bool create_glyph_for(FontJournal& j, Font& f, const std::string& name, char32_t cp,
+                      const std::string& after = {}, bool* built = nullptr, std::string* why = nullptr);
 bool remove_glyph(FontJournal& j, Font& f, const std::string& name, std::string* why = nullptr);
 // Rename carries every reference with it: components in other glyphs, kerning
 // pairs and group members, metrics keys. One step.
@@ -58,7 +62,8 @@ void drag_translate(FontJournal& j, Font& f, double dx, double dy);
 //                     move_outline true (a modifier): the drawing slides
 //                     inside a fixed advance.
 enum class Side { Left, Right };
-void drag_points(FontJournal& j, Font& f, const geom::Points& pts, double dx, double dy);
+void drag_points(FontJournal& j, Font& f, const geom::Points& pts, double dx, double dy,
+                 bool free_handles = false);   // Alt on a handle: it moves alone, its node turns Corner
 void drag_sidebearing(FontJournal& j, Font& f, Side side, double dx, bool move_outline);
 bool drag_end(FontJournal& j, Font& f);    // snaps to integer units, then commits
 void drag_cancel(FontJournal& j);
@@ -67,6 +72,31 @@ void drag_cancel(FontJournal& j);
 // on one glyph merge into one step (the 1500 ms window).
 bool nudge(FontJournal& j, Font& f, const std::string& glyph, const geom::Points& pts,
            double dx, double dy);
+
+// ── components & anchors (M5) ──────────────────────────────────────────────
+// A component on `base`, offset (dx, dy). Refuses a missing base or a cycle.
+bool add_component(FontJournal& j, Font& f, const std::string& glyph, const std::string& base,
+                   double dx = 0, double dy = 0, std::string* why = nullptr);
+// Components -> plain contours (nested ones too), one step.
+bool decompose(FontJournal& j, Font& f, const std::string& glyph, std::string* why = nullptr);
+bool add_anchor(FontJournal& j, Font& f, const std::string& glyph, const std::string& name,
+                double x, double y, std::string* why = nullptr);
+bool rename_anchor(FontJournal& j, Font& f, const std::string& glyph, int index, const std::string& name,
+                   std::string* why = nullptr);
+// The Delete key: the anchors and components in the pick (nodes not yet).
+bool delete_points(FontJournal& j, Font& f, const std::string& glyph, const geom::Points& pts,
+                   std::string* why = nullptr);
+// The type of every picked node (and of the node under each picked handle),
+// ONE step. Refuses when nothing changes.
+bool set_node_type(FontJournal& j, Font& f, const std::string& glyph, const geom::Points& pts,
+                   model::Node::Type type);
+// Typed coordinates (the inspector): one point to (x, y), whole units.
+// Edits to the same point merge in the window.
+bool set_position(FontJournal& j, Font& f, const std::string& glyph, const geom::PointRef& p,
+                  double x, double y);
+// model::default_anchors on each glyph, ONE step. Refuses if none get any.
+bool add_default_anchors(FontJournal& j, Font& f, const std::vector<std::string>& glyphs,
+                         std::string* why = nullptr);
 
 // ── font records ───────────────────────────────────────────────────────────
 bool set_family(FontJournal& j, Font& f, const std::string& family);

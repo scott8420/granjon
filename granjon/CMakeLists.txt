@@ -69,6 +69,7 @@ add_library(granjon_core STATIC
     src/unicode/Agl.cpp
     src/unicode/CharSet.cpp
     src/model/Coverage.cpp
+    src/model/Composite.cpp
     ${GRANJON_DATA_CPP}
     src/command/Verbs.cpp
     # UFO 3 source format: plist + GLIF via libxml2 (io/). M2.

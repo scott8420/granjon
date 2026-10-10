@@ -13,6 +13,7 @@
 // Preferences are NOT undoable: they are the app's state, not the font's.
 // The undo journal is for the document (ARC s03, M4b).
 #include <string>
+#include <vector>
 
 namespace granjon::core {
 
@@ -28,6 +29,14 @@ struct Settings {
     std::string context_upper   = "H";     // beside capitals and figures (a glyph name or a character)
     std::string context_lower   = "n";     // beside the rest
     std::string sidebearing_mod = "alt";   // "alt" | "ctrl" | "shift": slide the drawing on a left-edge drag
+    bool        editor_grid     = false;   // the zoom-adaptive grid
+    bool        editor_snap     = true;    // snap drags to grid / metrics / sidebearings / other nodes
+    bool        handles_relative = true;   // the inspector shows handles relative to their node
+
+    // ── Navigator ─────────────────────────────────────────────────────────
+    // The sections (Unicode blocks, "Unencoded") shown open; the rest are
+    // folded to their header. Empty = all folded.
+    std::vector<std::string> navigator_open;
 
     // ── Overview ──────────────────────────────────────────────────────────
     int         overview_cell    = 84;     // px, kOverviewCellMin..Max

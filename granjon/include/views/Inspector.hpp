@@ -35,6 +35,12 @@ private:
     void on_width();
     void on_unicodes();
     void on_note();
+    void refresh_pick();               // the PICK card (one picked point)
+    void refresh_parts(const model::Glyph& g);   // the COMPONENTS / ANCHORS lists
+    void on_pick_xy();
+    void on_handle_xy(bool out);       // the In / Out rows of a picked node
+    void on_node_type(int type);
+    void on_anchor_name();
 
     ViewContext&        m_ctx;
     widgets::Stack      m_pages;
@@ -60,6 +66,34 @@ private:
     widgets::Label       m_category;
     widgets::Button      m_case;       // "Go to a" -- case navigation
     widgets::Entry       m_note;
+
+    // pick (M5): one picked node / handle / anchor / component
+    Gtk::Box*            m_pick_card = nullptr;
+    widgets::Label       m_pick_what;
+    widgets::SpinButton  m_px;
+    widgets::SpinButton  m_py;
+    Gtk::Label*          m_anchor_name_label = nullptr;
+    // node type for every picked node (M5b): Corner | Smooth | Symmetric | Cusp
+    widgets::Box         m_types;
+    std::array<Gtk::ToggleButton*, 4> m_type_buttons{};
+    Gtk::Label*          m_types_label = nullptr;
+    // a picked node's handles (M5b), relative to the node or absolute
+    widgets::ToggleButton m_relative;
+    widgets::Entry       m_inx, m_iny, m_outx, m_outy;   // compact: Enter / leaving commits
+    Gtk::Box*            m_in_row = nullptr;
+    Gtk::Box*            m_out_row = nullptr;
+    Gtk::Label*          m_in_label = nullptr;
+    Gtk::Label*          m_out_label = nullptr;
+    Gtk::Label*          m_x_label = nullptr;
+    Gtk::Label*          m_y_label = nullptr;
+    widgets::Entry       m_anchor_name;
+    // components + anchors (M5)
+    widgets::Box         m_comp_list;
+    widgets::Entry       m_comp_add;
+    widgets::Button      m_decompose;
+    widgets::Box         m_anchor_list;
+    widgets::Entry       m_anchor_add;
+    widgets::Button      m_default_anchors;
 };
 
 }  // namespace granjon::views

@@ -88,6 +88,7 @@ private:
     void on_recent_clear();                      // category: handler: empty the recents list
     void on_dump_registry();                     // category: handler: print the live widget tree
     void on_about();                             // category: handler: open the About window (dialog-lifetime exemplar)
+    void on_font_anchors();                      // category: handler: default anchors on the whole font (one step)
     void on_preferences();                       // category: handler: open the Preferences window (Ctrl+,)
     void on_shortcuts();   // handler: open the keyboard reference (renders from core::shortcut_registry)
     void on_other_case();                        // category: handler: A <-> a (Alt+C)

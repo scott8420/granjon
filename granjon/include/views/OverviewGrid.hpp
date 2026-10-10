@@ -58,6 +58,8 @@ private:
     widgets::ListBox       m_checklist;
     widgets::Button        m_create;
     widgets::Scale         m_size;
+    widgets::Label         m_scope_label;   // "Showing 12 picked in the navigator"
+    widgets::Button        m_scope_all;     // "Show all"
     // body
     widgets::ScrolledWindow m_scroll;
     widgets::Box           m_sections;

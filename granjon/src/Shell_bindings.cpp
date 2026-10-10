@@ -27,6 +27,7 @@ void Shell::bind_actions() {  // bindings: actions + recents group
     add_action("about",         sigc::mem_fun(*this, &Shell::on_about));
     add_action("shortcuts",     sigc::mem_fun(*this, &Shell::on_shortcuts));
     add_action("preferences",   sigc::mem_fun(*this, &Shell::on_preferences));
+    add_action("font-anchors",  sigc::mem_fun(*this, &Shell::on_font_anchors));
     add_action("quit",          [this]() { close(); });   // close-request asks about unsaved changes
 
     // Recents: a "recents" action group with a PARAMETERISED open verb --
@@ -77,6 +78,10 @@ void Shell::bind_actions() {  // bindings: actions + recents group
     m_ctx.say       = [this](const std::string& s, bool warn) { say(s, warn); };
     m_ctx.show_view = [this](const std::string& id) {
         activate_action("win.view", Glib::Variant<Glib::ustring>::create(id));
+    };
+    m_ctx.open_tabs = [this](const std::vector<std::string>& names, const std::string& active) {
+        m_editor.open_tabs(names, active);
+        activate_action("win.view", Glib::Variant<Glib::ustring>::create("editor"));
     };
 
     // ── follow the desktop's light / dark ───────────────────────────────────

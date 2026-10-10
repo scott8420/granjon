@@ -26,6 +26,7 @@
 #include "io/Ufo.hpp"
 #include "model/Find.hpp"
 #include "model/Font.hpp"
+#include "model/Composite.hpp"
 #include "model/Coverage.hpp"
 #include "unicode/Agl.hpp"
 #include "unicode/Blocks.hpp"
@@ -491,6 +492,10 @@ int main() {
         s.sidebearing_mod = "ctrl";
         s.overview_cell = 120;
         s.overview_charset = "latin-1";
+        s.editor_grid = true;
+        s.editor_snap = false;
+        s.handles_relative = false;
+        s.navigator_open = {"Basic Latin", "Unencoded"};
         check("settings: save makes the folder", core::save_settings(file, s));
         check("settings: round-trip", core::load_settings(file) == s);
         check("settings: no temp file left", !stdfs::exists(file + ".tmp"));
@@ -644,6 +649,7 @@ int main() {
         std::cout << "\n-- font --\n";
         namespace model = granjon::model;
         namespace cmd   = granjon::command;
+        namespace io    = granjon::io;
         using model::Font;
         using model::FontJournal;
         struct Fix {
@@ -799,6 +805,51 @@ int main() {
             check("move: the anchor too", moved.anchors[0].x == 60 && moved.anchors[0].y == 125);
             check("move: the rest stays", moved.contours[0].nodes[0] == g.contours[0].nodes[0]);
         }
+        {   // M5b: node types, free handles, the grid, snapping.
+            using T = model::Node::Type;
+            model::Contour c;
+            c.closed = false;
+            c.nodes = {model::Node::corner(0, 0), {100, 0, 70, 10, 140, 20, T::Corner}, model::Node::corner(200, 0)};
+            auto s = c;
+            geom::set_node_type(s, 1, T::Smooth);
+            const auto& n = s.nodes[1];
+            check("type: corner -> smooth lines the handles up",
+                  std::abs((n.cx1 - 100) * (n.cy2 - 0) - (n.cy1 - 0) * (n.cx2 - 100)) < 1e-6 && n.type == T::Smooth);
+            check("type: ... keeping their lengths", std::abs(std::hypot(n.cx1 - 100, n.cy1) - std::hypot(30, 10)) < 1e-6 &&
+                  std::abs(std::hypot(n.cx2 - 100, n.cy2) - std::hypot(40, 20)) < 1e-6);
+            auto bare = c;
+            bare.nodes[1] = model::Node::corner(100, 50);
+            geom::set_node_type(bare, 1, T::Symmetric);
+            check("type: a bare node going symmetric gets seeded handles", bare.nodes[1].has_in() && bare.nodes[1].has_out() &&
+                  std::abs((bare.nodes[1].cx1 + bare.nodes[1].cx2) / 2 - 100) < 1e-9);
+            auto corner = s;
+            geom::set_node_type(corner, 1, T::Corner);
+            check("type: -> corner leaves the handles", corner.nodes[1].cx1 == s.nodes[1].cx1 && corner.nodes[1].type == T::Corner);
+
+            model::Glyph g;
+            g.contours = {s};
+            model::Glyph moved = g;
+            geom::move_points(moved, g, {{0, 1, geom::PointRef::Part::Out}}, {0, 30}, true);
+            check("free handle: the other handle stays", moved.contours[0].nodes[1].cx1 == g.contours[0].nodes[1].cx1 &&
+                  moved.contours[0].nodes[1].cy1 == g.contours[0].nodes[1].cy1);
+            check("free handle: the node turns Corner", moved.contours[0].nodes[1].type == T::Corner);
+
+            check("grid: tenths when zoomed in", geom::grid_step(100) == 0.1);
+            check("grid: whole units at 10 px/unit", geom::grid_step(10) == 1);
+            check("grid: 20s at 0.5 px/unit", geom::grid_step(0.5) == 20);
+            std::optional<double> hit;
+            check("snap: to a target in reach", geom::snap_axis(497, {500, 0}, 10, 5, &hit) == 500 && hit && *hit == 500);
+            check("snap: the grid when no target is near", geom::snap_axis(203, {500}, 10, 5, &hit) == 200 && hit);
+            check("snap: nothing in reach", geom::snap_axis(204.5, {}, 0, 3, &hit) == 204.5 && !hit);
+            check("axis lock: the larger component", geom::axis_lock({30, -4}) == geom::Vec2(30, 0) &&
+                  geom::axis_lock({3, -40}) == geom::Vec2(0, -40));
+
+            Fix x;
+            const geom::Points pts{{0, 0, geom::PointRef::Part::Node}, {0, 1, geom::PointRef::Part::Node}};
+            check("set_node_type: one step", cmd::set_node_type(x.j, x.f, "o", pts, T::Symmetric) && x.j.size() == 1 &&
+                  x.f.glyph("o")->contours[0].nodes[0].type == T::Symmetric);
+            check("set_node_type: again is no step", !cmd::set_node_type(x.j, x.f, "o", pts, T::Symmetric));
+        }
         {   // A point drag is one step on whole units.
             Fix x;
             const geom::Points pts{{0, 0, geom::PointRef::Part::Node}};
@@ -863,6 +914,145 @@ int main() {
             check("nudge: nothing picked, nothing kept", !cmd::nudge(x.j, x.f, "H", {}, 1, 0));
             x.j.undo();
             check("nudge: one undo", x.f.glyph("H")->contours[0].nodes[0] == n0);
+        }
+
+        // ── M5: composites, anchors, components ─────────────────────────────
+        {
+            // A small Latin font: e, i, dotlessi, E, c, acutecomb (+ .case), the
+            // spacing cedilla (no combining one) -- no anchors yet.
+            Font f;
+            FontJournal j{f};
+            f.set_door([&] { return j.open(); });
+            model::make_new_font(f);
+            {
+                Font::Loading load(f);
+                double order = 10;
+                auto box = [](double x0, double y0, double x1, double y1) {
+                    model::Contour c;
+                    for (auto [x, y] : {std::pair{x0, y0}, {x1, y0}, {x1, y1}, {x0, y1}})
+                        c.nodes.push_back(model::Node::corner(x, y));
+                    return c;
+                };
+                auto put = [&](const std::string& n, char32_t cp, double adv, std::vector<model::Contour> cs) {
+                    model::Glyph g;
+                    g.name = n; g.advance = adv; g.order = order++; g.contours = std::move(cs);
+                    if (cp) g.unicodes = {cp};
+                    g.status = model::GlyphStatus::Drafted;
+                    f.put(n, model::Record{g});
+                };
+                put("e", U'e', 500, {box(40, -10, 460, 510)});
+                put("i", U'i', 260, {box(80, 0, 180, 500), box(80, 600, 180, 700)});
+                put("dotlessi", 0x0131, 260, {box(80, 0, 180, 500)});
+                put("E", U'E', 600, {box(60, 0, 540, 700)});
+                put("c", U'c', 480, {box(40, -10, 440, 510)});
+                put("acutecomb", 0x0301, 0, {box(-60, 540, 40, 680)});
+                put("acutecomb.case", 0, 0, {box(-60, 740, 40, 860)});
+                put("cedilla", 0x00B8, 300, {box(100, -200, 200, 0)});
+            }
+            using model::plan_composite;
+            const auto ea = plan_composite(f, 0x00E9);
+            check("composite: é = e + acutecomb", ea.ok() && ea.components.size() == 2 &&
+                  ea.components[0].base == "e" && ea.components[1].base == "acutecomb");
+            check("composite: no anchors -> mark centred on the base's drawing",
+                  ea.components[1].dx == 250 - (-10) && ea.components[1].dy == 0,
+                  std::to_string(ea.components[1].dx));
+            check("composite: the base's width", ea.advance == 500);
+            const auto Ea = plan_composite(f, 0x00C9);
+            check("composite: É takes the .case mark, no lift",
+                  Ea.ok() && Ea.components[1].base == "acutecomb.case" && Ea.components[1].dy == 0);
+            const auto ia = plan_composite(f, 0x00ED);
+            check("composite: í is built on dotlessi", ia.ok() && ia.components[0].base == "dotlessi");
+            const auto cc = plan_composite(f, 0x00E7);
+            check("composite: ç uses the spacing cedilla", cc.ok() && cc.components[1].base == "cedilla");
+            const auto et = plan_composite(f, 0x1EBD);   // ẽ: no tilde in this font
+            check("composite: a missing mark is named, nothing built",
+                  !et.ok() && et.components.empty() && !et.missing.empty() &&
+                  et.missing[0].find("U+0303") != std::string::npos, et.missing.empty() ? "" : et.missing[0]);
+            check("composite: A does not decompose", plan_composite(f, U'A').components.empty() &&
+                  plan_composite(f, U'A').missing.empty());
+
+            // Default anchors, then the placement follows them.
+            check("default anchors: one step for the lot",
+                  cmd::add_default_anchors(j, f, {"e", "E", "acutecomb", "acutecomb.case", "cedilla", "i"}) && j.size() == 1);
+            const auto* e = f.glyph("e");
+            check("default anchors: e gets top + bottom", e->anchors.size() == 2 && e->anchors[0].name == "top" &&
+                  e->anchors[0].x == 250 && e->anchors[0].y == 510);
+            const auto* ac = f.glyph("acutecomb");
+            check("default anchors: the mark gets _top at x-height", ac->anchors.size() == 2 &&
+                  ac->anchors[0].name == "_top" && ac->anchors[0].y == f.metrics().x_height && ac->anchors[0].x == -10);
+            check("default anchors: the case mark's _top is at cap height",
+                  f.glyph("acutecomb.case")->anchors[0].y == f.metrics().cap_height);
+            check("default anchors: a below mark gets _bottom",
+                  f.glyph("cedilla")->anchors[0].name == "_bottom");
+            check("default anchors: again, nothing to add", !cmd::add_default_anchors(j, f, {"e"}));
+            const auto ea2 = plan_composite(f, 0x00E9);
+            check("composite: _top meets top", ea2.ok() && ea2.components[1].dx == 260 &&
+                  ea2.components[1].dy == 510 - 500, std::to_string(ea2.components[1].dx) + "," +
+                  std::to_string(ea2.components[1].dy));
+
+            // Create missing builds composites, one step.
+            auto news = model::glyphs_for(f, {0x00E9, 0x00C9, 0x1EBD});
+            check("plan_composites: two of three can be built", model::plan_composites(f, news) == 2);
+            const std::size_t before = j.size();
+            cmd::add_glyphs(j, f, news, "Create 3 missing");
+            const auto* eac = f.glyph("eacute");
+            check("create missing: one step", j.size() == before + 1);
+            check("create missing: é is a composite, Drafted, e's width",
+                  eac && eac->components.size() == 2 && eac->status == model::GlyphStatus::Drafted && eac->advance == 500);
+            check("create missing: ẽ is empty", f.glyph_for(0x1EBD) && f.glyph_for(0x1EBD)->components.empty());
+            j.undo();
+            check("glyph_for: the cache follows an undo", !f.glyph_for(0x00E9) && !f.glyph("eacute"));
+            j.redo();
+            check("glyph_for: ... and a redo", f.glyph_for(0x00E9) && f.glyph_for(0x00E9)->name == "eacute");
+
+            // Components: no cycles; decompose keeps the drawing.
+            std::string why;
+            check("component: a glyph can't contain itself", !cmd::add_component(j, f, "e", "eacute", 0, 0, &why) &&
+                  !why.empty(), why);
+            check("component: a missing base is refused", !cmd::add_component(j, f, "e", "nope"));
+            const auto box_before = model::bounds(f, *f.glyph("eacute"));
+            check("decompose: one step", cmd::decompose(j, f, "eacute"));
+            const auto* dec = f.glyph("eacute");
+            check("decompose: plain contours now", dec->components.empty() && dec->contours.size() == 2);
+            check("decompose: the same drawing", model::bounds(f, *dec) == box_before);
+            j.undo();
+            check("decompose: undone", f.glyph("eacute")->components.size() == 2);
+
+            // Anchors: names checked, duplicates refused, delete takes the pick.
+            check("anchor: a bad name is refused", !cmd::add_anchor(j, f, "c", "top anchor", 0, 0));
+            check("anchor: added", cmd::add_anchor(j, f, "c", "top", 240, 510));
+            check("anchor: a duplicate is refused", !cmd::add_anchor(j, f, "c", "top", 0, 0));
+            check("anchor: renamed", cmd::rename_anchor(j, f, "c", 0, "top.alt") && f.glyph("c")->anchors[0].name == "top.alt");
+            check("delete: an anchor and a component in one step",
+                  cmd::delete_points(j, f, "eacute", {{-1, 1, geom::PointRef::Part::Component},
+                                                      {-1, 0, geom::PointRef::Part::Anchor}}) ||
+                  cmd::delete_points(j, f, "eacute", {{-1, 1, geom::PointRef::Part::Component}}));
+            check("delete: the mark is gone", f.glyph("eacute")->components.size() == 1);
+            check("delete: nodes are not deleted (yet)",
+                  !cmd::delete_points(j, f, "e", {{0, 0, geom::PointRef::Part::Node}}, &why));
+            check("position: typed coordinates", cmd::set_position(j, f, "c", {-1, 0, geom::PointRef::Part::Anchor}, 250.4, 520) &&
+                  f.glyph("c")->anchors[0].x == 250 && f.glyph("c")->anchors[0].y == 520);
+            check("position: the component offset", cmd::set_position(j, f, "eacute", {-1, 0, geom::PointRef::Part::Component}, 5, 0) &&
+                  f.glyph("eacute")->components[0].dx == 5);
+
+            // Picking a component: inside its drawing.
+            const auto* ce = f.glyph("eacute");
+            check("pick: inside the component", geom::component_at(f, *ce, {200, 200}) == 0);
+            check("pick: outside it", geom::component_at(f, *ce, {700, 200}) == -1);
+        }
+        {   // Status on load: a foreign glyph with a drawing is Drafted; Granjon's Empty stays Empty.
+            const std::string foreign = R"(<?xml version="1.0" encoding="UTF-8"?>
+<glyph name="a" format="2"><advance width="500"/><outline><contour>
+<point x="0" y="0" type="line"/><point x="100" y="0" type="line"/><point x="100" y="100" type="line"/>
+</contour></outline></glyph>)";
+            const auto a = io::read_glif(foreign);
+            check("load: a foreign drawn glyph is Drafted", a && a->status == model::GlyphStatus::Drafted);
+            model::Glyph g = *a;
+            g.status = model::GlyphStatus::Empty;
+            const auto back = io::read_glif(io::write_glif(g));
+            check("load: a drawn glyph Granjon marked Empty stays Empty", back && back->status == model::GlyphStatus::Empty);
+            const std::string blank = R"(<?xml version="1.0" encoding="UTF-8"?><glyph name="b" format="2"><advance width="500"/></glyph>)";
+            check("load: an undrawn foreign glyph is Empty", io::read_glif(blank)->status == model::GlyphStatus::Empty);
         }
 
         {   // Field edits merge inside the window; a different field does not.
