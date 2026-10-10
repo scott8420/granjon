@@ -8,6 +8,7 @@
 #include <pango/pangofc-fontmap.h>
 #include <glibmm/main.h>
 #include <glibmm/miscutils.h>
+#include <gtkmm/settings.h>
 
 #include <unistd.h>
 
@@ -41,7 +42,7 @@ PreviewPane::PreviewPane(ViewContext& ctx)
       m_bar("preview.bar", Gtk::Orientation::HORIZONTAL, 8),
       m_text("preview.text"),
       m_kern("preview.kern"),
-      m_dark("preview.dark"),
+      m_invert("preview.invert"),
       m_missing("preview.missing"),
       m_info("preview.info"),
       m_scroll("preview.scroll"),
@@ -69,15 +70,21 @@ PreviewPane::PreviewPane(ViewContext& ctx)
         if (m_ctx.save_settings) m_ctx.save_settings();
         m_area.queue_draw();
     });
-    m_dark.set_label("Dark");
-    m_dark.set_active(m_ctx.settings.preview_dark);
-    m_dark.set_tooltip_text("Light text on dark. Remembered.");
-    m_dark.signal_toggled().connect([this] {
+    m_invert.set_active(m_ctx.settings.preview_invert);
+    m_invert.signal_toggled().connect([this] {
         if (m_syncing) return;
-        m_ctx.settings.preview_dark = m_dark.get_active();
+        m_ctx.settings.preview_invert = m_invert.get_active();
         if (m_ctx.save_settings) m_ctx.save_settings();
         m_area.queue_draw();
     });
+    // The page follows the desktop's light / dark, live (Appearance sets GTK's
+    // prefer-dark from the portal).
+    if (auto gs = Gtk::Settings::get_default())
+        gs->property_gtk_application_prefer_dark_theme().signal_changed().connect([this] {
+            label_mode();
+            m_area.queue_draw();
+        });
+    label_mode();
     m_missing.add_css_class("dim");
     m_missing.set_ellipsize(Pango::EllipsizeMode::END);
     m_missing.set_max_width_chars(24);
@@ -86,7 +93,7 @@ PreviewPane::PreviewPane(ViewContext& ctx)
     m_bar.append(m_text);
     m_bar.append(m_missing);
     m_bar.append(m_kern);
-    m_bar.append(m_dark);
+    m_bar.append(m_invert);
     m_bar.append(m_info);
     append(m_bar);
 
@@ -103,7 +110,7 @@ PreviewPane::PreviewPane(ViewContext& ctx)
         m_syncing = true;
         if (std::string(m_text.get_text()) != m_ctx.settings.preview_text) m_text.set_text(m_ctx.settings.preview_text);
         if (m_kern.get_active() != m_ctx.settings.preview_kern) m_kern.set_active(m_ctx.settings.preview_kern);
-        if (m_dark.get_active() != m_ctx.settings.preview_dark) m_dark.set_active(m_ctx.settings.preview_dark);
+        if (m_invert.get_active() != m_ctx.settings.preview_invert) m_invert.set_active(m_ctx.settings.preview_invert);
         m_syncing = false;
         m_area.queue_draw();
     });
@@ -118,6 +125,19 @@ PreviewPane::PreviewPane(ViewContext& ctx)
         if (pid.empty() || std::filesystem::exists("/proc/" + pid, ec)) continue;
         std::filesystem::remove(e.path(), ec);
     }
+}
+
+bool PreviewPane::desktop_dark() const {
+    auto gs = Gtk::Settings::get_default();
+    return gs && gs->property_gtk_application_prefer_dark_theme().get_value();
+}
+
+// The button names the mode it shows when pressed: "Light" on a dark desktop.
+void PreviewPane::label_mode() {
+    const bool dark = desktop_dark();
+    m_invert.set_label(dark ? "Light" : "Dark");
+    m_invert.set_tooltip_text(std::string("The page follows the desktop (") + (dark ? "dark" : "light") +
+                              "). Pressed: see it " + (dark ? "light" : "dark") + ". Remembered.");
 }
 
 PreviewPane::~PreviewPane() {
@@ -215,7 +235,7 @@ void PreviewPane::update_missing() {
 }
 
 void PreviewPane::on_draw(const Cairo::RefPtr<Cairo::Context>& cr, int w, int) {
-    const bool dark = m_ctx.settings.preview_dark;
+    const bool dark = desktop_dark() != m_ctx.settings.preview_invert;
     const double fg = dark ? 0.93 : 0.08, bg = dark ? 0.11 : 1.0, dim = dark ? 0.55 : 0.55;
     cr->set_source_rgb(bg, bg, bg);
     cr->paint();

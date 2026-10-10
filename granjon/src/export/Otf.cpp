@@ -50,8 +50,8 @@ std::string postscript_name(const std::string& family, const std::string& style)
     return n;
 }
 
-std::string default_file_name(const model::FontInfo& info) {
-    return postscript_name(info.family, info.style) + ".otf";
+std::string default_file_name(const model::FontInfo& info, const std::string& ext) {
+    return postscript_name(info.family, info.style) + ext;
 }
 
 std::string production_name(const model::Glyph& g) {
@@ -188,7 +188,10 @@ Bytes compile_otf(const model::Font& f, const OtfOptions& opt, OtfReport* out) {
 
 bool export_otf(const model::Font& f, const std::filesystem::path& to, const OtfOptions& opt, OtfReport* rep,
                 std::string* why) {
-    const Bytes font = compile_otf(f, opt, rep);
+    return write_font_file(compile_otf(f, opt, rep), to, why);
+}
+
+bool write_font_file(const Bytes& font, const std::filesystem::path& to, std::string* why) {
     std::filesystem::path tmp = to;
     tmp += ".exporting";
     {

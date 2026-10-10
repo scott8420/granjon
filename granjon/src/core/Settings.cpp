@@ -54,7 +54,7 @@ Settings load_settings(const std::string& file) {
     if (pv.is_object()) {
         get(pv, "text", s.preview_text);
         get(pv, "kern", s.preview_kern);
-        get(pv, "dark", s.preview_dark);
+        get(pv, "invert", s.preview_invert);
     }
     const json ex = j.value("export", json::object());
     if (ex.is_object()) get(ex, "folder", s.export_folder);
@@ -101,7 +101,7 @@ bool save_settings(const std::string& file, const Settings& s) {
         {"overview", {{"cell", s.overview_cell}, {"charset", s.overview_charset}}},
         {"navigator", {{"open", s.navigator_open}}},
         {"spacing", {{"text", s.spacing_text}, {"size", s.spacing_size}}},
-        {"preview", {{"text", s.preview_text}, {"kern", s.preview_kern}, {"dark", s.preview_dark}}},
+        {"preview", {{"text", s.preview_text}, {"kern", s.preview_kern}, {"invert", s.preview_invert}}},
         {"export", {{"folder", s.export_folder}}},
     };
     std::error_code ec;

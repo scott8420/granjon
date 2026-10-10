@@ -15,4 +15,9 @@ struct UnicodeRangeBlock { unsigned first, last; int bit; };
 extern const UnicodeRangeBlock kUnicodeRanges[];
 extern const int kUnicodeRangeCount;
 
+// The standard Macintosh glyph order (post format 2): a glyph named one of
+// these takes its index; any other name is stored, at 258 + n.
+constexpr int kMacStandardCount = 258;
+extern const char* const kMacStandardNames[kMacStandardCount];
+
 }  // namespace granjon::otf

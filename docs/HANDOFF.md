@@ -1,32 +1,39 @@
 # Granjon handoff — s05 -> s06
 
-# s06_export_ttf
+# s06_woff2_overlaps
 
 ## Files to upload
-- `s06_export_ttf.zip` (made by `scripts/granjon_backup.sh -o s06_export_ttf`)
+- `s06_woff2_overlaps.zip` (made by `scripts/granjon_backup.sh -o s06_woff2_overlaps`)
 - `RULES.md`, `HANDOFF.md`, `ARCHITECTURE.md`, `ARC.md`, `CANON.md`
 - `My-Termes-Regular.granjon` from the project's `fonts/` folder (not in the s05 upload; s05 rebuilt Termes in the sandbox from TeX Gyre the same way, but the M7 / M8 readouts on your copy are still unseen).
-- No Curvz source needed unless M10 starts the boolean ops (`BooleanOpsClipper`) -- then bring it.
+- **Curvz source** (`BooleanOpsClipper` and what it includes): M10b starts overlap removal from it.
 
 ---
 
 ## Status — s05 (written as we go)
-- **M8 profiles:** Scott's "continue" at s05 open read as crc (asked; confirm).
-- **M9 export OTF: built, shipped (`s05_m9_export_otf.zip`), awaiting Scott's crc.** (An earlier core-only ship, `s05_m9a_otf_core.zip`, is superseded by it.) If the run report brings fixes, they come first in s06.
-- Core, GTK-free `export/`: sfnt assembly, CFF (Type 2 charstrings), GPOS kern, head hhea maxp OS/2 name cmap post hmtx. App: **Export OTF…** (☰ menu, **Ctrl+E**) and the **Preview** view (Ctrl+4).
-- Selftest 690 / 0 (32 new, in `src/selftest_export.cpp` -- the first per-milestone split of selftest main()). Built against Ubuntu 24.04, g++ 13.3, gtkmm 4.10 / GTK 4.14, pango 1.52, RelWithDebInfo. The known GCC 13 / fmt false positive (system headers, spdlog float formatting) now shows 3 times instead of 2 -- my two `{:.1f}` log lines reach the same header. **No new package**: the Preview links pangoft2 + fontconfig, which come with gtkmm (pango-devel / fontconfig-devel).
-- Outside validation (sandbox only, `scripts/otf_check.py` -- you can run it too: `pip install fonttools opentype-sanitizer freetype-py uharfbuzz ufoLib2`): Termes (1090 glyphs, 11,571 kern pairs), Termes with 45 accent-family kerning groups (25,579 pairs, classes + exceptions), Termes at 2048 UPM, and a file exported through the app's own dialog all pass OTS, fontTools, an outline-by-outline compare with the source, FreeType render of every glyph, and HarfBuzz shaping of every kern pair to the source's value. Export of Termes: 40-55 ms, ~200 KB.
-- Headless shots (Xvfb, Termes + groups): Preview waterfall + paragraphs, Kerning off (AVATAR / Toyota open up), Dark; Export via the dialog -> status line "Exported Exported.otf -- 1090 glyphs, 195 KB, 55 ms. 419 glyph(s) carry a production name ...". Visual channel is still yours.
+- **M8 profiles:** crc (s05 open).
+- **M9 export OTF: crc** (Scott, on r2: export via the dialog, GNOME Fonts reads the file, the Preview renders and follows the desktop's dark mode).
+- **M10a export TTF: built, shipped (`s05_m10a_export_ttf.zip` -- the one to install; every earlier s05 zip is superseded), awaiting Scott's crc.**
+- M10a: cu2qu ported from fontTools (cubic -> fewest quadratics within 1/1000 em, implied on-curves; same points as fontTools on the test curves), glyf / loca (short when it fits) / maxp 1.0 / post 2 / gasp; every contour reversed to TrueType's direction; OVERLAP_SIMPLE set; the rest shared with the OTF. App: **Export TTF…** (☰, **Ctrl+Shift+E**).
+- Selftest 706 / 0 (16 new for TTF). Built against Ubuntu 24.04, g++ 13.3, gtkmm 4.10 / GTK 4.14, pango 1.52, RelWithDebInfo; the known GCC 13 / fmt false positive x3. **No new package.**
+- Outside validation (`scripts/otf_check.py`, now OTF or TTF; TrueType outlines compared with fontTools' own cu2qu of the source, i.e. what fontmake would ship): Termes + groups and Termes at 2048 UPM as TTF, and a TTF exported through the app's dialog, pass OTS, fontTools, outlines (1090 glyphs), FreeType, HarfBuzz (25,579 pairs). OTF vs TTF rendered by FreeType at 160 px overlay with no visible difference. Termes TTF: ~55 ms, 217 KB, 52,715 points.
+- Before M10a: Scott ran M9 r1 and asked that the Preview page follow the desktop's dark mode -> r2 (see decisions).
+
+What to look at in M10a:
+- **Ctrl+Shift+E / ☰ Export TTF…:** proposes `Family-Style.ttf`; status line and log as for OTF (the log adds the glyf point count).
+- Open the .ttf in GNOME Fonts beside the .otf: they should look the same. (Don't install a "TeX Gyre Termes" build -- it collides with the real one; My Termes is safe.)
 
 What to look at in M9:
 - **Ctrl+E / ☰ Export OTF…:** the dialog proposes `Family-Style.otf`, starts where the last export went (else the font's folder). The status line says glyphs / size / ms and the first note; all notes go to the log (`[io] export: ...`).
 - **Install the .otf** (`~/.local/share/fonts/`, then `fc-cache`) and set text in another app (gedit, LibreOffice, Inkscape): names, kerning, metrics (line spacing = 1.2 em by the typo metrics).
-- **Preview (Ctrl+4):** the waterfall and the paragraphs are the COMPILED font set by Pango, not Granjon's drawing. Kerning toggles the compiled GPOS; Dark flips. The bar shows glyphs / KB / ms (tooltip: the notes) and "N missing" (tooltip lists them; they show as boxes). Edit something with the Preview showing (or come back to it): it recompiles a moment later.
+- **Preview (Ctrl+4):** the waterfall and the paragraphs are the COMPILED font set by Pango, not Granjon's drawing. Kerning toggles the compiled GPOS. The page follows the desktop's light / dark (r2); the button, labelled with the other mode ("Light" on a dark desktop), flips it. The bar shows glyphs / KB / ms (tooltip: the notes) and "N missing" (tooltip lists them; they show as boxes). Edit something with the Preview showing (or come back to it): it recompiles a moment later.
 - On Termes: whether the Preview's kerning matches the Spacing strip on the same pairs (it should, exactly -- the GPOS is built from the strip's lookup).
 
 ## Decisions made in s05
+- TTF (M10a): cu2qu at 1/1000 em (fontmake's default); contours all reversed (consistent, so nonzero fill is unchanged -- not the depth-based direction fix); OVERLAP_SIMPLE on every glyph's first point (overlaps kept until M10b); components decomposed (TrueType composites are a size follow-on); no hints, gasp = smooth at all sizes; loca short when the glyf fits; post 2 carries the production names. The Preview stays on the OTF.
+- Thin strokes (tie accents, outline (C) / (R)) lose ~1 % area to the 1-unit tolerance -- the same as fontTools'; the checker compares against fontTools' conversion, not the cubic.
 - Export OTF is Ctrl+E (free in the shortcut registry) with its own section in ☰; it always asks where (an "export again to the same file" can follow if you want one).
-- The Preview sets the compiled font with Pango in a PRIVATE font map (fontconfig holding only that font, a fresh cache file per compile, stale files from dead runs removed) -- the desktop's text stack, no new package; direct HarfBuzz stays for the strip, pending the package answer.
+- The Preview sets the compiled font with Pango in a PRIVATE font map (fontconfig holding only that font, a fresh cache file per compile, stale files from dead runs removed); its page follows the desktop's light / dark, live, with a button for the other mode (setting `preview.invert`, replacing r1's `preview.dark`) -- the desktop's text stack, no new package; direct HarfBuzz stays for the strip, pending the package answer.
 - Export never touches the font: no undo step (a product made from the font, not a choice on it).
 - Outlines go out **as drawn**: no silent direction correction (an overlapping contour can read as "inside" another and get reversed into a hole), no overlap removal (M10). Direction is the Checks report's job; CFF fills nonzero, as the editor shows.
 - Components are decomposed; coordinates rounded after the transform.
@@ -37,12 +44,17 @@ What to look at in M9:
 - No CFF hints, no BlueValues (none in the model; M10's ttfautohint covers TTF).
 - head.created / modified honour SOURCE_DATE_EPOCH (reproducible builds); the selftest fixes the time.
 
-## s05 goal — Milestone M9: Export OTF
+## s06 goal — Milestone M10b: WOFF2 + overlap removal
+WOFF2 (brotli; the glyf / loca transform is optional -- start without), overlap removal on export (Clipper2 via Curvz's BooleanOpsClipper; curves flattened -> rebuilt, or kept by a curve-aware pass -- a fork to settle and surface), the ttfautohint hook. Needs the package answer first. **Stop at M10b.**
+
+## s05 goal (done) — Milestone M9: Export OTF
 (ARCHITECTURE milestone list.) An sfnt writer + CFF: head, hhea, maxp, OS/2, name, cmap, post, CFF (charstrings from the cubic outlines, components decomposed), hmtx; kerning as a GPOS pair table (class kerning -> class pairs, exceptions as glyph pairs) -- the first feature output. Validate by reloading with FreeType (and shaping a proof with HarfBuzz -- the moment HarfBuzz earns its place). **Packages** (Fedora: `harfbuzz-devel freetype-devel`; brotli waits for WOFF2): announce, check with Scott before relying on them. A Preview view (Ctrl+4, still a stub) showing the compiled font is the natural visual check. Settle forks inside; surface what changes the workflow.
 **Stop at M9** for a compile / run report.
 
 ## Still open
-- Packages, Fedora: `harfbuzz-devel freetype-devel` asked at s05 open (answer pending); `brotli-devel` with WOFF2; Clipper2 via FetchContent (M10).
+- Packages, Fedora (asked in s05, answer pending): `brotli-devel` for WOFF2 (M10b), Clipper2 1.5.4 via FetchContent for overlap removal (M10b), `harfbuzz-devel freetype-devel` for the strip / import.
+- A RULES.md addition proposed in s05, answer pending: "One zip to install" (the final message names the single zip to install; checkpoint zips carry `_wip`).
+- M10b: WOFF2, overlap removal (Clipper2, from Curvz's BooleanOpsClipper), ttfautohint hook (optional external tool).
 - granjon-cli scope (ARC backlog). `export_otf` is its first ready-made command.
 - Editor follow-ons (pen, insert / delete node, node type change, Shift-constrained drags), composite follow-ons (Greek tonos, stacking, ogonek anchor, rebuild), overview follow-ons -- all in the ARC backlog.
 - Profiles follow-ons: a profile cache + font-wide kern-to-gap over a pair list, per-class targets, collision check on proof strings.

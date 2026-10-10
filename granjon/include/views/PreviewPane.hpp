@@ -11,7 +11,9 @@
 //
 //   compiles    when shown and the font changed (a short pause after the
 //               last step; a drag compiles once, at its release)
-//   bar         sample text (remembered), Kerning on / off, Dark, and what the
+//   bar         sample text (remembered), Kerning on / off, the other mode
+//               (the page follows the desktop's light / dark; the button,
+//               labelled with the mode it would show, flips it), and what the
 //               compile made (glyphs, size, ms)
 //   page        a waterfall of the sample, then a paragraph
 #include "views/ViewContext.hpp"
@@ -39,12 +41,14 @@ private:
     void on_draw(const Cairo::RefPtr<Cairo::Context>& cr, int w, int h);
     void update_missing();
     void drop_font();
+    bool desktop_dark() const;
+    void label_mode();
 
     ViewContext& m_ctx;
     widgets::Box          m_bar;
     widgets::Entry        m_text;
     widgets::ToggleButton m_kern;
-    widgets::ToggleButton m_dark;
+    widgets::ToggleButton m_invert;
     widgets::Label        m_missing;
     widgets::Label        m_info;
     widgets::ScrolledWindow m_scroll;

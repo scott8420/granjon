@@ -231,3 +231,11 @@ Newest session at the bottom.
   - CMake: `pangoft2` + `fontconfig` by pkg-config for the app (they come with gtkmm). The core stays GTK-free.
   - Headless shots on Termes + groups: waterfall / paragraphs, kerning off vs on, dark, export through the dialog; the exported file passes `otf_check.py` in full.
   - Selftest 690 / 0.
+- Scott ran r1 (Termes export via the dialog, GNOME Fonts preview of the file, the Preview view): "very nice". Fix (r2): the Preview page follows the desktop's light / dark (GTK prefer-dark, as set by Appearance), live; the old Dark toggle becomes a button for the OTHER mode, labelled with the mode it shows ("Light" on a dark desktop); setting `preview.invert` replaces `preview.dark`.
+- M9: crc (Scott, on r2).
+- M10a: export TTF.
+  - `export/Quad`: cu2qu ported from fontTools (cubic_approx_spline: n = 1..100 quadratics, tangent-intersection for n = 1, cubic_approx_control + implied on-curve midpoints for n > 1, cubic_farthest_fit_inside as the error test). `quad_contour` reverses the model contour (start node kept) to TrueType's direction and emits on / off points. Checked against fontTools: the same off-curves on a quarter circle and a straight cubic, the same point counts on Termes glyphs.
+  - `export/Ttf`: `quad_glyphs` (rounded, lone points dropped, each glyph's bbox moved to its points -- glyf / hmtx / head agree), `build_glyf` (flags with short / same / repeat encoding, OVERLAP_SIMPLE, 2-byte padding, loca short when it fits), maxp 1.0, post 2 (Mac standard names by index, the rest stored), gasp, `compile_ttf` / `export_ttf`. `write_font_file` now shared with OTF. Mac standard names added to the generated `OtfData.cpp`.
+  - App: Export TTF… (☰, Ctrl+Shift+E) -- one `export_font(ttf)` behind both actions.
+  - `otf_check.py` takes TTF: outlines compared with fontTools' cu2qu of the source (thin strokes lose ~1 % area to a 1-unit tolerance in both).
+  - Selftest 706 / 0: cu2qu vs fontTools' numbers, direction, glyf decoded back point for point, hmtx lsb = xMin, post 2 names, GPOS / cmap identical to the OTF's.

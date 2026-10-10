@@ -160,6 +160,7 @@ Glib::RefPtr<Gio::Menu> Shell::build_menu() {  // zone: hamburger model
     menu->append_section(save);
     auto exp = Gio::Menu::create();
     exp->append("Export OTF…", "win.export-otf");
+    exp->append("Export TTF…", "win.export-ttf");
     menu->append_section(exp);
 
     // Undo / Redo, re-labelled live and greyed when there is nothing to do --

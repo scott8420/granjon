@@ -8,9 +8,13 @@
 #include "command/Verbs.hpp"
 #include "export/Otf.hpp"
 #include "export/OtfParts.hpp"
+#include "export/Quad.hpp"
+#include "export/OtfData.hpp"
 #include "geom/Edit.hpp"
 #include "model/Spacing.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <functional>
 #include <fstream>
@@ -210,6 +214,49 @@ int gpos_kern(const otf::Bytes& gpos, unsigned g1, unsigned g2, int* subtables =
         }
     }
     return 0;
+}
+
+// ── glyf: one glyph's points back ──────────────────────────────────────────
+struct TtRead { int contours = 0; std::vector<int> ends; std::vector<otf::QPointI> pts; bool ok = true; int xmin = 0, xmax = 0; };
+TtRead read_glyf(const otf::Bytes& glyf, const otf::Bytes& loca, int fmt, unsigned gid) {
+    TtRead r;
+    const std::size_t a = fmt == 0 ? 2u * rd16(loca, 2 * gid) : rd32(loca, 4 * gid);
+    const std::size_t z = fmt == 0 ? 2u * rd16(loca, 2 * (gid + 1)) : rd32(loca, 4 * (gid + 1));
+    if (a == z) return r;
+    r.contours = rds16(glyf, a);
+    r.xmin = rds16(glyf, a + 2);
+    r.xmax = rds16(glyf, a + 6);
+    std::size_t i = a + 10;
+    for (int c = 0; c < r.contours; ++c, i += 2) r.ends.push_back(static_cast<int>(rd16(glyf, i)));
+    i += 2 + rd16(glyf, i);
+    const int n = r.ends.empty() ? 0 : r.ends.back() + 1;
+    std::vector<std::uint8_t> fl;
+    while (static_cast<int>(fl.size()) < n) {
+        const std::uint8_t f = glyf[i++];
+        fl.push_back(f);
+        if (f & 0x08) { const unsigned k = glyf[i++]; for (unsigned m = 0; m < k; ++m) fl.push_back(f); }
+    }
+    int x = 0, y = 0;
+    std::vector<int> xs, ys;
+    for (int k = 0; k < n; ++k) {
+        const auto f = fl[static_cast<std::size_t>(k)];
+        if (f & 0x02) { const int d = glyf[i++]; x += (f & 0x10) ? d : -d; }
+        else if (!(f & 0x10)) { x += rds16(glyf, i); i += 2; }
+        xs.push_back(x);
+    }
+    for (int k = 0; k < n; ++k) {
+        const auto f = fl[static_cast<std::size_t>(k)];
+        if (f & 0x04) { const int d = glyf[i++]; y += (f & 0x20) ? d : -d; }
+        else if (!(f & 0x20)) { y += rds16(glyf, i); i += 2; }
+        ys.push_back(y);
+    }
+    for (int k = 0; k < n; ++k) r.pts.push_back({xs[static_cast<std::size_t>(k)], ys[static_cast<std::size_t>(k)], (fl[static_cast<std::size_t>(k)] & 1) != 0});
+    r.ok = i <= z;
+    return r;
+}
+double cubic_at(double a, double b, double c, double d, double t) {
+    const double u = 1 - t;
+    return u * u * u * a + 3 * u * u * t * b + 3 * u * t * t * c + t * t * t * d;
 }
 
 }  // namespace
@@ -421,6 +468,126 @@ void selftest_export(const Check& check_) {
         check("otf: export writes the file", otf::export_otf(f, to, opt, nullptr, &why) && fs::file_size(to) > 0, why);
         check("otf: no temp file left", !fs::exists(to.string() + ".exporting"));
         check("otf: an unwritable place is refused, with a reason", !otf::export_otf(f, dir / "no" / "x.otf", opt, nullptr, &why) && !why.empty(), why);
+        fs::remove_all(dir);
+    }
+
+    // ── M10a: TrueType ──
+    std::cout << "M10a export TTF\n";
+    {   // cu2qu: a quarter circle stays within tolerance; a straight cubic is one quadratic.
+        const double k = 0.5523 * 500;
+        const otf::QPoint p0{500, 0}, c1{500, k}, c2{k, 500}, p3{0, 500};
+        const auto offs = otf::cubic_to_quad(p0, c1, c2, p3, 1.0);
+        // Rebuild the spline (implied on-curves) and measure the farthest cubic sample from it.
+        std::vector<otf::QPoint> sp{p0};
+        for (const auto& q : offs) sp.push_back(q);
+        sp.push_back(p3);
+        std::vector<std::pair<double, double>> qs;
+        const std::size_t m = offs.size();
+        for (std::size_t i = 0; i < m; ++i) {
+            const otf::QPoint a = i == 0 ? p0 : otf::QPoint{(sp[i].x + sp[i + 1].x) / 2, (sp[i].y + sp[i + 1].y) / 2};
+            const otf::QPoint b = sp[i + 1];
+            const otf::QPoint c = i + 1 == m ? p3 : otf::QPoint{(sp[i + 1].x + sp[i + 2].x) / 2, (sp[i + 1].y + sp[i + 2].y) / 2};
+            for (int t = 0; t <= 200; ++t) {
+                const double u = t / 200.0, v = 1 - u;
+                qs.push_back({v * v * a.x + 2 * v * u * b.x + u * u * c.x, v * v * a.y + 2 * v * u * b.y + u * u * c.y});
+            }
+        }
+        double worst = 0;
+        for (int t = 0; t <= 400; ++t) {
+            const double u = t / 400.0;
+            const double x = cubic_at(p0.x, c1.x, c2.x, p3.x, u), y = cubic_at(p0.y, c1.y, c2.y, p3.y, u);
+            double best = 1e9;
+            for (const auto& [qx, qy] : qs) best = std::min(best, std::hypot(qx - x, qy - y));
+            worst = std::max(worst, best);
+        }
+        check("ttf: cu2qu -- a quarter circle within 1 unit", worst <= 1.05 && !offs.empty() && offs.size() < 6,
+              std::to_string(offs.size()) + " quadratics, worst " + std::to_string(worst));
+        // fontTools.cu2qu.curve_to_quadratic, same inputs: the port must agree.
+        const auto ref = otf::cubic_to_quad({500, 0}, {500, 276.15}, {276.15, 500}, {0, 500}, 1.0);
+        check("ttf: cu2qu matches fontTools (quarter circle: 4 off-curves, same points)", ref.size() == 4 &&
+              std::abs(ref[0].x - 500) < 1e-9 && std::abs(ref[0].y - 103.55625) < 1e-6 &&
+              std::abs(ref[1].x - 422.3106770833333) < 1e-6 && std::abs(ref[1].y - 284.80182291666665) < 1e-6 &&
+              std::abs(ref[3].x - 103.55625) < 1e-6 && std::abs(ref[3].y - 500) < 1e-9);
+        const auto straight = otf::cubic_to_quad({0, 0}, {100, 0}, {200, 0}, {300, 0}, 1.0);
+        check("ttf: cu2qu matches fontTools (straight cubic: 75 and 225 on the line)", straight.size() == 2 &&
+              straight[0].x == 75 && straight[1].x == 225 && straight[0].y == 0 && straight[1].y == 0);
+        model::Contour c;
+        model::Node a = model::Node::corner(0, 0), b = model::Node::corner(100, 0), d = model::Node::corner(100, 100);
+        c.nodes = {a, b, d};
+        const auto q = otf::quad_contour(c, 1.0);
+        double area = 0;
+        for (std::size_t i = 0; i < q.size(); ++i) {
+            const auto& u = q[i]; const auto& v = q[(i + 1) % q.size()];
+            area += u.x * v.y - v.x * u.y;
+        }
+        check("ttf: contours run TrueType's way (reversed), start kept", area < 0 && q.size() == 3 && q[0].x == 0 && q[0].y == 0 &&
+              q[0].on && q[1].x == 100 && q[1].y == 100);
+    }
+    {
+        otf::OtfReport tr;
+        const otf::Bytes ttf = otf::compile_ttf(f, opt, &tr);
+        check("ttf: compiles, version 1.0 sfnt, checksum", ttf.size() > 12 && rd32(ttf, 0) == 0x00010000 &&
+              otf::checksum(ttf) == 0xB1B0AFBAu, std::to_string(ttf.size()) + " bytes");
+        check("ttf: deterministic for a fixed time", otf::compile_ttf(f, opt) == ttf);
+        bool all = true;
+        std::string missing;
+        for (const char* t : {"head", "hhea", "maxp", "OS/2", "name", "cmap", "post", "hmtx", "glyf", "loca", "gasp", "GPOS"})
+            if (otf::table(ttf, t).empty()) { all = false; missing += t; missing += ' '; }
+        check("ttf: every table present, no CFF", all && otf::table(ttf, "CFF ").empty(), missing);
+        const auto maxp = otf::table(ttf, "maxp"), head = otf::table(ttf, "head");
+        const auto glyf = otf::table(ttf, "glyf"), loca = otf::table(ttf, "loca");
+        const unsigned n = rd16(maxp, 4);
+        const int fmt = rds16(head, 50);
+        check("ttf: maxp 1.0, 32 bytes, every glyph", rd32(maxp, 0) == 0x00010000 && maxp.size() == 32 && n == f.glyph_count());
+        check("ttf: loca has glyphs + 1 offsets in its format", loca.size() == (n + 1) * (fmt == 0 ? 2u : 4u), "format " + std::to_string(fmt));
+        otf::OtfReport r3;
+        otf::Prepared pp = otf::prepare(f, opt, r3);
+        const auto quads = otf::quad_glyphs(pp, 1.0);
+        bool same = true, bounds = true;
+        std::string bad;
+        const auto hmtx = otf::table(ttf, "hmtx");
+        for (unsigned g = 0; g < n; ++g) {
+            const TtRead r = read_glyf(glyf, loca, fmt, g);
+            std::vector<otf::QPointI> want;
+            for (const auto& c : quads[g]) want.insert(want.end(), c.begin(), c.end());
+            if (!r.ok || r.pts != want || r.contours != static_cast<int>(quads[g].size())) { same = false; bad = pp.glyphs[g].name; }
+            if (r.contours && rds16(hmtx, 4 * g + 2) != r.xmin) { bounds = false; bad = pp.glyphs[g].name; }
+        }
+        check("ttf: glyf decodes back to the converted points (flags, repeats, deltas)", same, bad);
+        check("ttf: hmtx lsb = glyf xMin", bounds, bad);
+        {
+            const auto H = read_glyf(glyf, loca, fmt, static_cast<unsigned>(pp.gid.at("H")));
+            check("ttf: H -- 3 contours, 12 on-curve points, outer contour clockwise", H.contours == 3 && H.pts.size() == 12 &&
+                  std::all_of(H.pts.begin(), H.pts.end(), [](const otf::QPointI& q) { return q.on; }) &&
+                  H.pts[1].x == 80 && H.pts[1].y == 700);
+            const auto c = read_glyf(glyf, loca, fmt, static_cast<unsigned>(pp.gid.at("c")));
+            check("ttf: c -- curves became off-curve points", c.contours == 1 &&
+                  std::any_of(c.pts.begin(), c.pts.end(), [](const otf::QPointI& q) { return !q.on; }));
+        }
+        {   // post 2: the names, in order
+            const auto post = otf::table(ttf, "post");
+            bool ok = rd32(post, 0) == 0x00020000 && rd16(post, 32) == n;
+            std::vector<std::string> extra;
+            std::size_t i = 34 + 2 * n;
+            while (i < post.size()) { const unsigned l = post[i]; extra.emplace_back(post.begin() + static_cast<long>(i + 1), post.begin() + static_cast<long>(i + 1 + l)); i += 1 + l; }
+            for (unsigned g = 0; g < n && ok; ++g) {
+                const unsigned ix = rd16(post, 34 + 2 * g);
+                const std::string name = ix < otf::kMacStandardCount ? otf::kMacStandardNames[ix] : extra.at(ix - otf::kMacStandardCount);
+                if (name != pp.glyphs[g].name) { ok = false; bad = name + " != " + pp.glyphs[g].name; }
+            }
+            check("ttf: post 2 carries every glyph's production name", ok, bad);
+        }
+        std::string why2;
+        const otf::Bytes otf_now = otf::compile_otf(f, opt);
+        check("ttf: GPOS, cmap, OS/2 are the OTF's own", otf::table(ttf, "GPOS") == otf::table(otf_now, "GPOS") &&
+              otf::table(ttf, "cmap") == otf::table(otf_now, "cmap") && !otf::table(ttf, "GPOS").empty());
+        namespace fs = std::filesystem;
+        const fs::path dir = fs::temp_directory_path() / "granjon_selftest_ttf";
+        fs::remove_all(dir);
+        fs::create_directories(dir);
+        const fs::path to = dir / otf::default_file_name(f.info(), ".ttf");
+        check("ttf: export writes Family-Style.ttf", otf::export_ttf(f, to, opt, nullptr, &why2) && fs::file_size(to) > 0 &&
+              to.filename() == "Untitled-Regular.ttf", why2);
         fs::remove_all(dir);
     }
 }

@@ -69,27 +69,33 @@ void Shell::on_save() {  // handler: Ctrl+S
 
 void Shell::on_save_as() { save_as({}); }  // handler: Ctrl+Shift+S
 
-// Export OTF (M9): the font compiled -- the bytes the Preview sets -- written
-// beside the font by default ("Family-Style.otf"). Read-only on the font: no
-// undo step. The dialog starts where the last export went.
-void Shell::on_export_otf() {  // handler: Ctrl+E
+// Export OTF (M9) / TTF (M10a): the font compiled -- the OTF is the bytes the
+// Preview sets -- written beside the font by default ("Family-Style.otf").
+// Read-only on the font: no undo step. The dialog starts where the last export
+// went (either format).
+void Shell::on_export_otf() { export_font(false); }  // handler: Ctrl+E
+void Shell::on_export_ttf() { export_font(true); }   // handler: Ctrl+Shift+E
+
+void Shell::export_font(bool ttf) {  // helper
+    const std::string ext = ttf ? ".ttf" : ".otf";
     auto dialog = Gtk::FileDialog::create();
-    dialog->set_title("Export OTF");
-    dialog->set_initial_name(otf::default_file_name(m_doc.font.info()));
+    dialog->set_title(ttf ? "Export TTF" : "Export OTF");
+    dialog->set_initial_name(otf::default_file_name(m_doc.font.info(), ext));
     std::error_code ec;
     if (!m_settings.export_folder.empty() && std::filesystem::is_directory(m_settings.export_folder, ec))
         dialog->set_initial_folder(Gio::File::create_for_path(m_settings.export_folder));
     else if (!m_doc.path.empty())
         dialog->set_initial_folder(Gio::File::create_for_path(std::filesystem::path(m_doc.path).parent_path().string()));
-    dialog->save(*this, [this, dialog](const Glib::RefPtr<Gio::AsyncResult>& result) {
+    dialog->save(*this, [this, dialog, ttf, ext](const Glib::RefPtr<Gio::AsyncResult>& result) {
         Glib::RefPtr<Gio::File> file;
         try { file = dialog->save_finish(result); } catch (const Glib::Error&) { return; }
         if (!file) return;
         std::filesystem::path p = file->get_path();
-        if (p.extension() != ".otf") p += ".otf";
+        if (p.extension() != ext) p += ext;
         otf::OtfReport rep;
         std::string err;
-        if (!otf::export_otf(m_doc.font, p, {}, &rep, &err)) {
+        const bool ok = ttf ? otf::export_ttf(m_doc.font, p, {}, &rep, &err) : otf::export_otf(m_doc.font, p, {}, &rep, &err);
+        if (!ok) {
             say("Could not export: " + err, true);
             if (auto lg = log::get(log::Area::Io)) lg->warn("export '{}': {}", p.string(), err);
             return;
@@ -102,9 +108,9 @@ void Shell::on_export_otf() {  // handler: Ctrl+E
         if (!rep.notes.empty()) line += ". " + rep.notes.front() + (rep.notes.size() > 1 ? " (more in the log)" : "");
         say(line, false);
         if (auto lg = log::get(log::Area::Io)) {
-            lg->info("export '{}': {} glyphs, {} code points, {} bytes, {:.1f} ms; kern {} glyph pairs, {} class cells, {} subtables",
+            lg->info("export '{}': {} glyphs, {} code points, {} bytes, {:.1f} ms; kern {} glyph pairs, {} class cells, {} subtables{}",
                      p.string(), rep.glyphs, rep.encoded, rep.bytes, rep.ms, rep.kern_glyph_pairs, rep.kern_class_pairs,
-                     rep.gpos_subtables);
+                     rep.gpos_subtables, ttf ? "; " + std::to_string(rep.tt_points) + " glyf points" : std::string());
             for (const auto& n : rep.notes) lg->info("export: {}", n);
         }
     });

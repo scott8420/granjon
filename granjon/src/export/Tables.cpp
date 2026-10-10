@@ -84,7 +84,7 @@ bool is_italic(const std::string& style) {
 }
 
 // ── head ───────────────────────────────────────────────────────────────────
-Bytes build_head(const Prepared& p) {
+Bytes build_head(const Prepared& p, int loca_format) {
     Writer w;
     w.u32(0x00010000);
     const double rev = p.info.version_major + p.info.version_minor / 1000.0;
@@ -103,7 +103,7 @@ Bytes build_head(const Prepared& p) {
     w.u16(mac_style);
     w.u16(6);              // lowestRecPPEM
     w.i16(2);              // fontDirectionHint (deprecated, fixed)
-    w.i16(0);              // indexToLocFormat (no loca in CFF)
+    w.i16(loca_format);    // indexToLocFormat (0 for CFF: no loca)
     w.i16(0);
     return w.b;
 }

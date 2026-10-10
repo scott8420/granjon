@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
-"""otf_check.py -- validate a Granjon-exported OTF with outside tools (M9).
+"""otf_check.py -- validate a Granjon-exported OTF or TTF with outside tools (M9, M10).
 
-    python3 scripts/otf_check.py Font.otf [Font.granjon]
+    python3 scripts/otf_check.py Font.otf|Font.ttf [Font.granjon]
 
 Runs whatever of these is installed (pip install fonttools opentype-sanitizer
 freetype-py uharfbuzz ufoLib2) and says which it skipped:
   ots       OTS sanitizer -- what Chrome / Firefox run before using a web font
   fontTools decompiles every table; with the source given, compares each
-            glyph's outline (components decomposed), advance and code points
+            glyph's outline (components decomposed) -- exactly for CFF; for
+            TrueType against fontTools' cu2qu of the source: contour count,
+            area (0.5 %) and bbox (2 units)
+            -- advance and code points
   freetype  loads and renders every glyph
   harfbuzz  with the source given: shapes every kerning pair the source
             implies and compares the advance change with UFO precedence
@@ -120,6 +123,22 @@ def main():
                 cs.append(tuple(cur))
             return sorted(cs)
 
+        truetype = "glyf" in font
+        from fontTools.pens.areaPen import AreaPen
+        from fontTools.pens.boundsPen import BoundsPen
+        from fontTools.pens.cu2quPen import Cu2QuPen
+        from fontTools.pens.roundingPen import RoundingPen
+
+        def area_bbox(rec):
+            # contours, signed area (sign-free: TrueType runs the other way), bbox
+            ap, bp = AreaPen(), BoundsPen(None)
+            rec.replay(ap)
+            rec.replay(bp)
+            n = sum(1 for op, _ in rec.value if op == "moveTo")
+            if bp.bounds is None:
+                return None
+            return n, round(abs(ap.value), 1), bp.bounds
+
         outline_bad, adv_bad, missing = [], [], []
         hmtx = font["hmtx"]
         for g in ufo:
@@ -131,7 +150,20 @@ def main():
             g.draw(a)
             b = RecordingPen()
             gs[o].draw(b)
-            if contours(a.value) != contours(b.value):
+            if truetype:
+                # Against fontTools' own cu2qu of the source (what fontmake
+                # would ship), not the cubic: thin strokes lose ~1 % area to a
+                # 1-unit tolerance either way.
+                ref = RecordingPen()
+                a.replay(Cu2QuPen(RoundingPen(ref), font["head"].unitsPerEm / 1000.0, reverse_direction=True))
+                sa, sb = area_bbox(ref), area_bbox(b)
+                if sa is None or sb is None:
+                    if (sa is None) != (sb is None):
+                        outline_bad.append(g.name)
+                elif (sa[0] != sb[0] or abs(sa[1] - sb[1]) > max(4.0, abs(sa[1]) * 0.005)
+                      or any(abs(u - v) > 2 for u, v in zip(sa[2], sb[2]))):
+                    outline_bad.append(f"{g.name} {sa[:2]} vs {sb[:2]}")
+            elif contours(a.value) != contours(b.value):
                 outline_bad.append(g.name)
             if hmtx[o][0] != round(g.width):
                 adv_bad.append(f"{g.name} {hmtx[o][0]} != {round(g.width)}")

@@ -47,7 +47,7 @@ struct Settings {
     // ── Preview + export (M9) ─────────────────────────────────────────────
     std::string preview_text = "Hamburgefonstiv HOHOHO nonono";   // the waterfall's sample
     bool        preview_kern = true;     // the compiled kerning on
-    bool        preview_dark = false;    // light text on dark
+    bool        preview_invert = false;  // show the page in the OTHER mode than the desktop's
     std::string export_folder;           // where the Export dialog starts
 
     // ── Overview ──────────────────────────────────────────────────────────

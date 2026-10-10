@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Regenerate granjon/src/export/OtfData.cpp -- spec tables the OTF writer needs:
-the CFF standard strings (SIDs 0..390) and the OS/2 ulUnicodeRange blocks.
+"""Regenerate granjon/src/export/OtfData.cpp -- spec tables the sfnt writers need:
+the CFF standard strings (SIDs 0..390), the OS/2 ulUnicodeRange blocks, and
+the 258 standard Macintosh glyph names (post format 2, TTF).
 Both are fixed by the specs (CFF 1.0 Appendix A; OpenType OS/2 v1.7); fontTools
 carries them verbatim, so this script copies them out of fontTools once.
 Needs fontTools (pip). Run from the project root:  python3 scripts/otf_tables.py
@@ -8,6 +9,7 @@ Needs fontTools (pip). Run from the project root:  python3 scripts/otf_tables.py
 import os, sys
 from fontTools.cffLib import cffStandardStrings
 from fontTools.ttLib.tables.O_S_2f_2 import OS2_UNICODE_RANGES
+from fontTools.ttLib.standardGlyphOrder import standardGlyphOrder
 
 out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "granjon", "src", "export", "OtfData.cpp")
 L = []
@@ -31,6 +33,12 @@ for bit, blocks in enumerate(OS2_UNICODE_RANGES):
         n += 1
 L.append("};")
 L.append("const int kUnicodeRangeCount = %d;" % n)
+L.append("")
+L.append("const char* const kMacStandardNames[kMacStandardCount] = {")
+for i in range(0, len(standardGlyphOrder), 6):
+    L.append("    " + " ".join('"%s",' % s for s in standardGlyphOrder[i:i+6]))
+L.append("};")
+assert len(standardGlyphOrder) == 258
 L.append("")
 L.append("}  // namespace granjon::otf")
 assert len(cffStandardStrings) == 391
