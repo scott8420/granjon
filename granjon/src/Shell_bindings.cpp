@@ -20,6 +20,7 @@ void Shell::bind_actions() {  // bindings: actions + recents group
     // Plain win.* actions -> handler bodies (Shell_handlers.cpp).
     add_action("new",           sigc::mem_fun(*this, &Shell::on_new));
     add_action("open",          sigc::mem_fun(*this, &Shell::on_open));
+    add_action("import-font",   sigc::mem_fun(*this, &Shell::on_import));
     add_action("save",          sigc::mem_fun(*this, &Shell::on_save));
     add_action("save-as",       sigc::mem_fun(*this, &Shell::on_save_as));
     add_action("export-otf",    sigc::mem_fun(*this, &Shell::on_export_otf));

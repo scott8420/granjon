@@ -87,6 +87,7 @@ private:
     void on_open();                              // category: handler: choose a .granjon / .ufo folder (Ctrl+O)
     void on_save();                              // category: handler: save, or Save As when untitled (Ctrl+S)
     void on_save_as();                           // category: handler: choose where (Ctrl+Shift+S)
+    void on_import();                            // category: handler: an OTF / TTF as a new font (Ctrl+Shift+O, M11)
     void on_export_otf();                        // category: handler: compile + write an .otf (Ctrl+E, M9)
     void on_export_ttf();                        // category: handler: compile + write a .ttf (Ctrl+Shift+E, M10a)
     void export_font(bool ttf);                  // category: helper: the export dialog + write, either format

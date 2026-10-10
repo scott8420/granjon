@@ -129,12 +129,30 @@ def main():
         from fontTools.pens.cu2quPen import Cu2QuPen
         from fontTools.pens.roundingPen import RoundingPen
 
+        def drawing_only(rec):
+            # The recording's contours that draw something: a lone point (a
+            # TrueType anchor) does not, and an all-off-curve contour has no
+            # moveTo in fontTools' recording -- split on closePath / endPath.
+            out, cur = [], []
+            for op, pts in rec.value:
+                cur.append((op, pts))
+                if op in ("closePath", "endPath"):
+                    if any(o in ("lineTo", "curveTo", "qCurveTo") for o, _ in cur):
+                        out.extend(cur)
+                    cur = []
+            if any(o in ("lineTo", "curveTo", "qCurveTo") for o, _ in cur):
+                out.extend(cur)
+            r = RecordingPen()
+            r.value = out
+            return r
+
         def area_bbox(rec):
-            # contours, signed area (sign-free: TrueType runs the other way), bbox
+            # contours that draw, area (sign-free: TrueType runs the other way), bbox
+            rec = drawing_only(rec)
             ap, bp = AreaPen(), BoundsPen(None)
             rec.replay(ap)
             rec.replay(bp)
-            n = sum(1 for op, _ in rec.value if op == "moveTo")
+            n = sum(1 for op, _ in rec.value if op in ("closePath", "endPath"))
             if bp.bounds is None:
                 return None
             return n, round(abs(ap.value), 1), bp.bounds
@@ -148,7 +166,7 @@ def main():
                 continue
             a = DecomposingRecordingPen(ufo)
             g.draw(a)
-            b = RecordingPen()
+            b = DecomposingRecordingPen(gs)   # the font's composites resolved too
             gs[o].draw(b)
             if truetype:
                 # Against fontTools' own cu2qu of the source (what fontmake

@@ -17,6 +17,8 @@
 #include <gtkmm/filedialog.h>
 #include <giomm/asyncresult.h>
 #include <giomm/file.h>
+#include <giomm/liststore.h>
+#include <gtkmm/filefilter.h>
 
 #include <filesystem>
 
@@ -52,6 +54,53 @@ void Shell::on_open() {  // handler: Ctrl+O
                 if (dir) open_path(dir->get_path());
             } catch (const Glib::Error&) {
                 // dismissed: nothing to do
+            }
+        });
+    });
+}
+
+// Import (M11): an OTF / TTF read into a new, unsaved document -- the file on
+// disk is never touched; Save asks where to keep the .granjon.
+void Shell::on_import() {  // handler: Ctrl+Shift+O
+    confirm_discard([this] {
+        auto dialog = Gtk::FileDialog::create();
+        dialog->set_title("Import a font  (OTF / TTF)");
+        auto filters = Gio::ListStore<Gtk::FileFilter>::create();
+        auto fonts = Gtk::FileFilter::create();
+        fonts->set_name("OpenType / TrueType fonts");
+        for (const char* p : {"*.otf", "*.ttf", "*.OTF", "*.TTF"}) fonts->add_pattern(p);
+        filters->append(fonts);
+        auto all = Gtk::FileFilter::create();
+        all->set_name("All files");
+        all->add_pattern("*");
+        filters->append(all);
+        dialog->set_filters(filters);
+        std::error_code ec;
+        if (!m_settings.open_folder.empty() && std::filesystem::is_directory(m_settings.open_folder, ec))
+            dialog->set_initial_folder(Gio::File::create_for_path(m_settings.open_folder));
+        dialog->open(*this, [this, dialog](const Glib::RefPtr<Gio::AsyncResult>& result) {
+            Glib::RefPtr<Gio::File> file;
+            try { file = dialog->open_finish(result); } catch (const Glib::Error&) { return; }
+            if (!file) return;
+            const std::string p = file->get_path();
+            reader::ImportReport rep;
+            std::string err;
+            if (!m_doc.import(p, &rep, &err)) {
+                say(err, true);
+                if (auto lg = log::get(log::Area::Io)) lg->warn("import '{}': {}", p, err);
+                return;
+            }
+            after_document_swap();
+            char buf[200];
+            std::snprintf(buf, sizeof buf, " (%s) \u2014 %d glyphs, %d kern entries, %.0f ms. Save as\u2026 keeps it.",
+                          rep.format.c_str(), rep.glyphs, rep.kern_pairs, rep.ms);
+            std::string line = "Imported " + std::filesystem::path(p).filename().string() + buf;
+            if (!rep.notes.empty()) line += " " + rep.notes.front() + (rep.notes.size() > 1 ? " (more in the log)" : "");
+            say(line, false);
+            if (auto lg = log::get(log::Area::Io)) {
+                lg->info("import '{}': {} {} glyphs, {} contours, {} components, {} code points, kern {} entries / {} groups, {:.1f} ms",
+                         p, rep.format, rep.glyphs, rep.contours, rep.components, rep.encoded, rep.kern_pairs, rep.kern_groups, rep.ms);
+                for (const auto& n : rep.notes) lg->info("import: {}", n);
             }
         });
     });

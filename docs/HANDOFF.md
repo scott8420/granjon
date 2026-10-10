@@ -14,7 +14,12 @@
 - **M8 profiles:** crc (s05 open).
 - **M9 export OTF: crc** (Scott, on r2: export via the dialog, GNOME Fonts reads the file, the Preview renders and follows the desktop's dark mode).
 - **M10a export TTF: crc** (Scott). He noticed the OTF is slightly smaller than the TTF: same outline size (CFF 152 KB vs glyf 156 KB on Termes); the gap is post 2's stored names (~10 KB) and loca (~4 KB). CFF subroutines would shrink the OTF further (follow-on).
-- **M5h tool panel: built, shipped (`s05_m5h_tool_panel.zip` -- the one to install; every earlier s05 zip is superseded), awaiting Scott's crc.** Scott (s05, on seeing the pen): "jog the ruler over to the right and add a tool panel and use standard icons for the toggle tools with hints."
+- **M11 import OTF / TTF: built, shipped (`s05_m11_import.zip` -- the one to install; every earlier s05 zip is superseded), awaiting Scott's crc.** Scott's order after M5h: "3, 1, 2" = M11 import, then M10b, then the editor follow-ons.
+- M11: our own reader, no outside library (`import/`, namespace `granjon::reader`): CFF with a full Type 2 interpreter (local / global subrs, hint operators skipped, flex family, arithmetic ops; CID-keyed FDArray / FDSelect; charset names, cidNNNNN for CID) and TrueType glyf / loca (quadratics promoted to cubic exactly, all-off-curve contours handled, contours turned to the model's direction, composites -> components with their 2x2; point-matched components noted). Smooth inferred where handles line up. name (typographic family / subfamily first), head / hhea / OS/2 metrics (x-height / cap height measured when OS/2 lacks them; overshoot from O), cmap 4 / 12 / 6 / 0, post 1 / 2 names (else AGLFN from the cmap, else glyphNNNNN; invalid / repeated names replaced, counted), hmtx. Kerning: GPOS 'kern' PairPos 1 / 2 (Extension too) -> pairs, public.kern1 / kern2 groups, group pairs, with OpenType's first-subtable-wins carried into UFO precedence; old 'kern' table as fallback. Notes for what isn't read (GSUB, hints, variations, WOFF). Atomic: a failed read leaves the open font untouched.
+- App: ☰ **Import font (OTF / TTF)…** (**Ctrl+Shift+O**): asks about unsaved changes, reads into a NEW unsaved document (no path -- Save asks where; closing asks first). Status line: format, glyphs, kern entries, ms, first note; the log has the rest.
+- Validation (sandbox, `scripts/otf_check.py` comparing the ORIGINAL font file against the imported source): TeX Gyre Termes OTF -- 1090 outlines exact, 11,571 kern pairs shape identically (26 ms); our class-kerned Termes OTF -- 67 groups, 25,579 pairs identical; DejaVu Sans TTF -- 6,253 glyphs (5,524 composites), outlines within cu2qu tolerance, 5,918 code points, 2,727 kern pairs identical (47-57 ms). otf_check learned composites in the font and non-drawing contours (TrueType anchor points; all-off-curve contours). CID-keyed CFF is implemented but untested on a real CJK font (none in the sandbox).
+- Selftest 772 / 0 (15 new in `src/selftest_import.cpp`: OTF round trip exact, TTF within tolerance and as-drawn direction, kerning identical both ways, names / metrics, truncated / junk / WOFF2 refused, failed import changes nothing). Headless: DejaVu imported through the dialog.
+- **M5h tool panel: crc** (Scott: "excellent"; `s05_m5h_tool_panel.zip` is the last s05 ship). Scott (s05, on seeing the pen): "jog the ruler over to the right and add a tool panel and use standard icons for the toggle tools with hints."
 - M5h: a tool panel down the editor canvas's left edge (the canvas and its left ruler move right of it). Tools, one at a time: **Pick (V)**, **Pen (P)**, **Measure** (hold M still works), **Hand** (hold Space still works); below a rule, the view toggles **Fill, Context, Grid, Snap** (remembered as before). Icons are Granjon's own symbolic SVGs (arrow, pen nib, ruler, hand, drop, context bars, grid, magnet -- `resources/icons/scalable/apps/granjon-tool-*` / `granjon-view-*`, in the gresource): the stock themes don't carry drawing tools on every desktop. Each tooltip: name, key, how to use it. Escape in Measure / Hand returns to Pick. The top bar keeps the title, Anchors, Fit, readout, zoom.
 - Sandbox notes: icons need GTK's SVG pixbuf loader (installed here for the shots); the house CSS needs GTK >= 4.16 (var()), so the sandbox (4.14) shows the checked tools grey instead of the accent -- Scott's Fedora has it.
 - **M5g pen tool: crc** (Scott, by moving on to the panel).
@@ -30,7 +35,12 @@
 - Outside validation (`scripts/otf_check.py`, now OTF or TTF; TrueType outlines compared with fontTools' own cu2qu of the source, i.e. what fontmake would ship): Termes + groups and Termes at 2048 UPM as TTF, and a TTF exported through the app's dialog, pass OTS, fontTools, outlines (1090 glyphs), FreeType, HarfBuzz (25,579 pairs). OTF vs TTF rendered by FreeType at 160 px overlay with no visible difference. Termes TTF: ~55 ms, 217 KB, 52,715 points.
 - Before M10a: Scott ran M9 r1 and asked that the Preview page follow the desktop's dark mode -> r2 (see decisions).
 
-What to look at in M5h:
+What to look at in M11:
+- ☰ Import font (OTF / TTF)… or Ctrl+Shift+O. Import an installed OTF and a TTF (e.g. /usr/share/fonts). Overview, editor (smooth nodes where expected; TTF curves now cubic), Spacing (kerning, groups in the KERN card), Preview (should look like the original).
+- Import TeX Gyre Termes straight from its .otf now -- the M7 / M8 readouts on it are still unseen.
+- Save it: it asks where (Family-Style.granjon).
+
+What to look at in M5h (crc):
 - Editor: the panel at the canvas's left. Hover each button -- the hint. Click Pen / Measure / Hand / Pick, and the keys V, P; hold M and Space inside Pick still work. Fill / Context / Grid / Snap as before.
 - Whether the icons read as the tools at a glance (they are mine -- say which to redraw).
 
@@ -61,6 +71,7 @@ What to look at in M9:
 - On Termes: whether the Preview's kerning matches the Spacing strip on the same pairs (it should, exactly -- the GPOS is built from the strip's lookup).
 
 ## Decisions made in s05
+- M11: our own reader instead of FreeType (outlines would be FreeType's only; names, metrics, kerning classes are table parsing either way -- and no new package). Imports become a NEW unsaved document; the file on disk is never touched. Coordinates snap to units like every edit (TTF's 2/3-handles round within half a unit). Kerning: first-wins merge across subtables and lookups (noted when there is more than one lookup).
 - M5h: tools are a toggle group in a panel; the view toggles live in the same panel under a rule (the top bar stays for glyph actions). Own icons rather than theme icons (availability). Measure and Hand became tools as well as holds.
 - M5g: one undo step per node (not per path) -- a slip costs one Ctrl+Z. The pen draws open paths and closes them; it never adds to a closed contour (insert a node with a double-click instead). A new path starts Drafted on an Empty glyph. No auto-direction: the Checks report / Correct directions handle a path drawn clockwise.
 - M5f: Delete keeps the shape by default (the refit), as Glyphs does; a "delete without refit" modifier can follow if wanted. Double-click a segment = add node (double-click a node still flips corner / smooth). L / C act on segments whose BOTH end nodes are picked. A contour left with fewer than two nodes is removed. Results snap to whole units like every edit.
@@ -79,7 +90,7 @@ What to look at in M9:
 - No CFF hints, no BlueValues (none in the model; M10's ttfautohint covers TTF).
 - head.created / modified honour SOURCE_DATE_EPOCH (reproducible builds); the selftest fixes the time.
 
-## s06 goal — Milestone M10b: WOFF2 + overlap removal (or Scott's pick)
+## s06 goal — Milestone M10b: WOFF2 + overlap removal (Scott's order: M11 done, then M10b, then the editor follow-ons)
 WOFF2 (brotli; the glyf / loca transform is optional -- start without), overlap removal on export (Clipper2 via Curvz's BooleanOpsClipper; curves flattened -> rebuilt, or kept by a curve-aware pass -- a fork to settle and surface), the ttfautohint hook. Needs the package answer first. **Stop at M10b.**
 
 ## s05 goal (done) — Milestone M9: Export OTF
@@ -87,7 +98,7 @@ WOFF2 (brotli; the glyf / loca transform is optional -- start without), overlap 
 **Stop at M9** for a compile / run report.
 
 ## Still open
-- Packages, Fedora (asked in s05, answer pending): `brotli-devel` for WOFF2 (M10b), Clipper2 1.5.4 via FetchContent for overlap removal (M10b), `harfbuzz-devel freetype-devel` for the strip / import.
+- Packages, Fedora (asked in s05, answer pending): `brotli-devel` for WOFF2 (M10b), Clipper2 1.5.4 via FetchContent for overlap removal (M10b), `harfbuzz-devel` for the strip. (FreeType is no longer needed for import.)
 - A RULES.md addition proposed in s05, answer pending: "One zip to install" (the final message names the single zip to install; checkpoint zips carry `_wip`).
 - M10b: WOFF2, overlap removal (Clipper2, from Curvz's BooleanOpsClipper), ttfautohint hook (optional external tool).
 - granjon-cli scope (ARC backlog). `export_otf` is its first ready-made command.
@@ -95,6 +106,7 @@ WOFF2 (brotli; the glyf / loca transform is optional -- start without), overlap 
 - Profiles follow-ons: a profile cache + font-wide kern-to-gap over a pair list, per-class targets, collision check on proof strings.
 - Spacing follow-ons: kerning groups editor (create / assign public.kern1 / kern2 from the UI), a strip text history / presets.
 - Checks follow-ons (ARCHITECTURE §6): missing extreme points, overlaps, sidebearing consistency, stem drift, kerning class audit and outliers, collisions.
+- Import follow-ons: WOFF / WOFF2 in (zlib / brotli), font collections, GSUB -> features.fea, glyph/group kerning kept as exceptions (now expanded to glyph pairs), seac accents, variable fonts (v3).
 - Export follow-ons: italic angle / caret slope (no field in FontInfo yet), panose / family class, CFF subroutinization (size), PostScript blue zones from the metrics.
 - The inspector panel is narrower than some of its rows in a 1280 px window (the OUTLINE card's "Reverse picked", the KERN hint): clipped, not wrapped. Check on Scott's screen.
 - selftest.cpp's main() wants splitting per milestone (M9's part is its own file now; the rest still one function).

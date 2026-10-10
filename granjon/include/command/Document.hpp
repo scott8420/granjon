@@ -4,6 +4,7 @@
 // windows on one font share one history; closing a font drops its history.
 #include "command/Verbs.hpp"
 #include "io/Ufo.hpp"
+#include "import/FontReader.hpp"
 #include "model/Font.hpp"
 
 #include <string>
@@ -44,6 +45,15 @@ public:
         path = p;
         journal.clear();
         m_saved = journal.stamp();
+        return true;
+    }
+    // M11: an OTF / TTF read into a NEW, unsaved document (no path: Save asks
+    // where; modified, so closing asks first). On failure nothing changes.
+    bool import(const std::string& p, reader::ImportReport* rep, std::string* err) {
+        if (!reader::import_font_file(p, font, rep, err)) return false;
+        path.clear();
+        journal.clear();
+        m_saved = ~journal.stamp();   // never the current stamp: unsaved
         return true;
     }
     // Write to `p` (or the current path). History stays: saving is not a step.

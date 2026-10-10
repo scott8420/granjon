@@ -98,6 +98,12 @@ add_library(granjon_core STATIC
     src/export/Ttf.cpp
     # M9c: the drawing codes (CFF / TrueType / SVG path listings) and Export SVG.
     src/export/Codes.cpp
+    # M11: import OTF / TTF -- our own reader (CFF Type 2 interpreter, glyf,
+    # GPOS kern -> groups), no outside library.
+    src/import/CffRead.cpp
+    src/import/GlyfRead.cpp
+    src/import/GposRead.cpp
+    src/import/FontReader.cpp
 )
 target_include_directories(granjon_core PUBLIC include)
 # libxml2 parses plist / GLIF. C, GTK-free: it keeps the core's seam intact.
@@ -111,7 +117,7 @@ target_include_directories(granjon_core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thir
 # ── Headless selftest -- exercises the core with no display ────────────────────
 # Cairn's Stones (the journal's own fixture) compiles into the selftest only:
 # it proves the journal mechanics; the app's store is model::Font.
-add_executable(granjon_selftest src/selftest.cpp src/selftest_export.cpp src/selftest_edit.cpp src/core/Stones.cpp)
+add_executable(granjon_selftest src/selftest.cpp src/selftest_export.cpp src/selftest_edit.cpp src/selftest_import.cpp src/core/Stones.cpp)
 target_link_libraries(granjon_selftest PRIVATE granjon_core)
 # selftest.cpp's main() is one long walk; GCC 16 with -g notes "variable
 # tracking size limit exceeded" and retries without. Skip the attempt for this

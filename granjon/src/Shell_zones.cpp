@@ -153,6 +153,7 @@ Glib::RefPtr<Gio::Menu> Shell::build_menu() {  // zone: hamburger model
     file->append("Open…", "win.open");
     m_recents_menu = Gio::Menu::create();
     file->append_submenu("Open recent", m_recents_menu);
+    file->append("Import font (OTF / TTF)…", "win.import-font");
     menu->append_section(file);
     auto save = Gio::Menu::create();
     save->append("Save", "win.save");
