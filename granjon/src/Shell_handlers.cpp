@@ -12,6 +12,7 @@
 #include "core/Recents.hpp"
 #include "export/Otf.hpp"
 #include "export/Codes.hpp"
+#include "export/Woff2.hpp"
 #include "model/Spacing.hpp"
 
 #include <gtkmm/filedialog.h>
@@ -124,13 +125,13 @@ void Shell::on_save_as() { save_as({}); }  // handler: Ctrl+Shift+S
 // Preview sets -- written beside the font by default ("Family-Style.otf").
 // Read-only on the font: no undo step. The dialog starts where the last export
 // went (either format).
-void Shell::on_export_otf() { export_font(false); }  // handler: Ctrl+E
-void Shell::on_export_ttf() { export_font(true); }   // handler: Ctrl+Shift+E
+void Shell::on_export_otf() { export_font(".otf"); }  // handler: Ctrl+E
+void Shell::on_export_ttf() { export_font(".ttf"); }  // handler: Ctrl+Shift+E
 
-void Shell::export_font(bool ttf) {  // helper
-    const std::string ext = ttf ? ".ttf" : ".otf";
+void Shell::export_font(const std::string& ext) {  // helper
+    const bool ttf = ext == ".ttf";
     auto dialog = Gtk::FileDialog::create();
-    dialog->set_title(ttf ? "Export TTF" : "Export OTF");
+    dialog->set_title(ext == ".woff2" ? "Export WOFF2 (web font)" : ttf ? "Export TTF" : "Export OTF");
     dialog->set_initial_name(otf::default_file_name(m_doc.font.info(), ext));
     std::error_code ec;
     if (!m_settings.export_folder.empty() && std::filesystem::is_directory(m_settings.export_folder, ec))
@@ -145,7 +146,8 @@ void Shell::export_font(bool ttf) {  // helper
         if (p.extension() != ext) p += ext;
         otf::OtfReport rep;
         std::string err;
-        const bool ok = ttf ? otf::export_ttf(m_doc.font, p, {}, &rep, &err) : otf::export_otf(m_doc.font, p, {}, &rep, &err);
+        const bool ok = ext == ".woff2" ? otf::export_woff2(m_doc.font, p, {}, &rep, &err)
+                      : ttf ? otf::export_ttf(m_doc.font, p, {}, &rep, &err) : otf::export_otf(m_doc.font, p, {}, &rep, &err);
         if (!ok) {
             say("Could not export: " + err, true);
             if (auto lg = log::get(log::Area::Io)) lg->warn("export '{}': {}", p.string(), err);

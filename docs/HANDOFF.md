@@ -1,12 +1,12 @@
 # Granjon handoff — s05 -> s06
 
-# s06_woff2_overlaps
+# s06_overlaps
 
 ## Files to upload
-- `s06_woff2_overlaps.zip` (made by `scripts/granjon_backup.sh -o s06_woff2_overlaps`)
+- `s06_overlaps.zip` (made by `scripts/granjon_backup.sh -o s06_overlaps`)
 - `RULES.md`, `HANDOFF.md`, `ARCHITECTURE.md`, `ARC.md`, `CANON.md`
 - `My-Termes-Regular.granjon` from the project's `fonts/` folder (not in the s05 upload; s05 rebuilt Termes in the sandbox from TeX Gyre the same way, but the M7 / M8 readouts on your copy are still unseen).
-- **Curvz source**: `BooleanOpsClipper` (M10b, overlap removal); its pen code too if M5g's conventions should be brought in line with Curvz's.
+- **Curvz source**: `BooleanOpsClipper` and what it includes (M10c, overlap removal starts from it); its pen code too if M5g's conventions should be brought in line with Curvz's.
 
 ---
 
@@ -14,7 +14,12 @@
 - **M8 profiles:** crc (s05 open).
 - **M9 export OTF: crc** (Scott, on r2: export via the dialog, GNOME Fonts reads the file, the Preview renders and follows the desktop's dark mode).
 - **M10a export TTF: crc** (Scott). He noticed the OTF is slightly smaller than the TTF: same outline size (CFF 152 KB vs glyf 156 KB on Termes); the gap is post 2's stored names (~10 KB) and loca (~4 KB). CFF subroutines would shrink the OTF further (follow-on).
-- **M11 import OTF / TTF: built, shipped (`s05_m11_import.zip` -- the one to install; every earlier s05 zip is superseded), awaiting Scott's crc.** Scott's order after M5h: "3, 1, 2" = M11 import, then M10b, then the editor follow-ons.
+- **Packages: approved** (Scott, s05: "yes") -- brotli (WOFF2, now used), Clipper2 via FetchContent (M10c), HarfBuzz for the strip when it comes.
+- **M10b WOFF2: built, shipped (`s05_m10b_woff2.zip` -- the one to install; every earlier s05 zip is superseded), awaiting Scott's crc.** **New build dependency: `brotli-devel`** (Fedora; Ubuntu `libbrotli-dev`) -- `sudo dnf install brotli-devel` before building. build.sh's header names it.
+- M10b: `export/Woff2` -- the TrueType compile wrapped as WOFF 2.0: tables sorted by tag, one Brotli stream (font mode, quality 11), glyf / loca with the null transform (version 3), head flags bit 11 + checksums redone, version from head. ☰ **Export WOFF2 (web font)…**. Termes: 212 KB TTF -> 55 KB WOFF2 (~0.5 s at quality 11).
+- Validation: selftest decodes the stream with libbrotlidec and gets every table back byte for byte (head: bit 11); OTS sanitizes it (the browsers' check); fontTools reads it, outlines / advances / cmap match the source; unwrapped it is our TTF byte-for-byte in size, FreeType renders all glyphs, HarfBuzz shapes all 25,579 pairs; headless Chromium loads it through @font-face (document.fonts: loaded) and kerns it (screenshot: font-kerning on vs none).
+- Selftest 778 / 0 (6 new). The selftest links libbrotlidec (same package).
+- **M11 import OTF / TTF: crc** (Scott; `s05_m11_import.zip` is the last s05 ship). Scott's order after M5h: "3, 1, 2" = M11 import, then M10b, then the editor follow-ons.
 - M11: our own reader, no outside library (`import/`, namespace `granjon::reader`): CFF with a full Type 2 interpreter (local / global subrs, hint operators skipped, flex family, arithmetic ops; CID-keyed FDArray / FDSelect; charset names, cidNNNNN for CID) and TrueType glyf / loca (quadratics promoted to cubic exactly, all-off-curve contours handled, contours turned to the model's direction, composites -> components with their 2x2; point-matched components noted). Smooth inferred where handles line up. name (typographic family / subfamily first), head / hhea / OS/2 metrics (x-height / cap height measured when OS/2 lacks them; overshoot from O), cmap 4 / 12 / 6 / 0, post 1 / 2 names (else AGLFN from the cmap, else glyphNNNNN; invalid / repeated names replaced, counted), hmtx. Kerning: GPOS 'kern' PairPos 1 / 2 (Extension too) -> pairs, public.kern1 / kern2 groups, group pairs, with OpenType's first-subtable-wins carried into UFO precedence; old 'kern' table as fallback. Notes for what isn't read (GSUB, hints, variations, WOFF). Atomic: a failed read leaves the open font untouched.
 - App: ☰ **Import font (OTF / TTF)…** (**Ctrl+Shift+O**): asks about unsaved changes, reads into a NEW unsaved document (no path -- Save asks where; closing asks first). Status line: format, glyphs, kern entries, ms, first note; the log has the rest.
 - Validation (sandbox, `scripts/otf_check.py` comparing the ORIGINAL font file against the imported source): TeX Gyre Termes OTF -- 1090 outlines exact, 11,571 kern pairs shape identically (26 ms); our class-kerned Termes OTF -- 67 groups, 25,579 pairs identical; DejaVu Sans TTF -- 6,253 glyphs (5,524 composites), outlines within cu2qu tolerance, 5,918 code points, 2,727 kern pairs identical (47-57 ms). otf_check learned composites in the font and non-drawing contours (TrueType anchor points; all-off-curve contours). CID-keyed CFF is implemented but untested on a real CJK font (none in the sandbox).
@@ -35,7 +40,11 @@
 - Outside validation (`scripts/otf_check.py`, now OTF or TTF; TrueType outlines compared with fontTools' own cu2qu of the source, i.e. what fontmake would ship): Termes + groups and Termes at 2048 UPM as TTF, and a TTF exported through the app's dialog, pass OTS, fontTools, outlines (1090 glyphs), FreeType, HarfBuzz (25,579 pairs). OTF vs TTF rendered by FreeType at 160 px overlay with no visible difference. Termes TTF: ~55 ms, 217 KB, 52,715 points.
 - Before M10a: Scott ran M9 r1 and asked that the Preview page follow the desktop's dark mode -> r2 (see decisions).
 
-What to look at in M11:
+What to look at in M10b:
+- **Install brotli-devel first**, then build.
+- ☰ Export WOFF2 (web font)… -> a .woff2; drop it in a page with @font-face and open it in Firefox / Chrome.
+
+What to look at in M11 (crc):
 - ☰ Import font (OTF / TTF)… or Ctrl+Shift+O. Import an installed OTF and a TTF (e.g. /usr/share/fonts). Overview, editor (smooth nodes where expected; TTF curves now cubic), Spacing (kerning, groups in the KERN card), Preview (should look like the original).
 - Import TeX Gyre Termes straight from its .otf now -- the M7 / M8 readouts on it are still unseen.
 - Save it: it asks where (Family-Style.granjon).
@@ -71,6 +80,7 @@ What to look at in M9:
 - On Termes: whether the Preview's kerning matches the Spacing strip on the same pairs (it should, exactly -- the GPOS is built from the strip's lookup).
 
 ## Decisions made in s05
+- M10b: WOFF2 wraps the TrueType build (as the web-font services ship); no glyf transform yet (version 3 is valid; the transform would shave another 10-25 %, a follow-on). Quality 11: slow-ish (~0.5 s on Termes), smallest file.
 - M11: our own reader instead of FreeType (outlines would be FreeType's only; names, metrics, kerning classes are table parsing either way -- and no new package). Imports become a NEW unsaved document; the file on disk is never touched. Coordinates snap to units like every edit (TTF's 2/3-handles round within half a unit). Kerning: first-wins merge across subtables and lookups (noted when there is more than one lookup).
 - M5h: tools are a toggle group in a panel; the view toggles live in the same panel under a rule (the top bar stays for glyph actions). Own icons rather than theme icons (availability). Measure and Hand became tools as well as holds.
 - M5g: one undo step per node (not per path) -- a slip costs one Ctrl+Z. The pen draws open paths and closes them; it never adds to a closed contour (insert a node with a double-click instead). A new path starts Drafted on an Empty glyph. No auto-direction: the Checks report / Correct directions handle a path drawn clockwise.
@@ -90,7 +100,8 @@ What to look at in M9:
 - No CFF hints, no BlueValues (none in the model; M10's ttfautohint covers TTF).
 - head.created / modified honour SOURCE_DATE_EPOCH (reproducible builds); the selftest fixes the time.
 
-## s06 goal — Milestone M10b: WOFF2 + overlap removal (Scott's order: M11 done, then M10b, then the editor follow-ons)
+## s06 goal — Milestone M10c: overlap removal (then the editor follow-ons, Scott's order)
+Remove overlaps on export (OTF / TTF / WOFF2) and as a verb on glyphs, starting from Curvz's BooleanOpsClipper (Clipper2 via FetchContent, as Curvz). The fork to settle and record: Clipper2 works on polygons -- flatten curves and refit cubics afterwards (shape tolerance, node count), or keep curve segments where contours do not intersect and only rebuild around the crossings. Then the ttfautohint hook (optional external tool on TTF). **Stop at M10c.**
 WOFF2 (brotli; the glyf / loca transform is optional -- start without), overlap removal on export (Clipper2 via Curvz's BooleanOpsClipper; curves flattened -> rebuilt, or kept by a curve-aware pass -- a fork to settle and surface), the ttfautohint hook. Needs the package answer first. **Stop at M10b.**
 
 ## s05 goal (done) — Milestone M9: Export OTF
@@ -98,9 +109,9 @@ WOFF2 (brotli; the glyf / loca transform is optional -- start without), overlap 
 **Stop at M9** for a compile / run report.
 
 ## Still open
-- Packages, Fedora (asked in s05, answer pending): `brotli-devel` for WOFF2 (M10b), Clipper2 1.5.4 via FetchContent for overlap removal (M10b), `harfbuzz-devel` for the strip. (FreeType is no longer needed for import.)
+- Packages: approved in s05. brotli-devel in use (M10b); Clipper2 1.5.4 via FetchContent comes with M10c; harfbuzz-devel when the strip shapes. (FreeType is no longer needed for import.)
 - A RULES.md addition proposed in s05, answer pending: "One zip to install" (the final message names the single zip to install; checkpoint zips carry `_wip`).
-- M10b: WOFF2, overlap removal (Clipper2, from Curvz's BooleanOpsClipper), ttfautohint hook (optional external tool).
+- M10c: overlap removal (Clipper2, from Curvz's BooleanOpsClipper), ttfautohint hook (optional external tool). WOFF2 glyf transform (follow-on).
 - granjon-cli scope (ARC backlog). `export_otf` is its first ready-made command.
 - Editor follow-ons: Shift-constrained point drags (the pen has 45 degrees; picking-mode drags don't yet), node type by key, a delete-without-refit modifier, pen snapping to metrics / nodes, composite follow-ons (Greek tonos, stacking, ogonek anchor, rebuild), overview follow-ons -- all in the ARC backlog.
 - Profiles follow-ons: a profile cache + font-wide kern-to-gap over a pair list, per-class targets, collision check on proof strings.

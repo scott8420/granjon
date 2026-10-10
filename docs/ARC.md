@@ -277,3 +277,10 @@ Newest session at the bottom.
   - `Document::import` (new unsaved document, modified), Shell `on_import` (Ctrl+Shift+O, ☰ under Open recent, OTF / TTF filter), registry row.
   - `otf_check.py` learned the font's own composites and non-drawing contours.
   - Selftest 772 / 0 (`src/selftest_import.cpp`). Sandbox: Termes OTF exact + kerning identical; class-kerned Termes; DejaVu Sans TTF (6,253 glyphs, composites, 2,727 pairs) all pass; DejaVu imported through the dialog headless.
+- M11: crc (Scott).
+- Packages approved (Scott: "yes. continue woff2"). M10b split: WOFF2 now, overlap removal = M10c (needs Curvz's BooleanOpsClipper).
+- M10b WOFF2.
+  - `export/Woff2`: `woff2_from_sfnt` (any sfnt -> WOFF 2.0: tables by tag, head bit 11 + adjustment redone via assemble_sfnt, unpadded concatenation, BrotliEncoderCompress quality 11 / font mode, directory with known-tag indices and UIntBase128 lengths, glyf / loca transform 3 = null, 48-byte header, 4-byte padded), `compile_woff2` (TrueType flavour), `export_woff2`. CMake: libbrotlienc for the core, libbrotlidec for the selftest; build.sh names brotli-devel / libbrotli-dev.
+  - App: ☰ Export WOFF2 (web font)… -- `export_font` now takes the extension.
+  - Selftest 778 / 0: header fields, the directory read back, the stream decompressed, every table byte for byte.
+  - Sandbox: Termes 212 KB -> 55 KB; OTS, fontTools, FreeType, HarfBuzz (all 25,579 pairs) pass (otf_check unwraps WOFF / WOFF2 for FreeType / HarfBuzz now); headless Chromium loads and kerns it via @font-face.

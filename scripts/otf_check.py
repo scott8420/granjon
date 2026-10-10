@@ -196,6 +196,19 @@ def main():
         cm_bad = [hex(u) for u, n in want.items() if cmap.get(u) != src_to_otf.get(n) and cmap.get(u) is None]
         say(not cm_bad and len(cmap) == len(want), f"source: cmap carries every code point ({len(cmap)})", ", ".join(cm_bad[:10]))
 
+    # FreeType / HarfBuzz take a plain sfnt: unwrap a WOFF / WOFF2 first.
+    if font.flavor:
+        import tempfile, io
+        plain = TTFont(otf)
+        plain.flavor = None
+        buf = io.BytesIO()
+        plain.save(buf)
+        tmp = tempfile.NamedTemporaryFile(suffix=".ttf" if "glyf" in plain else ".otf", delete=False)
+        tmp.write(buf.getvalue())
+        tmp.close()
+        say(True, f"unwrapped the {font.flavor.upper()} for FreeType / HarfBuzz", f"{len(buf.getvalue())} bytes")
+        otf = tmp.name
+
     # -- FreeType -------------------------------------------------------------
     try:
         import freetype

@@ -25,6 +25,7 @@ void Shell::bind_actions() {  // bindings: actions + recents group
     add_action("save-as",       sigc::mem_fun(*this, &Shell::on_save_as));
     add_action("export-otf",    sigc::mem_fun(*this, &Shell::on_export_otf));
     add_action("export-ttf",    sigc::mem_fun(*this, &Shell::on_export_ttf));
+    add_action("export-woff2",  [this] { export_font(".woff2"); });
     add_action("export-svg-glyph", [this] { export_svg(false); });
     add_action("export-svg-text",  [this] { export_svg(true); });
     signal_close_request().connect(sigc::mem_fun(*this, &Shell::on_close_request), false);

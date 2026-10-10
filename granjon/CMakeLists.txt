@@ -17,6 +17,10 @@ pkg_check_modules(LIBXML2 REQUIRED libxml-2.0)
 # package, only their own link lines.
 pkg_check_modules(PANGOFT2 REQUIRED pangoft2)
 pkg_check_modules(FONTCONFIG REQUIRED fontconfig)
+# WOFF2 (M10b): Brotli. Fedora brotli-devel, Ubuntu / Debian libbrotli-dev.
+# The decoder only for the selftest's round trip.
+pkg_check_modules(BROTLIENC REQUIRED libbrotlienc)
+pkg_check_modules(BROTLIDEC REQUIRED libbrotlidec)
 
 # ── Bundled Unicode data -- compiled INTO the core ─────────────────────────────
 # The trimmed UCD (names, blocks, decompositions, categories, case), the AGL /
@@ -98,6 +102,7 @@ add_library(granjon_core STATIC
     src/export/Ttf.cpp
     # M9c: the drawing codes (CFF / TrueType / SVG path listings) and Export SVG.
     src/export/Codes.cpp
+    src/export/Woff2.cpp    # M10b: WOFF2 (Brotli)
     # M11: import OTF / TTF -- our own reader (CFF Type 2 interpreter, glyf,
     # GPOS kern -> groups), no outside library.
     src/import/CffRead.cpp
@@ -108,8 +113,9 @@ add_library(granjon_core STATIC
 target_include_directories(granjon_core PUBLIC include)
 # libxml2 parses plist / GLIF. C, GTK-free: it keeps the core's seam intact.
 target_include_directories(granjon_core PRIVATE ${LIBXML2_INCLUDE_DIRS})
-target_link_libraries(granjon_core PUBLIC ${LIBXML2_LIBRARIES})
-target_link_directories(granjon_core PUBLIC ${LIBXML2_LIBRARY_DIRS})
+target_link_libraries(granjon_core PUBLIC ${LIBXML2_LIBRARIES} ${BROTLIENC_LIBRARIES})
+target_include_directories(granjon_core PRIVATE ${BROTLIENC_INCLUDE_DIRS})
+target_link_directories(granjon_core PUBLIC ${LIBXML2_LIBRARY_DIRS} ${BROTLIENC_LIBRARY_DIRS})
 # Vendored nlohmann/json (header-only, MIT), PRIVATE -- an implementation detail
 # of the pump, no consumer inherits the include (CANON: surprise-free build).
 target_include_directories(granjon_core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
@@ -118,7 +124,8 @@ target_include_directories(granjon_core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thir
 # Cairn's Stones (the journal's own fixture) compiles into the selftest only:
 # it proves the journal mechanics; the app's store is model::Font.
 add_executable(granjon_selftest src/selftest.cpp src/selftest_export.cpp src/selftest_edit.cpp src/selftest_import.cpp src/core/Stones.cpp)
-target_link_libraries(granjon_selftest PRIVATE granjon_core)
+target_link_libraries(granjon_selftest PRIVATE granjon_core ${BROTLIDEC_LIBRARIES})
+target_include_directories(granjon_selftest PRIVATE ${BROTLIDEC_INCLUDE_DIRS})
 # selftest.cpp's main() is one long walk; GCC 16 with -g notes "variable
 # tracking size limit exceeded" and retries without. Skip the attempt for this
 # one file (debug info stays; only the location refinement goes). The real

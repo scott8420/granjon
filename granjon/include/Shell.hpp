@@ -90,7 +90,7 @@ private:
     void on_import();                            // category: handler: an OTF / TTF as a new font (Ctrl+Shift+O, M11)
     void on_export_otf();                        // category: handler: compile + write an .otf (Ctrl+E, M9)
     void on_export_ttf();                        // category: handler: compile + write a .ttf (Ctrl+Shift+E, M10a)
-    void export_font(bool ttf);                  // category: helper: the export dialog + write, either format
+    void export_font(const std::string& ext);    // category: helper: the export dialog + write: ".otf" / ".ttf" / ".woff2"
     void export_svg(bool strip);                 // category: helper: glyph / Spacing text as SVG outlines (M9c)
     bool on_close_request();                     // category: handler: the window's X with unsaved changes
     void on_recent_open(const std::string& p);   // category: handler: open a recent font (parameterised)

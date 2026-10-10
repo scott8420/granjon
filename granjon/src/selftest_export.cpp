@@ -10,6 +10,9 @@
 #include "export/OtfParts.hpp"
 #include "export/Quad.hpp"
 #include "export/Codes.hpp"
+#include "export/Woff2.hpp"
+
+#include <brotli/decode.h>
 #include "export/OtfData.hpp"
 #include "geom/Edit.hpp"
 #include "model/Spacing.hpp"
@@ -631,5 +634,55 @@ void selftest_export(const Check& check_) {
         std::string why3;
         check("svg: export writes the file", otf::export_svg(f, {"H", "O"}, dir / "HO.svg", {}, &why3) && fs::file_size(dir / "HO.svg") > 0, why3);
         fs::remove_all(dir);
+    }
+
+    // ── M10b: WOFF2 ──
+    std::cout << "M10b WOFF2\n";
+    {
+        const otf::Bytes ttf = otf::compile_ttf(f, opt);
+        otf::OtfReport wr;
+        const otf::Bytes w = otf::compile_woff2(f, opt, &wr);
+        check("woff2: signature, TrueType flavour, length = file, 4-aligned", w.size() > 48 && std::string(w.begin(), w.begin() + 4) == "wOF2" &&
+              rd32(w, 4) == 0x00010000 && rd32(w, 8) == w.size() && w.size() % 4 == 0, std::to_string(w.size()) + " bytes");
+        check("woff2: smaller than the TTF", w.size() < ttf.size(), std::to_string(w.size()) + " < " + std::to_string(ttf.size()));
+        // Read the directory back, decompress the stream, rebuild each table.
+        const unsigned n = rd16(w, 12);
+        std::size_t at = 48;
+        static const char* known[63] = {"cmap","head","hhea","hmtx","maxp","name","OS/2","post","cvt ","fpgm","glyf","loca","prep","CFF ","VORG","EBDT","EBLC","gasp","hdmx","kern","LTSH","PCLT","VDMX","vhea","vmtx","BASE","GDEF","GPOS","GSUB","EBSC","JSTF","MATH","CBDT","CBLC","COLR","CPAL","SVG ","sbix","acnt","avar","bdat","bloc","bsln","cvar","fdsc","feat","fmtx","fvar","gvar","hsty","just","lcar","mort","morx","opbd","prop","trak","Zapf","Silf","Glat","Gloc","Feat","Sill"};
+        std::vector<std::pair<std::string, std::uint32_t>> dir;
+        bool flags_ok = true;
+        for (unsigned i = 0; i < n; ++i) {
+            const unsigned fl = w[at++];
+            std::string tag = (fl & 63) == 63 ? std::string(w.begin() + static_cast<long>(at), w.begin() + static_cast<long>(at + 4)) : known[fl & 63];
+            if ((fl & 63) == 63) at += 4;
+            std::uint32_t len = 0;
+            for (;;) { const unsigned b = w[at++]; len = len << 7 | (b & 0x7F); if (!(b & 0x80)) break; }
+            if ((tag == "glyf" || tag == "loca") != ((fl >> 6) == 3)) flags_ok = false;
+            dir.push_back({tag, len});
+        }
+        check("woff2: glyf / loca carry the null transform (3), the rest 0", flags_ok);
+        const std::uint32_t csize = rd32(w, 20);
+        std::size_t total = 0;
+        for (const auto& d : dir) total += d.second;
+        otf::Bytes raw(total);
+        std::size_t raw_size = raw.size();
+        const bool dec = BrotliDecoderDecompress(csize, w.data() + at, &raw_size, raw.data()) == BROTLI_DECODER_RESULT_SUCCESS &&
+                         raw_size == total;
+        check("woff2: the stream decompresses to the tables' total", dec);
+        bool same = dec;
+        std::string bad;
+        std::size_t off = 0;
+        for (const auto& [tag, len] : dir) {
+            otf::Bytes t(raw.begin() + static_cast<long>(off), raw.begin() + static_cast<long>(off + len));
+            off += len;
+            otf::Bytes want = otf::table(ttf, tag);
+            if (tag == "head") {   // bit 11 set, adjustment redone -- compare the rest
+                if (!(t[16] & 0x08)) { same = false; bad = "head bit 11"; }
+                t[16] &= ~0x08; for (int k = 8; k < 12; ++k) t[k] = want[k] = 0;
+            }
+            if (t != want) { same = false; bad = tag; }
+        }
+        check("woff2: every table comes back byte for byte (head: bit 11)", same, bad);
+        check("woff2: totalSfntSize is the rebuilt font's size", rd32(w, 16) == ttf.size());
     }
 }

@@ -162,6 +162,7 @@ Glib::RefPtr<Gio::Menu> Shell::build_menu() {  // zone: hamburger model
     auto exp = Gio::Menu::create();
     exp->append("Export OTF…", "win.export-otf");
     exp->append("Export TTF…", "win.export-ttf");
+    exp->append("Export WOFF2 (web font)…", "win.export-woff2");
     exp->append("Export glyph as SVG…", "win.export-svg-glyph");
     exp->append("Export Spacing text as SVG…", "win.export-svg-text");
     menu->append_section(exp);

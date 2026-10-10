@@ -232,7 +232,7 @@ No manual hinting. `ttfautohint` runs as an optional external step on TTF.
 - Pango + fontconfig (M9 Preview: the compiled font in a private font map) -- come with gtkmm, no extra package
 - libxml2 (plist / GLIF) -- chosen over libxml++ (small files, no extra C++ wrapper)   [M2]
 - Clipper2 1.5.4 (as Curvz: `find_package`, FetchContent fallback) for boolean ops
-- Brotli (WOFF2)
+- Brotli (WOFF2) -- libbrotlienc, M10b (Fedora brotli-devel)
 - Optional external tools: ttfautohint, ots-sanitize
 
 ---
@@ -269,7 +269,7 @@ geom/       Vec2, CubicSegment, Edit (Curvz node rules, hit-test)   [M4: built],
 core/       Settings (app preferences, JSON, not undoable)   [M4b: built]
 views/      ViewContext, Navigator, Inspector, OverviewGrid, GlyphPaint, GlyphSearch [M1b/c], GlyphCanvas [M4], SpacingStrip [M6], ReportList [M7], PreviewPane [M9]
 check/      Check, Report, concrete checks
-export/     Sfnt (writer, assembly), OtfData (generated spec tables), Cff, Tables (head hhea maxp OS/2 name cmap post hmtx), Gpos (kern), Otf (prepare, compile, export)   [M9: built]; Quad (cu2qu), Ttf (glyf loca maxp1 post2 gasp)   [M10a: built]; Codes (drawing-code listings, SVG)   [M9c: built]; WOFF2 to come
+export/     Sfnt (writer, assembly), OtfData (generated spec tables), Cff, Tables (head hhea maxp OS/2 name cmap post hmtx), Gpos (kern), Otf (prepare, compile, export)   [M9: built]; Quad (cu2qu), Ttf (glyf loca maxp1 post2 gasp)   [M10a: built]; Codes (drawing-code listings, SVG)   [M9c: built]; Woff2   [M10b: built]
 import/     FontReader, CffRead, GlyfRead, GposRead (OTF / TTF in)   [M11: built]; SvgImporter to come
 ```
 
@@ -298,5 +298,5 @@ Work stops at each milestone for a compile/run report before continuing.
 8. **M8 Profiles:** contact gap, optical area, kern-to-gap.   [s04: done (crc s05)]
 9. **M9 Export OTF:** sfnt writer + CFF; validate by FreeType reload.   [s05: done]
 9c. **M9c Drawing codes + SVG:** inspector CODE card (CFF / TrueType / SVG path), Export SVG of a glyph or the Spacing text.   [s05: done]
-10. **M10 Export TTF / WOFF2:** cubic → quadratic, overlap removal, ttfautohint hook.   [s05: M10a TTF done; M10b WOFF2 + overlaps to come]
-11. **M11 Import:** TTF/OTF (our own reader); SVG glyph import still to come.   [s05: built, awaiting crc]
+10. **M10 Export TTF / WOFF2:** cubic → quadratic, overlap removal, ttfautohint hook.   [s05: M10a TTF done; M10b WOFF2 built; M10c overlap removal + ttfautohint to come]
+11. **M11 Import:** TTF/OTF (our own reader); SVG glyph import still to come.   [s05: done]
