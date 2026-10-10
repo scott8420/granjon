@@ -46,6 +46,7 @@ add_custom_command(
 # core stays headless-testable. (docs/two-layer-seam.md.)
 add_library(granjon_core STATIC
     src/core/Recents.cpp
+    src/core/Settings.cpp
     src/core/TextMap.cpp
     # The SHORTCUT-REGISTRY paradigm: one list, two consumers (App wires accels
     # from it, ShortcutsDialog renders from it) so a key and its advertised row
@@ -145,6 +146,7 @@ add_executable(granjon
     src/Shell_helpers.cpp
     src/AboutWindow.cpp
     src/ShortcutsDialog.cpp
+    src/PreferencesWindow.cpp
     src/Registry.cpp
     src/Log.cpp
 )

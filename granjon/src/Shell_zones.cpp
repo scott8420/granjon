@@ -181,6 +181,7 @@ Glib::RefPtr<Gio::Menu> Shell::build_menu() {  // zone: hamburger model
     menu->append_section(diag);
 
     auto app = Gio::Menu::create();
+    app->append("Preferences…", "win.preferences");
     app->append("About Granjon", "win.about");
     app->append("Quit", "win.quit");
     menu->append_section(app);

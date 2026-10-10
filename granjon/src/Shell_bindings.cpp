@@ -26,6 +26,7 @@ void Shell::bind_actions() {  // bindings: actions + recents group
     add_action("dump-registry", sigc::mem_fun(*this, &Shell::on_dump_registry));
     add_action("about",         sigc::mem_fun(*this, &Shell::on_about));
     add_action("shortcuts",     sigc::mem_fun(*this, &Shell::on_shortcuts));
+    add_action("preferences",   sigc::mem_fun(*this, &Shell::on_preferences));
     add_action("quit",          [this]() { close(); });   // close-request asks about unsaved changes
 
     // Recents: a "recents" action group with a PARAMETERISED open verb --

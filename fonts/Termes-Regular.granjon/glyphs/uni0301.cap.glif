@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<glyph name="uni0301.cap" format="2">
+  <unicode hex="EA01"/>
+  <outline>
+    <contour>
+      <point x="-67" y="825" type="curve" smooth="yes"/>
+      <point x="-67" y="841"/>
+      <point x="-81" y="851"/>
+      <point x="-105" y="851" type="curve" smooth="yes"/>
+      <point x="-121" y="851"/>
+      <point x="-131" y="847"/>
+      <point x="-151" y="832" type="curve" smooth="yes"/>
+      <point x="-309" y="712" type="line"/>
+      <point x="-266" y="712" type="line"/>
+      <point x="-99" y="792" type="line"/>
+      <point x="-77" y="801"/>
+      <point x="-67" y="812"/>
+    </contour>
+  </outline>
+</glyph>

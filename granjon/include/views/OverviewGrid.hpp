@@ -43,6 +43,7 @@ private:
     void update_coverage_ui();
     void sync_selection();
     void apply_cell_size();
+    void remember();          // cell size + coverage set -> core::Settings
     void on_selected(Gtk::FlowBox& flow);
     void on_activated(Gtk::FlowBoxChild* child);
     void create_missing();

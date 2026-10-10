@@ -30,8 +30,21 @@ std::string Shell::recents_file() const {  // helper: XDG path (UI-side resoluti
         .string();
 }
 
+std::string Shell::settings_file() {  // helper
+    return (std::filesystem::path(Glib::get_user_config_dir()) / "granjon" / "settings.json").string();
+}
+
+void Shell::save_settings() {  // helper: best effort -- a read-only config dir must not stop the work
+    if (!core::save_settings(m_settings_file, m_settings))
+        if (auto lg = log::get(log::Area::Shell)) lg->warn("could not write {}", m_settings_file);
+}
+
 void Shell::note_recent(const std::string& path) {  // helper: push + persist + repaint
     if (path.empty()) return;
+    // The font in hand is the one to reopen; its folder is where Open starts.
+    m_settings.last_font = path;
+    m_settings.open_folder = std::filesystem::path(path).parent_path().string();
+    save_settings();
     core::recents_add(m_recents, path);
     core::save_recents(m_recents_file, m_recents);
     rebuild_recents_menu();
@@ -121,8 +134,11 @@ void Shell::save_as(std::function<void()> then) {  // helper
     std::string base = m_doc.path.empty() ? m_doc.title() : std::filesystem::path(m_doc.path).stem().string();
     for (auto& c : base) if (c == ' ' || c == '/') c = '-';
     dialog->set_initial_name(base + ".granjon");
+    std::error_code ec;
     if (!m_doc.path.empty())
         dialog->set_initial_folder(Gio::File::create_for_path(std::filesystem::path(m_doc.path).parent_path().string()));
+    else if (!m_settings.open_folder.empty() && std::filesystem::is_directory(m_settings.open_folder, ec))
+        dialog->set_initial_folder(Gio::File::create_for_path(m_settings.open_folder));
     dialog->save(*this, [this, dialog, then](const Glib::RefPtr<Gio::AsyncResult>& result) {
         Glib::RefPtr<Gio::File> file;
         try { file = dialog->save_finish(result); } catch (const Glib::Error&) { return; }

@@ -265,6 +265,7 @@ command/    Document (font + journal), Verbs + verb table   [M1: built]
 io/         Plist, Glif, Ufo (save_ufo / load_ufo)   [M2: built]
 unicode/    Embedded, UcdTable, Blocks, Agl, CharSet   [M3: built]  (model/Coverage)
 geom/       Vec2, CubicSegment, Edit (Curvz node rules, hit-test)   [M4: built]; Profile, BooleanOps, CubicToQuad, Direction to come
+core/       Settings (app preferences, JSON, not undoable)   [M4b: built]
 views/      ViewContext, Navigator, Inspector, OverviewGrid, GlyphPaint, GlyphSearch [M1b/c], GlyphCanvas [M4]; SpacingStrip, PreviewPane, ReportList to come
 check/      Check, Report, concrete checks
 export/     SfntWriter, tables/*, OtfExporter, TtfExporter, Woff2Exporter

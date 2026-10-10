@@ -142,6 +142,7 @@ const std::vector<ShortcutSpec>& shortcut_registry() {
         {"General", "win.shortcuts",     {"<Ctrl>question", "<Ctrl>slash"}, "",
          "Keyboard shortcuts (this window)"},
         {"General", "win.about",         {"F1"}, "", "About Granjon"},
+        {"General", "win.preferences",   {"<Ctrl>comma"}, "", "Preferences"},
         {"General", "win.quit",          {"<Ctrl>q"}, "", "Quit"},
 
         // ── Mouse ─────────────────────────────────────────────────────────────

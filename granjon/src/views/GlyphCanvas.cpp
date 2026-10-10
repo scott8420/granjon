@@ -2,9 +2,11 @@
 
 #include "command/Verbs.hpp"
 #include "model/Bounds.hpp"
+#include "unicode/Blocks.hpp"
 #include "unicode/UcdTable.hpp"
 #include "views/GlyphPaint.hpp"
 
+#include <glibmm/main.h>
 #include <gtkmm/eventcontrollermotion.h>
 #include <gtkmm/eventcontrollerscroll.h>
 #include <pangomm/layout.h>
@@ -75,10 +77,10 @@ GlyphCanvas::GlyphCanvas(ViewContext& ctx)
     m_title.set_hexpand(true);
     m_title.set_ellipsize(Pango::EllipsizeMode::END);
     m_context.set_label("Context");
-    m_context.set_active(true);
+    m_context.set_active(m_ctx.settings.editor_context);
     m_context.set_tooltip_text("Ghost a context glyph either side: H beside capitals and figures, n beside the rest");
     m_fill.set_label("Fill");
-    m_fill.set_active(true);
+    m_fill.set_active(m_ctx.settings.editor_fill);
     m_fill.set_tooltip_text("Shade the outline");
     m_fit_button.set_label("Fit");
     m_fit_button.set_tooltip_text("Fit the glyph (Ctrl+0)");
@@ -91,8 +93,21 @@ GlyphCanvas::GlyphCanvas(ViewContext& ctx)
     m_bar.append(m_fit_button);
     m_bar.append(m_zoom);
     append(m_bar);
-    m_context.signal_toggled().connect([this] { m_area.queue_draw(); });
-    m_fill.signal_toggled().connect([this] { m_area.queue_draw(); });
+    // The toggles ARE the preferences: flipping one is remembered.
+    auto remember = [this](bool& field, bool v) {
+        m_area.queue_draw();
+        if (field == v) return;
+        field = v;
+        if (m_ctx.save_settings) m_ctx.save_settings();
+        m_ctx.settings_changed.emit();
+    };
+    m_context.signal_toggled().connect([this, remember] { remember(m_ctx.settings.editor_context, m_context.get_active()); });
+    m_fill.signal_toggled().connect([this, remember] { remember(m_ctx.settings.editor_fill, m_fill.get_active()); });
+    m_ctx.settings_changed.connect([this] {
+        if (m_context.get_active() != m_ctx.settings.editor_context) m_context.set_active(m_ctx.settings.editor_context);
+        if (m_fill.get_active() != m_ctx.settings.editor_fill) m_fill.set_active(m_ctx.settings.editor_fill);
+        m_area.queue_draw();   // context names may have changed
+    });
     m_fit_button.signal_clicked().connect([this] { fit(); m_area.grab_focus(); });
 
     // ── canvas ─────────────────────────────────────────────────────────────
@@ -198,7 +213,11 @@ void GlyphCanvas::fit() {
 }
 
 void GlyphCanvas::update_zoom_label() {
-    m_zoom.set_text(std::to_string(static_cast<int>(std::lround(m_s * 100))) + "%");
+    // fit() can run inside the draw (first draw after a glyph change), and a
+    // label changed mid-snapshot doesn't relayout -- set it on the next idle.
+    Glib::signal_idle().connect_once([this] {
+        m_zoom.set_text(std::to_string(static_cast<int>(std::lround(m_s * 100))) + "%");
+    });
 }
 
 void GlyphCanvas::zoom_at(double factor, double sx, double sy) {
@@ -219,9 +238,14 @@ std::string GlyphCanvas::context_glyph(const model::Glyph& g) const {
     } else if (!g.name.empty()) {
         upper = std::isupper(static_cast<unsigned char>(g.name[0])) != 0;
     }
+    // The preference is a glyph name ("H", "n.ss01") or a character ("Ж").
+    const std::string& want = upper ? m_ctx.settings.context_upper : m_ctx.settings.context_lower;
     const auto& f = m_ctx.doc.font;
-    const model::Glyph* c = f.glyph_for(upper ? U'H' : U'n');
-    if (!c) c = f.glyph(upper ? "H" : "n");
+    const model::Glyph* c = f.glyph(want);
+    if (!c) {
+        std::vector<char32_t> cps;   // "Ж", "U+0416"
+        if (unicode::parse_cps(want, cps) && cps.size() == 1) c = f.glyph_for(cps[0]);
+    }
     return c ? c->name : std::string{};
 }
 
@@ -597,7 +621,11 @@ void GlyphCanvas::on_drag(double dx, double dy) {
                 command::drag_points(doc.journal, doc.font, m_pick, fdx, fdy);
             } else {
                 const auto st = m_drag->get_current_event_state();
-                const bool alt = (st & Gdk::ModifierType::ALT_MASK) == Gdk::ModifierType::ALT_MASK;
+                const auto& mod = m_ctx.settings.sidebearing_mod;
+                const auto mask = mod == "ctrl"    ? Gdk::ModifierType::CONTROL_MASK
+                                  : mod == "shift" ? Gdk::ModifierType::SHIFT_MASK
+                                                   : Gdk::ModifierType::ALT_MASK;
+                const bool alt = (st & mask) == mask;   // "slide the drawing" modifier (a preference)
                 command::drag_sidebearing(doc.journal, doc.font,
                                           m_side == 0 ? command::Side::Left : command::Side::Right, fdx, alt);
                 // Left edge, no modifier: the origin moved, the drawing must not --

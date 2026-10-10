@@ -24,7 +24,7 @@ namespace {
 // Gap cells carry "@gap:<hex>" as their widget name; glyph cells their glyph
 // name (never starting with '@').
 constexpr const char* kGapPrefix = "@gap:";
-constexpr int kMinCell = 40, kMaxCell = 200;
+constexpr int kMinCell = core::kOverviewCellMin, kMaxCell = core::kOverviewCellMax;
 
 std::string gap_id(char32_t cp) { return kGapPrefix + std::to_string(static_cast<unsigned>(cp)); }
 bool is_gap(const std::string& id) { return id.rfind(kGapPrefix, 0) == 0; }
@@ -72,6 +72,14 @@ OverviewGrid::OverviewGrid(ViewContext& ctx)
       m_scroll("overview.scroll"),
       m_sections("overview.sections", Gtk::Orientation::VERTICAL, 0) {
     add_css_class("overview");
+    // Remembered from last time (core::Settings, tolerant: a bad value was
+    // already put back to its default on load).
+    m_cell = std::clamp(m_ctx.settings.overview_cell, kMinCell, kMaxCell);
+    if (unicode::charset(m_ctx.settings.overview_charset)) m_charset = m_ctx.settings.overview_charset;
+    m_ctx.settings_changed.connect([this] {
+        if (m_ctx.settings.overview_cell != m_cell) m_size.set_value(m_ctx.settings.overview_cell);
+        if (m_ctx.settings.overview_charset != m_charset) set_charset(m_ctx.settings.overview_charset);
+    });
     build_toolbar();
     append(m_bar);
     m_scroll.set_policy(Gtk::PolicyType::NEVER, Gtk::PolicyType::AUTOMATIC);
@@ -125,13 +133,24 @@ void OverviewGrid::build_toolbar() {
         if (v == m_cell) return;
         m_cell = v;
         apply_cell_size();
+        remember();
     });
     m_bar.append(m_size);
     update_coverage_ui();
 }
 
+void OverviewGrid::remember() {
+    auto& s = m_ctx.settings;
+    if (s.overview_cell == m_cell && s.overview_charset == m_charset) return;
+    s.overview_cell = m_cell;
+    s.overview_charset = m_charset;
+    if (m_ctx.save_settings) m_ctx.save_settings();
+    m_ctx.settings_changed.emit();
+}
+
 void OverviewGrid::set_charset(const std::string& id) {
     m_charset = (id.empty() || unicode::charset(id)) ? id : std::string{};
+    remember();
     refresh();
 }
 

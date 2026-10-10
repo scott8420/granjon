@@ -58,6 +58,7 @@ namespace granjon {
 
 class AboutWindow;
 class ShortcutsDialog;
+class PreferencesWindow;
 
 class Shell : public Gtk::ApplicationWindow {
 public:
@@ -87,6 +88,7 @@ private:
     void on_recent_clear();                      // category: handler: empty the recents list
     void on_dump_registry();                     // category: handler: print the live widget tree
     void on_about();                             // category: handler: open the About window (dialog-lifetime exemplar)
+    void on_preferences();                       // category: handler: open the Preferences window (Ctrl+,)
     void on_shortcuts();   // handler: open the keyboard reference (renders from core::shortcut_registry)
     void on_other_case();                        // category: handler: A <-> a (Alt+C)
     void on_undo();                              // category: handler: Ctrl+Z / menu / button
@@ -104,6 +106,8 @@ private:
     void update_title();                          // category: helper: name, file, the unsaved dot
     void rebuild_recents_menu();                  // category: helper: repaint the submenu
     std::string recents_file() const;             // category: helper: the XDG path (UI-side resolution)
+    static std::string settings_file();           // category: helper: ~/.config/granjon/settings.json
+    void save_settings();                         // category: helper: write the settings file (best effort)
     void queue_repaint();                         // category: helper: one repaint per idle, after the writes
     void repaint();                               // category: helper: every view from the model
     void update_undo_ui();                        // category: helper: Undo / Redo say what they would do, grey when nothing
@@ -113,8 +117,11 @@ private:
 
     // The open font and the shared selection. Declaration order matters: the
     // document before the context that refers to it, both before the views.
+    // Settings load first: the views read them as they are built.
+    std::string        m_settings_file = settings_file();
+    core::Settings     m_settings      = core::load_settings(m_settings_file);
     command::Document  m_doc;
-    views::ViewContext m_ctx{m_doc};
+    views::ViewContext m_ctx{m_doc, m_settings};
 
     // Header: logo, undo/redo (start) | view switcher (title) |
     // search, panel toggles (one linked pair), menu (end).
@@ -153,7 +160,8 @@ private:
 
     // The About window: a hide-on-close singleton, built lazily on first open.
     std::unique_ptr<AboutWindow>    m_about;
-    std::unique_ptr<ShortcutsDialog> m_shortcuts;   // shortcut registry's GTK consumer (same lifetime stone)
+    std::unique_ptr<ShortcutsDialog> m_shortcuts;
+    std::unique_ptr<PreferencesWindow> m_prefs;      // same hide-on-close singleton shape   // shortcut registry's GTK consumer (same lifetime stone)
 };
 
 }  // namespace granjon

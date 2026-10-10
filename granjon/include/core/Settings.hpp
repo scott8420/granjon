@@ -1,0 +1,44 @@
+#pragma once
+// core::Settings -- the app's preferences: one typed struct, one JSON file.
+//
+// GTK-free, headless-testable, encode + decode adjacent (the Recents pump
+// shape). The UI resolves the path (~/.config/granjon/settings.json) and
+// hands it in.
+//
+// Tolerant on load: a missing file, a missing key, a wrong type or an
+// out-of-range value each fall back to that field's default -- an old or
+// hand-edited file never breaks a launch, and a new field needs no migration.
+// Unknown keys are dropped on the next save.
+//
+// Preferences are NOT undoable: they are the app's state, not the font's.
+// The undo journal is for the document (ARC s03, M4b).
+#include <string>
+
+namespace granjon::core {
+
+struct Settings {
+    // ── General ───────────────────────────────────────────────────────────
+    bool        reopen_last  = true;   // open the last font at launch
+    std::string last_font;             // its path; "" = none / it was untitled
+    std::string open_folder;           // where the Open dialog starts
+
+    // ── Editor ────────────────────────────────────────────────────────────
+    bool        editor_fill     = true;    // shade the outline
+    bool        editor_context  = true;    // ghost context glyphs
+    std::string context_upper   = "H";     // beside capitals and figures (a glyph name or a character)
+    std::string context_lower   = "n";     // beside the rest
+    std::string sidebearing_mod = "alt";   // "alt" | "ctrl" | "shift": slide the drawing on a left-edge drag
+
+    // ── Overview ──────────────────────────────────────────────────────────
+    int         overview_cell    = 84;     // px, kOverviewCellMin..Max
+    std::string overview_charset;          // "" = no coverage set
+
+    bool operator==(const Settings&) const = default;
+};
+
+inline constexpr int kOverviewCellMin = 40, kOverviewCellMax = 200;
+
+Settings load_settings(const std::string& file);
+bool     save_settings(const std::string& file, const Settings& s);
+
+}  // namespace granjon::core

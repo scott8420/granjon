@@ -7,6 +7,7 @@
 // the overview rings, and (M4) the editor opens. Undo hands a selection back
 // through select(), so a step lands where it was made.
 #include "command/Document.hpp"
+#include "core/Settings.hpp"
 
 #include <sigc++/signal.h>
 
@@ -19,6 +20,12 @@ namespace granjon::views {
 
 struct ViewContext {
     command::Document& doc;
+    core::Settings&    settings;                         // the app's preferences (not undoable)
+    // A view that changed a setting calls save_settings() and then emits
+    // settings_changed, so the others (and the Preferences window) follow.
+    // Listeners only re-apply what differs, so the round trip settles at once.
+    std::function<void()> save_settings;
+    sigc::signal<void()>  settings_changed;
     std::string        selected;                         // glyph name; "" = the font
     sigc::signal<void()> selection_changed;              // emitted by select() only
 

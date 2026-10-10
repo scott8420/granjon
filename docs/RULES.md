@@ -150,6 +150,9 @@ next edit.
   in the outputs directory, present it, then continue. Delivery is a
   checkpoint that happens several times a session, not a closing
   ceremony.
+- **Ship zips without `fixes/`** (Scott, s03). The zip I hand back
+  holds `docs/`, `scripts/` and `granjon/` only -- old zips nested in
+  `fixes/` get in the way when Scott moves the files into place.
 - **Many small ships beat one big one.** Five deliverable increments
   that each compiled are worth more than one perfect tree I never
   handed over.

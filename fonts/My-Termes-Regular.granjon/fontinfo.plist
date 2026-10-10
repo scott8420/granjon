@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>ascender</key>
+	<integer>783</integer>
+	<key>capHeight</key>
+	<integer>662</integer>
+	<key>copyright</key>
+	<string>Copyright 2006, 2009 for TeX Gyre extensions by B. Jackowski and J.M. Nowacki (on behalf of TeX users groups). This work is released under the GUST Font License --  see http://tug.org/fonts/licenses/GUST-FONT-LICENSE.txt for details.</string>
+	<key>descender</key>
+	<integer>-217</integer>
+	<key>familyName</key>
+	<string>TeX Gyre Termes</string>
+	<key>openTypeOS2VendorID</key>
+	<string>UKWN</string>
+	<key>styleName</key>
+	<string>Regular</string>
+	<key>unitsPerEm</key>
+	<integer>1000</integer>
+	<key>versionMajor</key>
+	<integer>2</integer>
+	<key>versionMinor</key>
+	<integer>4</integer>
+	<key>xHeight</key>
+	<integer>450</integer>
+</dict>
+</plist>

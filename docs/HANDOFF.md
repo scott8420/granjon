@@ -6,11 +6,22 @@
 - `s04_components_anchors.zip` (made by `scripts/granjon_backup.sh -o s04_components_anchors`)
 - `RULES.md`, `HANDOFF.md`, `ARCHITECTURE.md`, `ARC.md`, `CANON.md`
 - No Curvz source needed: the geometry M4 used is ported into `geom/`. (Curvz `BooleanOpsClipper` comes back at M10 overlap removal.)
+- Test fonts live in the project's `fonts/` folder (outside the repo): `My-Termes-Regular.granjon` (TeX Gyre Termes, 1090 glyphs, no anchors / components). M5 wants a font WITH anchors and components -- upload one if you have it, or I build a small fixture.
 
 ---
 
-## Status — s03 ends at M4 (awaiting Scott's compile/run report)
-M2 + M3 confirmed at session open.
+## Status — s03 ends at M4b (awaiting Scott's compile/run report)
+M2 + M3 confirmed at session open. **M4: crc** (Scott, on Termes).
+
+**M4b -- preferences** (added mid-session, Scott's ask). Built against the same toolchain; selftest 360 / 0. What to look at:
+- Ctrl+, (or the menu): General / Editor / Overview cards. Changes apply at once and are saved -- no Apply.
+- Quit with a font open, relaunch: it reopens (the switch turns that off).
+- Ctrl+O starts in the last font's folder (your `fonts/`).
+- The editor's Fill / Context and the overview's slider / Coverage menu are remembered, and follow the Preferences window live (and the other way round).
+- Context glyphs and the slide-the-drawing modifier (Alt / Ctrl / Shift) are set here.
+- The file: `~/.config/granjon/settings.json` (path shown at the bottom of the window). Delete it to start clean; a bad value in it falls back to the default.
+
+**M4 notes** (for reference):
 
 M4 built here against Ubuntu 24.04, g++ 13.3, gtkmm 4.10 / GTK 4.14, libxml2 2.9.14, spdlog 1.12. Clean, no warnings. Selftest 350 / 0. **No new package dependency.**
 
@@ -28,7 +39,8 @@ What to look at (open a real UFO, or `GRANJON_SAMPLE=1 ./build/granjon`; double-
 
 ## Decisions made in s03
 - Context glyphs fixed (Scott), not glyph-order neighbours.
-- Left-sidebearing drag moves the origin, drawing fixed; modifier slides the drawing (Scott). Alt is my pick of modifier.
+- Left-sidebearing drag moves the origin, drawing fixed; modifier slides the drawing (Scott). Alt by default, a preference since M4b.
+- Preferences are app state, not undoable; one tolerant JSON file; the views' own toggles write through to it (M4b).
 - Shading is a toggle (Scott), on by default.
 - `geom/` works on `model::Contour` directly -- no BezierPath type; Curvz's node rules kept verbatim, including its Cusp meaning (handles locked to the arriving tangent).
 - Clicking a segment picks its two end nodes (my call; no curve-bending drag yet).
@@ -48,6 +60,7 @@ What to look at (open a real UFO, or `GRANJON_SAMPLE=1 ./build/granjon`; double-
 - Editor follow-ons in the ARC backlog (pen, insert / delete node, node type change, typed context string, Shift-constrained drags).
 - Overview follow-ons in the ARC backlog.
 - `GRANJON_SAMPLE` env still there.
+- Seen on Termes (not acted on, Scott to rule): an opened font's glyphs all load as status Empty, so the overview dims every drawn glyph -- suggest a drawn glyph loads as Drafted; the navigator sorts a block by name (A, a, ampersand) while the overview uses code point order.
 
 ---
 
@@ -204,6 +217,9 @@ next edit.
   in the outputs directory, present it, then continue. Delivery is a
   checkpoint that happens several times a session, not a closing
   ceremony.
+- **Ship zips without `fixes/`** (Scott, s03). The zip I hand back
+  holds `docs/`, `scripts/` and `granjon/` only -- old zips nested in
+  `fixes/` get in the way when Scott moves the files into place.
 - **Many small ships beat one big one.** Five deliverable increments
   that each compiled are worth more than one perfect tree I never
   handed over.

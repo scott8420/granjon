@@ -1,9 +1,11 @@
 #include "Shell.hpp"
 #include "AboutWindow.hpp"      // complete type for ~unique_ptr<AboutWindow> in ~Shell()
 #include "ShortcutsDialog.hpp"  // ditto -- same singleton shape, same dtor requirement
+#include "PreferencesWindow.hpp"  // ditto
 #include "Log.hpp"
 
 #include <cstdlib>
+#include <filesystem>
 
 // Shell.cpp -- GLUE. The ctor and the ordered build_ui() pass live here; every
 // other method body lives in a category file (see the index in Shell.hpp).
@@ -40,6 +42,7 @@ Shell::~Shell() = default;
 // The ordered pass: construct the regions, bind actions + keys, load persisted
 // state, paint. Each step is one call into a category file.
 void Shell::build_ui() {
+    m_ctx.save_settings = [this] { save_settings(); };
     build_header();    // zone
     build_body();      // zone
     m_recents_file = recents_file();   // before bind_actions loads the list
@@ -47,6 +50,14 @@ void Shell::build_ui() {
     rebuild_recents_menu();
     repaint();
     update_undo_ui();
+    // Reopen the last font (a preference). The sample env wins: it is asking
+    // for the fixture on purpose.
+    const char* sample = std::getenv("GRANJON_SAMPLE");
+    const bool want_sample = sample && *sample == '1';
+    std::error_code ec;
+    if (!want_sample && m_settings.reopen_last && !m_settings.last_font.empty() &&
+        std::filesystem::is_directory(m_settings.last_font, ec))
+        open_path(m_settings.last_font);
     if (auto lg = log::get(log::Area::Shell)) lg->info("ready");
 }
 

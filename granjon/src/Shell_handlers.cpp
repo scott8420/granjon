@@ -5,6 +5,7 @@
 #include "unicode/UcdTable.hpp"
 #include "AboutWindow.hpp"
 #include "ShortcutsDialog.hpp"
+#include "PreferencesWindow.hpp"
 #include "Log.hpp"
 #include "Registry.hpp"
 #include "core/Recents.hpp"
@@ -27,6 +28,8 @@ namespace granjon {
 void Shell::on_new() {  // handler: Ctrl+N
     confirm_discard([this] {
         m_doc.new_font();
+        m_settings.last_font.clear();   // untitled: nothing to reopen
+        save_settings();
         after_document_swap();
         say("New font.", false);
     });
@@ -36,6 +39,9 @@ void Shell::on_open() {  // handler: Ctrl+O
     confirm_discard([this] {
         auto dialog = Gtk::FileDialog::create();
         dialog->set_title("Open a font  (a .granjon or .ufo folder)");
+        std::error_code ec;
+        if (!m_settings.open_folder.empty() && std::filesystem::is_directory(m_settings.open_folder, ec))
+            dialog->set_initial_folder(Gio::File::create_for_path(m_settings.open_folder));
         dialog->select_folder(*this, [this, dialog](const Glib::RefPtr<Gio::AsyncResult>& result) {
             try {
                 auto dir = dialog->select_folder_finish(result);
@@ -89,6 +95,14 @@ void Shell::on_recent_clear() {  // handler: empty the recents list
 void Shell::on_dump_registry() {  // handler: print the live widget tree
     // The debuggability payoff, on demand. Same call works from a gdb prompt.
     registry::dump();
+}
+
+void Shell::on_preferences() {  // handler: Ctrl+,
+    if (!m_prefs) m_prefs = std::make_unique<PreferencesWindow>(*this, m_ctx, m_settings_file);
+    // Follow the window's motif (the colour tokens hang off window.granjon-light).
+    if (has_css_class("granjon-light")) m_prefs->add_css_class("granjon-light");
+    else                                m_prefs->remove_css_class("granjon-light");
+    m_prefs->present();
 }
 
 void Shell::on_shortcuts() {  // handler: open the keyboard reference

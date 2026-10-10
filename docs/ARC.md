@@ -13,7 +13,7 @@ Newest session at the bottom.
 
 - **Editor follow-ons** (s03, mine -- not acted on): pen tool, insert / delete node, change node type, move / decompose components, add / rename anchors; per-glyph remembered zoom; context string you can type (beyond the fixed H / n); a coordinates card in the inspector for the picked point; hover highlight on nodes; Shift-constrained drags (horizontal / vertical / 45 degrees).
 
-- **Overview follow-ons** (s02, mine -- not acted on): remember the coverage set and cell size (per font in lib.plist, or app settings); user char sets from `~/.config/granjon/charsets/*.txt` (same file shape as the bundled ones); scroll the overview to a glyph picked elsewhere; file suffixed glyphs (a.sc) beside their base instead of under Unencoded; GF Latin Core's unencoded members (.notdef, periodcentered.loclCAT ...) as a name checklist; group by script (needs Scripts.txt in the trim).
+- **Overview follow-ons** (s02, mine -- not acted on): ~~remember the coverage set and cell size~~ (M4b: app settings); user char sets from `~/.config/granjon/charsets/*.txt` (same file shape as the bundled ones); scroll the overview to a glyph picked elsewhere; file suffixed glyphs (a.sc) beside their base instead of under Unencoded; GF Latin Core's unencoded members (.notdef, periodcentered.loclCAT ...) as a name checklist; group by script (needs Scripts.txt in the trim).
 
 ---
 
@@ -89,4 +89,14 @@ Newest session at the bottom.
 - Input: click / Shift+click pick, segment click picks its ends, marquee, drag = one step snapped on release, Escape cancels mid-drag, arrows nudge 1 / 10, Ctrl+A, Ctrl+0 fit, Ctrl+= / Ctrl+-, Ctrl+scroll zooms to the pointer, scroll / middle-drag / Space+drag pan. The status line reads the pick (type + coordinates). Editor shortcuts listed in the shortcuts registry (doc-only rows).
 - Shell: mid-drag only the canvas repaints; the overview (which rebuilds every cell) and the panels catch up on the repaint after release.
 - Looked at under Xvfb (CSS flattened; sandbox GTK 4.14): the fixture's boxes and a hand-made curved UFO (o with counter + anchor, a two-component glyph) draw right; scripted drags checked -- corner node drag, left-sidebearing drag (origin moved, drawing stayed, width 760 -> 674), Shift+arrow nudge, smooth out-handle drag (in-handle stays collinear), Ctrl+Z / Ctrl+Shift+Z.
+- Test font (Scott: "load a base font like Times"): TeX Gyre Termes Regular (Times clone, CFF so already cubic, GUST Font License) converted with ufo-extractor, then loaded and re-saved by Granjon -- `Termes-Regular.granjon`, 1090 glyphs, 25,549 nodes, round-trip identical, loads in 0.27 s. No anchors or components (CFF flattens them).
+- Fixed in passing: the zoom label stayed blank when fit() ran inside the first draw (a label set mid-snapshot does not relayout) -- now set on the next idle.
 - Selftest 350 / 0.
+- M4: crc from Scott (Fedora), looked at on Termes ("very slick").
+- M4b preferences (Scott: "should we start a prefs dialog for what will obviously be many custom settings?"):
+  - `core/Settings`: one typed struct, one JSON file (`~/.config/granjon/settings.json`), the Recents pump shape. Tolerant load: missing file / key, wrong type, out-of-range value -> that field's default; unknown keys dropped on save; written beside then renamed. Not undoable -- app state, not the font's.
+  - Settings now: reopen the last font at launch (default on; `GRANJON_SAMPLE=1` still wins), last font, Open dialog's folder (also Save as for an untitled font), editor Fill / Context, the two context glyphs (a name or a character), the slide-the-drawing modifier (Alt / Ctrl / Shift), overview cell size and coverage set.
+  - The views' own controls ARE preferences: the editor's Fill / Context, the overview slider and Coverage menu write through. `ViewContext` carries `settings`, `save_settings()` and `settings_changed`; listeners re-apply only what differs, so the round trip settles at once.
+  - `PreferencesWindow` (Ctrl+, and the menu): General / Editor / Overview cards in the inspector's style, write-through (no Apply), Reset to defaults (keeps last font and folder), the file's path shown. Hide-on-close singleton; follows the window's light / dark motif.
+  - Checked headless: open Termes -> quit -> relaunch reopened it; Preferences changes moved the overview's slider live and landed in the file.
+  - Selftest 360 / 0 (settings: defaults, round-trip, no temp left, wrong type / bad modifier / empty context / out-of-range cell / garbage each fall back).

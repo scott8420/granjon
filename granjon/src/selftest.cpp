@@ -12,6 +12,7 @@
 //   cmake --build build --target granjon_selftest && ./build/granjon_selftest
 
 #include "core/Recents.hpp"
+#include "core/Settings.hpp"
 #include "core/Shortcuts.hpp"
 #include "core/Stones.hpp"
 #include "core/Undo.hpp"
@@ -474,6 +475,40 @@ int main() {
     }
 
     std::cout << "-----------------------------------------------\n";
+
+    // -- Settings (M4b): typed, tolerant, round-trips ---------------------------
+    {
+        namespace stdfs = std::filesystem;
+        const std::string file = (stdfs::temp_directory_path() / "granjon_selftest_settings" / "settings.json").string();
+        stdfs::remove_all(stdfs::path(file).parent_path());
+        check("settings: no file -> defaults", core::load_settings(file) == core::Settings{});
+        core::Settings s;
+        s.reopen_last = false;
+        s.last_font = "/fonts/My-Termes-Regular.granjon";
+        s.open_folder = "/fonts";
+        s.editor_fill = false;
+        s.context_upper = "O";
+        s.sidebearing_mod = "ctrl";
+        s.overview_cell = 120;
+        s.overview_charset = "latin-1";
+        check("settings: save makes the folder", core::save_settings(file, s));
+        check("settings: round-trip", core::load_settings(file) == s);
+        check("settings: no temp file left", !stdfs::exists(file + ".tmp"));
+        {
+            std::ofstream f(file, std::ios::trunc);
+            f << R"({"editor": {"fill": "yes", "sidebearing_modifier": "super", "context_lower": ""},
+                     "overview": {"cell": 9000}, "future": {"thing": 1}})";
+        }
+        const auto t = core::load_settings(file);
+        check("settings: wrong type -> default", t.editor_fill == true);
+        check("settings: unknown modifier -> default", t.sidebearing_mod == "alt");
+        check("settings: empty context -> default", t.context_lower == "n");
+        check("settings: out-of-range cell -> default", t.overview_cell == 84);
+        check("settings: missing section -> defaults", t.reopen_last && t.last_font.empty());
+        { std::ofstream f(file, std::ios::trunc); f << "{ not json"; }
+        check("settings: garbage -> defaults, no throw", core::load_settings(file) == core::Settings{});
+        stdfs::remove_all(stdfs::path(file).parent_path());
+    }
 
     // -- Recents: list ops + JSON round-trip with prune -----------------------
     {
