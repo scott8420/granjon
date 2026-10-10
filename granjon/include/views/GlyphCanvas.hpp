@@ -81,6 +81,11 @@ private:
     void on_key_released(guint keyval, guint keycode, Gdk::ModifierType state);
     void on_motion(double x, double y);
     void say_pick();
+    // M5e: walk the pick along the outline. dir +1 / -1; `contour` jumps to
+    // the next / previous contour's start; `handles` visits in / out handles.
+    void step_pick(int dir, bool contour, bool handles);
+    void keep_in_view(geom::Vec2 font_pt);   // pan just enough
+    void make_first();                       // the one picked node leads its contour
     const model::Glyph* glyph() const;
 
     void rebuild_tabs();

@@ -6,6 +6,7 @@
 #include "views/Navigator.hpp"
 #include "views/GlyphCanvas.hpp"
 #include "views/OverviewGrid.hpp"
+#include "views/SpacingStrip.hpp"
 #include "views/ViewContext.hpp"
 
 #include <gtkmm/applicationwindow.h>
@@ -89,6 +90,7 @@ private:
     void on_recent_clear();                      // category: handler: empty the recents list
     void on_dump_registry();                     // category: handler: print the live widget tree
     void on_about();                             // category: handler: open the About window (dialog-lifetime exemplar)
+    void on_font_metrics_keys();                 // category: handler: apply metrics keys font-wide (one step, M6)
     void on_font_directions();                   // category: handler: correct directions font-wide (one step)
     void on_font_anchors();                      // category: handler: default anchors on the whole font (one step)
     void on_preferences();                       // category: handler: open the Preferences window (Ctrl+,)
@@ -148,6 +150,7 @@ private:
     views::Navigator      m_navigator{m_ctx};
     views::OverviewGrid   m_overview{m_ctx};
     views::GlyphCanvas    m_editor{m_ctx};
+    views::SpacingStrip   m_spacing{m_ctx};
     views::Inspector      m_inspector{m_ctx};
 
     // Recents state (core data; UI holds it + resolves the path -- the seam).

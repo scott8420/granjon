@@ -162,3 +162,28 @@ Newest session at the bottom.
   - GCC 16 (Scott's Fedora) at -O2: -Wfree-nonheap-object at OverviewGrid.cpp:458 on the braced temporary `reselect({name})`. Rewrote the four such calls (overview gap, search create, navigator add, inspector rename) with a named list. Not reproducible here (GCC 13) -- Scott's build is the check; if it persists, a one-spot suppression with a comment.
   - Headless on the sample O: red counter + note + OUTLINE "1 the wrong way"; Correct directions -> hollow counter, arrows flipped, "all running the right way".
   - Selftest 527 / 0.
+- M5d: crc ("absolutely excellent"); the GCC 16 warning is gone on Scott's build.
+- s03 closes (Scott: "a new session since we built a lot"). M6 forks settled for the handoff: own layout, no HarfBuzz until export; kerning a pair writes group kerning, Alt for an exception.
+- Close-of-session asks (Scott): show the start / end node, traverse nodes by keyboard, colour the start diamond. Found: the M4 port draws the start node as Curvz's diamond but dropped its amber fill (`is_tail`). Queued as M5e at the head of the s04 handoff (coloured start + ring, open-contour end bar, Make first, Tab / Shift+Tab / Ctrl+Tab traversal).
+
+## s04
+- s04 opens with M5e node navigation.
+  - Start node: amber diamond (Curvz's tail colour restored), 1.3x, faint amber ring; a picked start keeps the diamond with the blue pick stroke. An open contour's last node gets a short amber bar across the path.
+  - `geom::set_start` (a rotation: handles ride with their nodes, direction unchanged; closed contours only) and the verb `make_first` (one step, in the table; refused with a reason on an open contour, on the start itself, on a bad index).
+  - Make first: the PICK card's button (one node picked; greyed on the start / an open contour) and **F** in the editor. The pick follows the node to index 0.
+  - Traversal: Tab / Shift+Tab along the contour (wrapping); Ctrl+Tab / Ctrl+Shift+Tab the next / previous contour's start; nothing picked -> the first contour's start (Shift+Tab: the last node of the last contour). **Alt+Tab is GNOME's app switcher and never reaches the app**, so the handles-included walk is on **` / Shift+`** (the key beside Tab): in-handle, node, out-handle per node. Tab from a picked handle steps to the node on that side.
+  - The canvas pans just enough (48 px margin) to keep the stepped-to point in view. The status line now says "node i of n (start), contour c of m"; the PICK card marks "(start)".
+  - Escape with nothing to cancel or drop gives the focus back (the canvas keeps Tab while focused).
+  - Selftest 539 / 0.
+- M5e: crc.
+- M6 spacing.
+  - `model/Spacing` (GTK-free): `parse_strip` (cmap characters, `/name` ended by a space or the next `/`, `//` a slash; unknowns listed), `kern_group` / `kern_lookup` (UFO order: glyph/glyph, glyph/group, group/glyph, group/group) / `kern_target` / `kern_kind`, `layout_strip`, and the metrics keys: `parse_key_expr`, `parse_key_rule`, `format_key_rule`, `eval_key_side`, `check_key`, `apply_key`, `key_order` (referenced glyphs first, cycles reported), `set_lsb` / `set_rsb`.
+  - Verbs (all in the table): `kern_pair` (merges per entry), `kern_drag_begin` (+ `drag_end` = one step), `set_metrics_key` (merges), `apply_metrics_keys` (one step, chains resolve in key order).
+  - Kern target rule (settled): an edit writes the entry IN EFFECT if there is one (so an existing exception keeps answering the arrows), else the groups' pair (a side without a group kerns as itself); Alt writes glyph / glyph. Without this, arrows on a pair with an exception would change a group value the strip never shows.
+  - Spacing view (`views/SpacingStrip`, Ctrl+3): text entry (remembered), size slider 24..400 px/em (remembered; Ctrl+scroll), lines wrap at the width (no kern across a wrap). Metric lines behind each line; advance edges faint; kern values above each join (blue negative, orange positive); a band under each line with LSB / RSB.
+  - Zones: click a glyph = select (every occurrence tinted, the clicked one stronger); within 7 px of a join = pick the pair (drag / Left, Right kern it, Shift x10, Alt exception); the band = sidebearing drags (left half LSB, right half RSB, Alt slides the drawing). Ctrl on a drag = a tenth of the speed (20 px at 96 px/em is 208 units otherwise). Left / Right with no pair step the selection. Escape drops the pair, then leaves the strip. The handoff said "drag its left / right edge"; the edge between two glyphs is also the pair's join, so the sidebearing drags live in the band under the line and the join picks the pair -- no overlap.
+  - Metrics keys: one rule line per glyph in the inspector's METRICS card (`L=R=60`, `=n`, `L=n R=|o`, `W=500`, `=n+10`, `n.L`; `m: ...`, `m=n`, `b.L=l.L` accepted when they name the glyph). State line: no key / in step / off by how much, missing references noted. "Apply key" (one step). ☰ "Apply metrics keys in every glyph" (one step; circular keys reported). Strip: a red triangle under a glyph whose key is off, the side's number red; a faint dot when keyed and in step.
+  - Inspector KERN page while a pair is picked: pair preview, groups, the entry in effect (or what a kern would write), Value (writes the entry in effect; 0 removes), Make exception, Remove. Leaving the Spacing view drops the pair.
+  - Fixed on the way: a stored "=60" displayed as "L=R==60" (expressions are now normalised on store and show).
+  - Headless (Xvfb) screenshots on the sample font: strip, pair pick + arrows (-15 -> -28, Alt+Right -27, every occurrence), band RSB drag + undo, KERN page, Apply key, a typed key going red. Visual channel is still Scott's.
+  - Selftest 619 / 0. No new package (HarfBuzz waits for M9).

@@ -1,5 +1,7 @@
 #include "views/Inspector.hpp"
 
+#include "model/Spacing.hpp"
+
 #include "command/Verbs.hpp"
 #include "model/Bounds.hpp"
 #include "model/Find.hpp"
@@ -115,6 +117,17 @@ Inspector::Inspector(ViewContext& ctx)
       m_width("inspector.width"),
       m_lsb("inspector.lsb"),
       m_rsb("inspector.rsb"),
+      m_key("inspector.metrics_key"),
+      m_key_state("inspector.metrics_key_state"),
+      m_key_apply("inspector.metrics_key_apply"),
+      m_kern_title("inspector.kern_title"),
+      m_kern_preview("inspector.kern_preview"),
+      m_kern_left("inspector.kern_left"),
+      m_kern_right("inspector.kern_right"),
+      m_kern_entry("inspector.kern_entry"),
+      m_kern_value("inspector.kern_value"),
+      m_kern_exception("inspector.kern_exception"),
+      m_kern_remove("inspector.kern_remove"),
       m_unicodes("inspector.unicodes"),
       m_section("inspector.section"),
       m_uname("inspector.uname"),
@@ -146,7 +159,8 @@ Inspector::Inspector(ViewContext& ctx)
       m_default_anchors("inspector.default_anchors"),
       m_outline_info("inspector.outline_info"),
       m_correct("inspector.correct_directions"),
-      m_reverse("inspector.reverse_contours") {
+      m_reverse("inspector.reverse_contours"),
+      m_make_first("inspector.make_first") {
     add_css_class("inspector");
     set_policy(Gtk::PolicyType::NEVER, Gtk::PolicyType::AUTOMATIC);
     set_size_request(290, -1);
@@ -155,7 +169,9 @@ Inspector::Inspector(ViewContext& ctx)
     m_pages.set_vhomogeneous(false);
     build_font_page();
     build_glyph_page();
+    build_kern_page();
     set_child(m_pages);
+    m_ctx.kern_pick_changed.connect([this] { refresh(); });
     m_ctx.selection_changed.connect([this] { refresh(); });
     m_ctx.pick_changed.connect([this] { refresh_pick(); refresh_guide(); });
 }
@@ -246,6 +262,24 @@ void Inspector::build_glyph_page() {
     m_rsb.set_xalign(0.0f);
     metrics.field("Left side", m_lsb);
     metrics.field("Right side", m_rsb);
+    // The metrics key (M6): one rule line -- L=R=60, =n, L=n R=|o, W=500, =n+10.
+    m_key.set_placeholder_text("Key: L=R=60, =n, L=n R=|o");
+    m_key.set_tooltip_text("Metrics key -- a number, or another glyph's side: =n (both sides from n), |n (n's "
+                           "opposite side), n.L / n.R, W=n (width), =n+10. Enter commits; empty removes it.");
+    on_commit(m_key, [this] { on_key_rule(); });
+    metrics.field("Key", m_key);
+    m_key_state.set_xalign(0.0f);
+    m_key_state.set_wrap(true);
+    m_key_state.add_css_class("hint");
+    metrics.wide(m_key_state);
+    m_key_apply.set_label("Apply key");
+    m_key_apply.set_halign(Gtk::Align::START);
+    m_key_apply.set_tooltip_text("Set the sidebearings / width the key asks for -- one undo step");
+    m_key_apply.signal_clicked().connect([this] {
+        if (command::apply_metrics_keys(m_ctx.doc.journal, m_ctx.doc.font, {m_ctx.selected}) && m_ctx.say)
+            m_ctx.say(m_ctx.doc.journal.undo_label() + ".", false);
+    });
+    metrics.wide(m_key_apply);
 
     // ── PICK: one picked point, typed coordinates ───────────────────────────
     Card pick(*page, "PICK");
@@ -342,6 +376,22 @@ void Inspector::build_glyph_page() {
         m_align_rows = rows;
         pick.wide(*rows);
     }
+    // Make first (M5e): one picked node becomes its contour's start.
+    m_make_first.set_label("Make first");
+    m_make_first.set_halign(Gtk::Align::START);
+    m_make_first.set_tooltip_text("Make this node the contour's start (F in the editor) -- one undo step");
+    m_make_first.signal_clicked().connect([this] {
+        if (m_ctx.pick.size() != 1) return;
+        const auto p = *m_ctx.pick.begin();
+        std::string why;
+        if (command::make_first(m_ctx.doc.journal, m_ctx.doc.font, m_ctx.selected, p.contour, p.index, &why)) {
+            m_ctx.pick = {{p.contour, 0, geom::PointRef::Part::Node}};   // the same node, now first
+            m_ctx.pick_changed.emit();
+        } else if (!why.empty() && m_ctx.say) {
+            m_ctx.say(why, true);
+        }
+    });
+    pick.wide(m_make_first);
     m_ctx.settings_changed.connect([this] {
         if (m_relative.get_active() != m_ctx.settings.handles_relative) m_relative.set_active(m_ctx.settings.handles_relative);
     });
@@ -508,7 +558,10 @@ void Inspector::refresh() {
     m_painting = true;
     const auto& f = m_ctx.doc.font;
     const model::Glyph* g = m_ctx.selected.empty() ? nullptr : f.glyph(m_ctx.selected);
-    if (!g) {
+    if (m_ctx.kern_pick && f.glyph(m_ctx.kern_pick->left) && f.glyph(m_ctx.kern_pick->right)) {
+        m_pages.set_visible_child("kern");
+        refresh_kern();
+    } else if (!g) {
         m_pages.set_visible_child("font");
         if (!m_family.has_focus()) m_family.set_text(f.info().family);
         if (!m_style.has_focus())  m_style.set_text(f.info().style);
@@ -527,6 +580,29 @@ void Inspector::refresh() {
         } else {
             m_lsb.set_text("—");
             m_rsb.set_text("—");
+        }
+        {
+            const auto& keys = f.metrics_keys().keys;
+            const auto it = keys.find(g->name);
+            if (!m_key.has_focus()) m_key.set_text(it == keys.end() ? "" : model::format_key_rule(it->second));
+            const auto c = model::check_key(f, g->name);
+            std::string st;
+            if (!c.has_key) {
+                st = "No key.";
+            } else if (!c.off()) {
+                st = "In step with its key.";
+            } else {
+                st = "Off its key --";
+                const auto sb = model::sidebearings(f, *g);
+                if (c.left_off && sb)  st += " L " + fmt_units(*c.left) + " (is " + fmt_units(sb->left) + ")";
+                if (c.right_off && sb) st += " R " + fmt_units(*c.right) + " (is " + fmt_units(sb->right) + ")";
+                if (c.width_off)       st += " W " + fmt_units(*c.width) + " (is " + fmt_units(g->advance) + ")";
+            }
+            if (c.has_key && ((!it->second.left.empty() && !c.left) || (!it->second.right.empty() && !c.right) ||
+                              (!it->second.width.empty() && !c.width)))
+                st += " A reference is missing or has no outline.";
+            m_key_state.set_text(st);
+            m_key_apply.set_sensitive(c.off());
         }
         if (!m_unicodes.has_focus()) {
             std::string t;
@@ -610,6 +686,140 @@ void Inspector::refresh_parts(const model::Glyph& g) {
     }
 }
 
+// ── the pair (M6) ───────────────────────────────────────────────────────────
+
+void Inspector::build_kern_page() {
+    auto page = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::VERTICAL);
+    m_kern_title.set_xalign(0.0f);
+    m_kern_title.add_css_class("inspector-title");
+    page->append(m_kern_title);
+
+    Card pair(*page, "KERN");
+    m_kern_preview.set_content_height(120);
+    m_kern_preview.add_css_class("preview");
+    m_kern_preview.set_draw_func([this](const Cairo::RefPtr<Cairo::Context>& cr, int w, int h) {
+        if (!m_ctx.kern_pick) return;
+        const auto& f = m_ctx.doc.font;
+        const model::Glyph* a = f.glyph(m_ctx.kern_pick->left);
+        const model::Glyph* b = f.glyph(m_ctx.kern_pick->right);
+        if (!a || !b) return;
+        const auto& m = f.metrics();
+        const int kern = model::kern_lookup(f.kerning(), a->name, b->name).value;
+        const double total = std::max(1.0, a->advance + kern + b->advance);
+        const double em_h = std::max(1, std::max(m.ascender, m.cap_height) - m.descender);
+        const double pad = 10;
+        const double sc = std::min((w - 2 * pad) / total, (h - 2 * pad) / em_h);
+        const double ox = (w - total * sc) / 2.0;
+        const double base = pad + std::max(m.ascender, m.cap_height) * sc;
+        const auto fg = m_kern_preview.get_color();
+        cr->set_source_rgba(fg.get_red(), fg.get_green(), fg.get_blue(), 0.18);
+        cr->set_line_width(1);
+        cr->move_to(0, std::round(base) + 0.5);
+        cr->line_to(w, std::round(base) + 0.5);
+        cr->stroke();
+        cr->set_source_rgba(0.20, 0.50, 1.00, 0.8);   // the join
+        const double jx = std::round(ox + (a->advance + kern / 2.0) * sc) + 0.5;
+        cr->move_to(jx, pad / 2);
+        cr->line_to(jx, h - pad / 2);
+        cr->stroke();
+        cr->set_source_rgba(fg.get_red(), fg.get_green(), fg.get_blue(), 0.92);
+        for (auto [g, x] : {std::pair{a, 0.0}, std::pair{b, a->advance + kern}}) {
+            cr->save();
+            cr->translate(ox + x * sc, base);
+            cr->scale(sc, -sc);
+            append_glyph_path(cr, f, *g);
+            cr->restore();
+        }
+        cr->set_fill_rule(Cairo::Context::FillRule::WINDING);
+        cr->fill();
+    });
+    pair.wide(m_kern_preview);
+    for (auto* l : {&m_kern_left, &m_kern_right, &m_kern_entry}) {
+        l->set_xalign(0.0f);
+        l->set_wrap(true);
+    }
+    pair.field("Left", m_kern_left);
+    pair.field("Right", m_kern_right);
+    pair.field("Entry", m_kern_entry);
+    spin_setup(m_kern_value, -4000, 4000);
+    m_kern_value.set_tooltip_text("The kern in effect; a change writes that entry (or the groups' pair when "
+                                  "there is none). 0 removes it.");
+    m_kern_value.signal_value_changed().connect([this] {
+        if (m_painting || !m_ctx.kern_pick) return;
+        command::kern_pair(m_ctx.doc.journal, m_ctx.doc.font, m_ctx.kern_pick->left, m_ctx.kern_pick->right,
+                           static_cast<int>(std::lround(m_kern_value.get_value())));
+    });
+    pair.field("Value", m_kern_value);
+    m_kern_exception.set_label("Make exception");
+    m_kern_exception.set_tooltip_text("Kern just these two glyphs (glyph / glyph), starting from the value in "
+                                      "effect -- the group pair stays. Alt+arrows in the strip do the same.");
+    m_kern_exception.signal_clicked().connect([this] {
+        if (!m_ctx.kern_pick) return;
+        const auto& f = m_ctx.doc.font;
+        const int v = model::kern_lookup(f.kerning(), m_ctx.kern_pick->left, m_ctx.kern_pick->right).value;
+        command::kern_pair(m_ctx.doc.journal, m_ctx.doc.font, m_ctx.kern_pick->left, m_ctx.kern_pick->right, v,
+                           true);
+    });
+    m_kern_remove.set_label("Remove");
+    m_kern_remove.set_tooltip_text("Remove the entry in effect -- the next one down (group pair) shows through");
+    m_kern_remove.signal_clicked().connect([this] {
+        if (!m_ctx.kern_pick) return;
+        command::kern_pair(m_ctx.doc.journal, m_ctx.doc.font, m_ctx.kern_pick->left, m_ctx.kern_pick->right, 0);
+    });
+    auto row = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::HORIZONTAL, 6);
+    row->append(m_kern_exception);
+    row->append(m_kern_remove);
+    pair.wide(*row);
+    auto hint = Gtk::make_managed<Gtk::Label>("In the strip: Left / Right kern, Shift x10, Alt writes an exception. "
+                                              "Escape drops the pair.");
+    hint->set_xalign(0.0f);
+    hint->set_wrap(true);
+    hint->add_css_class("hint");
+    pair.wide(*hint);
+    m_pages.add(*page, "kern");
+}
+
+void Inspector::refresh_kern() {
+    if (!m_ctx.kern_pick) return;
+    const auto& k = m_ctx.doc.font.kerning();
+    const auto& l = m_ctx.kern_pick->left;
+    const auto& r = m_ctx.kern_pick->right;
+    const bool was = m_painting;
+    m_painting = true;
+    m_kern_title.set_text(l + "  " + r);
+    const std::string g1 = model::kern_group(k, l, 1), g2 = model::kern_group(k, r, 2);
+    auto short_group = [](const std::string& g, const char* prefix) {
+        return g.empty() ? std::string("no group") : "group @" + g.substr(std::string(prefix).size());
+    };
+    m_kern_left.set_text(l + "  (" + short_group(g1, "public.kern1.") + ")");
+    m_kern_right.set_text(r + "  (" + short_group(g2, "public.kern2.") + ")");
+    const auto hit = model::kern_lookup(k, l, r);
+    const auto target = model::kern_target(k, l, r, false);
+    if (hit.found) {
+        m_kern_entry.set_text(model::kern_kind(hit.key) + (hit.key == model::KernKey{l, r} && (!g1.empty() || !g2.empty())
+                                                               ? " (an exception)" : ""));
+    } else {
+        m_kern_entry.set_text("none yet -- a kern writes " + model::kern_kind(target));
+    }
+    if (!m_kern_value.has_focus() || std::lround(m_kern_value.get_value()) != hit.value) m_kern_value.set_value(hit.value);
+    m_kern_exception.set_sensitive(!(hit.found && hit.key == model::KernKey{l, r}) && (!g1.empty() || !g2.empty()));
+    m_kern_remove.set_sensitive(hit.found);
+    m_kern_preview.queue_draw();
+    m_painting = was;
+}
+
+void Inspector::on_key_rule() {
+    if (m_painting || m_ctx.selected.empty()) return;
+    model::MetricsKeys::Key k;
+    std::string why;
+    if (!model::parse_key_rule(m_key.get_text(), m_ctx.selected, &k, &why)) {
+        if (m_ctx.say) m_ctx.say("Metrics key: " + why, true);
+        return;
+    }
+    command::set_metrics_key(m_ctx.doc.journal, m_ctx.doc.font, m_ctx.selected, k);
+    refresh();
+}
+
 void Inspector::refresh_pick() {
     if (!m_pick_card) return;
     {
@@ -654,6 +864,8 @@ void Inspector::refresh_pick() {
     for (auto* w : std::initializer_list<Gtk::Widget*>{&m_px, &m_py, m_x_label, m_y_label}) w->set_visible(one);
     for (auto* w : std::initializer_list<Gtk::Widget*>{m_in_row, m_out_row, m_in_label, m_out_label}) w->set_visible(node);
     m_relative.set_visible(node || handle);
+    m_make_first.set_visible(node);
+    if (node) m_make_first.set_sensitive(p.index != 0 && g->contours[p.contour].closed);
     std::size_t alignable = 0;
     for (const auto& q : m_ctx.pick)
         if (geom::valid(*g, q) && (q.part == Part::Node || q.part == Part::Anchor)) ++alignable;
@@ -669,7 +881,10 @@ void Inspector::refresh_pick() {
         if (!m_px.has_focus()) m_px.set_value(v.x);
         if (!m_py.has_focus()) m_py.set_value(v.y);
         switch (p.part) {
-            case Part::Node:      what = "Node " + std::to_string(p.index) + " of contour " + std::to_string(p.contour); break;
+            case Part::Node:
+                what = "Node " + std::to_string(p.index) + (p.index == 0 ? " (start)" : "") + " of contour " +
+                       std::to_string(p.contour);
+                break;
             case Part::In:        what = std::string("In-handle of node ") + std::to_string(p.index) + (rel ? " (from the node)" : ""); break;
             case Part::Out:       what = std::string("Out-handle of node ") + std::to_string(p.index) + (rel ? " (from the node)" : ""); break;
             case Part::Anchor:    what = "Anchor"; break;

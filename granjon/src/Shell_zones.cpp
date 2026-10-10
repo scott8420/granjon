@@ -122,9 +122,7 @@ void Shell::build_views() {  // zone: the view stack
     m_stack.set_transition_duration(120);
     m_stack.add(m_overview, "overview", "Overview");
     m_stack.add(m_editor, "editor", "Editor");
-    add_stub_view("spacing", "Spacing",
-        "A live HarfBuzz-shaped strip. Click a pair and drag to kern; metrics keys "
-        "propagate; contact gap and optical area read out per pair.");
+    m_stack.add(m_spacing, "spacing", "Spacing");
     add_stub_view("preview", "Preview", "Waterfall sizes, sample text, light and dark.");
     add_stub_view("report", "Report",
         "Every check's findings, each with why it matters and a fix / skip / fix-all "
@@ -173,6 +171,7 @@ Glib::RefPtr<Gio::Menu> Shell::build_menu() {  // zone: hamburger model
     auto fontm = Gio::Menu::create();
     fontm->append("Add default anchors to every letter and mark", "win.font-anchors");
     fontm->append("Correct contour directions in every glyph", "win.font-directions");
+    fontm->append("Apply metrics keys in every glyph", "win.font-metrics-keys");
     menu->append_section(fontm);
 
     auto view = Gio::Menu::create();

@@ -125,6 +125,10 @@ bool reverse_contours(FontJournal& j, Font& f, const std::string& glyph, const s
 // step; refuses when every one is right already. `fixed` counts contours.
 bool correct_directions(FontJournal& j, Font& f, const std::vector<std::string>& glyphs,
                         std::size_t* fixed = nullptr);
+// Make this node its contour's start (M5e). ONE step. Refused on an open
+// contour, on the start itself, on a bad index; `why` says which.
+bool make_first(FontJournal& j, Font& f, const std::string& glyph, int contour, int index,
+                std::string* why = nullptr);
 
 // ── font records ───────────────────────────────────────────────────────────
 bool set_family(FontJournal& j, Font& f, const std::string& family);
@@ -132,6 +136,22 @@ bool set_style(FontJournal& j, Font& f, const std::string& style);
 bool set_units_per_em(FontJournal& j, Font& f, int upm, std::string* why = nullptr);
 bool set_metric(FontJournal& j, Font& f, model::Metrics::Field which, int value);   // merges
 bool set_kern(FontJournal& j, Font& f, const std::string& left, const std::string& right, int value);
+
+// ── spacing (M6) ───────────────────────────────────────────────────────────
+// Kern the glyph pair (left, right) to `value`: writes the entry in effect,
+// else the groups' pair; `exception` writes glyph / glyph. 0 removes the
+// entry. Merges per entry (arrow presses, a drag). See model::kern_target.
+bool kern_pair(FontJournal& j, Font& f, const std::string& left, const std::string& right, int value,
+               bool exception = false);
+// A kern drag: kern_drag_begin, kern_pair per move, drag_end (or
+// drag_cancel) = ONE step.
+void kern_drag_begin(FontJournal& j, Font& f, const std::string& left, const std::string& right);
+// A glyph's metrics key (an empty Key removes it). ONE step; merges.
+bool set_metrics_key(FontJournal& j, Font& f, const std::string& glyph, const model::MetricsKeys::Key& key);
+// Apply the keys of these glyphs (empty = every keyed glyph), referenced
+// glyphs first so chains resolve. ONE step; false when nothing was off.
+bool apply_metrics_keys(FontJournal& j, Font& f, const std::vector<std::string>& glyphs,
+                        std::size_t* changed = nullptr);
 
 // ── the verb table ─────────────────────────────────────────────────────────
 // Each entry runs its verb once on the selftest fixture (make_fixture).

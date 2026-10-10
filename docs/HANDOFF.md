@@ -1,51 +1,58 @@
-# Granjon handoff — s03 -> s04
+# Granjon handoff — s04 -> s05
 
-# s04_spacing_strip
+# s05_checks_report
 
 ## Files to upload
-- `s04_spacing_strip.zip` (made by `scripts/granjon_backup.sh -o s04_spacing_strip`)
+- `s05_checks_report.zip` (made by `scripts/granjon_backup.sh -o s05_checks_report`)
 - `RULES.md`, `HANDOFF.md`, `ARCHITECTURE.md`, `ARC.md`, `CANON.md`
 - No Curvz source needed (its geometry is in `geom/`; `BooleanOpsClipper` returns at M10).
-- Test fonts live in the project's `fonts/` folder (outside the repo): `My-Termes-Regular.granjon` (TeX Gyre Termes, 1090 glyphs). Upload it if the session should look at spacing on a real font.
+- Test fonts live in the project's `fonts/` folder (outside the repo): `My-Termes-Regular.granjon` (TeX Gyre Termes, 1090 glyphs). Upload it if the session should look at checks or spacing on a real font.
 
 ---
 
-## Status — s03 ends at M5c (awaiting Scott's compile/run report)
-s03 ran M4 editor, M4b preferences, M5 components + anchors, M5b precision, navigator folds, navigator pick -> overview -> tabs (all crc), and M5c guides / rulers / align / measure (this report). Built against Ubuntu 24.04, g++ 13.3, gtkmm 4.10 / GTK 4.14, libxml2 2.9.14, spdlog 1.12. Clean, no warnings. Selftest 507 / 0. **No new package dependency.**
+## Status — s04 (written as we go)
+- **M5e node navigation: crc.**
+- **M6 spacing: built, shipped (`s04_m6_spacing.zip`), awaiting Scott's crc.** If the run report brings fixes, they come first in s05.
+- Selftest 619 / 0. Built against Ubuntu 24.04, g++ 13.3, gtkmm 4.10 / GTK 4.14, RelWithDebInfo; the same 2 GCC 13 false-positive warnings from system headers as s03. **No new package** (HarfBuzz waits for M9).
+- New this session: headless screenshots under Xvfb (`xvfb-run` + `xdotool` + `import`, with `GRANJON_SAMPLE=1`) as a smoke check of drawing and gestures. It catches gross faults; it is not the visual channel -- that stays Scott's.
 
-What to look at in M5c:
-- **Rulers** along the editor's top and left. **Drag out of the top ruler** for a horizontal guide, **the left ruler** for a vertical one. They belong to this glyph (teal).
-- **Click a guide** to pick it: the GUIDE card shows its position, angle, name; **Whole font** makes it a font-wide guide (violet, on every glyph). Drag it to move (it snaps); **drop it on a ruler** or press Delete to remove it. Saved in the UFO (glyph guidelines + fontinfo guidelines).
-- **Snap** now also catches straight guides.
-- **Align / distribute:** pick two or more nodes or anchors -- the PICK card shows Left / Centre / Right / ↔ and Top / Middle / Bottom / ↕ (↔ / ↕ space them evenly).
-- **Measure: hold M.** Drag for distance, angle and delta (the ends snap to nodes); click for the stem thickness through that point, across and up. Let go of M to go back to editing.
+What to look at in M6 (Ctrl+3):
+- **The strip:** type `nnHOHnn` or `/n/o/eacute` (remembered); the slider sets px per em (remembered; Ctrl+scroll too). Lines wrap at the width. Metric lines behind, advance edges faint, kerns above each join (blue negative, orange positive), LSB / RSB in the band under each line.
+- **Click a glyph:** it becomes the selection (inspector follows); Left / Right step along the strip.
+- **Click a join** (within 7 px): the pair is picked -- a blue line, the inspector's **KERN** page (preview, groups, the entry in effect, Value, Make exception, Remove). **Drag** or **Left / Right** (Shift x10) kern it; **Alt** writes an exception. A drag is one undo step; arrow presses merge.
+- **The band under a glyph:** drag its left half for the LSB, its right half for the RSB (Alt slides the drawing). **Ctrl** on any drag = a tenth of the speed.
+- **Metrics keys:** inspector METRICS card, "Key": `L=R=60`, `=n`, `L=n R=|o`, `W=500`, `=n+10`, `n.L`. The state line says in step / off by how much. **Apply key** (one step); ☰ **Apply metrics keys in every glyph** (one step; chains resolve; circular keys named). In the strip a glyph off its key gets a red triangle and red numbers; keyed and in step, a faint dot.
+- The sample font's `n` carries a key (60 / 60) and is drawn 70 / 70, so it shows red until applied.
 
-**M5d contour direction** (asked after M5c): arrows on every contour; a contour running the wrong way (CFF: outers counter-clockwise, counters clockwise) is red with a note on the canvas. Inspector OUTLINE card: Correct directions / Reverse picked; ☰ menu: correct the whole font. Each one undo step. The GCC 16 `-Wfree-nonheap-object` warning: the four braced `reselect({name})` calls now use a named list -- tell me if your build still shows it.
-
-**Speed fix** (Scott: guide add / edit / delete felt slow): each edit rebuilt the navigator and overview whole (~320 ms on Termes); now they update only what the step touched (3-4 ms). `build.sh` now builds optimised (RelWithDebInfo) -- **run `./build.sh` once to re-configure** (it overrides the old Debug cache). A repaint over 50 ms writes "slow repaint" to the log. Sandbox -O2 build shows 2 warnings from the system fmt headers (GCC 13 false positive), not from Granjon code.
+## Decisions made in s04
+- M5e: handles-included walk on ` / Shift+` (Alt+Tab is the desktop's); Make first on F; the pick follows the node to index 0; Tab from a handle goes to the node on that side.
+- M6 kern target: an edit writes the entry **in effect** (so an existing exception keeps answering), else the groups' pair (a side without a group kerns as itself); Alt writes glyph / glyph. Refines the s03 decision ("kerning a pair writes group kerning") for pairs that already have an exception.
+- M6 sidebearing drags live in the band under the line, not on the glyph edges: the edge between two glyphs is also the pair's join, so the two gestures would overlap.
+- Metrics keys are one rule line per glyph (stored per side in `granjon.metricsKeys`, as before). References resolve against the font as it is now; font-wide apply goes referenced-first. Keys only change things when applied -- no live propagation on every edit (that would turn one edit into many glyphs' steps behind Scott's back). Surface if Scott wants auto-propagation.
+- The pair belongs to the Spacing view: leaving it drops the pair.
 
 ## Decisions made in s03
 - Context glyphs fixed (H / n), a preference since M4b.
 - Left-sidebearing drag moves the origin, drawing fixed; a modifier (Alt by default, a preference) slides the drawing.
 - Shading is a toggle, remembered.
 - `geom/` works on `model::Contour` directly; Curvz's node rules verbatim (its Cusp included). One change: a corner WITH handles going smooth keeps their lengths (Curvz re-seeded from the chord).
+- Scott (end of s03): "questions you can determine" -- forks inside a milestone are mine to settle and record; surface only what changes his workflow or the architecture.
 - Precision split (M5b, then M5c). Guides: a new one belongs to its glyph, "Whole font" moves it; measure by holding M; align / distribute on the PICK card (Scott read these as defaults). Handle numbers relative or absolute by a toggle; the grid adapts to zoom with whole units distinct; Snap catches metrics, sidebearings, nodes, grid; Shift / Alt / Ctrl on drags follow Curvz.
 - Preferences are app state, not undoable; one tolerant JSON file; the views' own toggles write through to it.
 - Composites from canonical decomposition, anchor-placed, with no-anchor fallbacks; spacing accents stand in for missing combining marks; `.case` / `.cap` for capitals; dotless i / j. Missing parts -> nothing built, the parts named.
 - A drawn glyph with no Granjon status loads Drafted; Granjon writes Empty explicitly on a drawn glyph so it round-trips.
 - Delete takes anchors and components only until the pen tool (nodes).
 
-## s04 goal — Milestone M6: Spacing
-- A HarfBuzz-shaped strip (sample text / glyph string, `/name` syntax): click a glyph to select it, drag its sidebearings, click a pair and drag to kern (class kerning through the groups).
-- Metrics keys ("n: L=R=60", "m=n", "b.L=l.L") parsed and propagated, through verbs.
-- **New packages:** `harfbuzz-devel` (Fedora) / `libharfbuzz-dev`. HarfBuzz shapes from a font binary, so the strip needs a quick in-memory font build or a direct path -- the pre-implementation message settles which.
-
-**Stop at M6** for a compile/run report.
+## s05 goal — Milestone M7: Checks
+(ARCHITECTURE §6 and the milestone list.) Report framework plus the first checks: origin, zones, overshoot, direction. Each finding says why it matters and offers fix / skip / fix-all through the journal (one step each). The Report view (Ctrl+5, a stub today) lists them with click-to-navigate (select the glyph, open the editor, pick the spot). Direction can reuse M5d's `geom::wrong_way` / `correct_directions`; metrics keys off (M6 `check_key`) is a natural fifth check. Settle the forks inside the milestone; surface what changes the workflow.
+**Stop at M7** for a compile / run report.
 
 ## Still open
-- Packages, Fedora (confirm): `harfbuzz-devel` (M6), later `freetype-devel brotli-devel`; Clipper2 via FetchContent.
+- Packages, Fedora (confirm): `harfbuzz-devel` now at M9 (export), with `freetype-devel brotli-devel`; Clipper2 via FetchContent.
 - granjon-cli scope (ARC backlog).
 - Editor follow-ons (pen, insert / delete node, node type change, Shift-constrained drags), composite follow-ons (Greek tonos, stacking, ogonek anchor, rebuild), overview follow-ons -- all in the ARC backlog.
+- Spacing follow-ons: kerning groups editor (create / assign public.kern1 / kern2 from the UI), contact gap / optical area readouts (M8), a strip text history / presets.
+- The inspector panel is narrower than some of its rows in a 1280 px window (the OUTLINE card's "Reverse picked", the KERN hint): clipped, not wrapped. Seen in the headless shots; check on Scott's screen.
 - `GRANJON_SAMPLE` env still there.
 
 ---

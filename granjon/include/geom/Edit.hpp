@@ -109,6 +109,10 @@ double signed_area(const model::Contour& c);
 // Reverse the travel direction (Curvz BezierPath::reverse: handles swap, the
 // node order flips) KEEPING the start node where it is.
 void reverse(model::Contour& c);
+// Make node `index` the contour's start (M5e): a rotation, so every node
+// keeps its handles and the travel direction holds. Closed contours only (an
+// open one starts at its loose end); false when there is nothing to do.
+bool set_start(model::Contour& c, int index);
 // How many of the other contours enclose this one (even = an outer contour,
 // odd = a counter).
 int depth(const std::vector<model::Contour>& cs, int index);

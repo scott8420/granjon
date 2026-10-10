@@ -188,7 +188,7 @@ Window layout (M1b, Mac/web roots -- the Curvz house look):
 Views:
 1. **Overview (M3):** glyph cards (drawing, name, codepoint), status-tinted, grouped by Unicode block under section headers (code point order within a block; Unencoded last). Toolbar: **Coverage** menu (the char sets as a checklist: have / total, missing count, tick on the chosen one), **Create N missing** (`add_glyphs`, ONE undo step), cell-size slider (40-200 px; captions hide below 56). The chosen set's gaps are dashed cells showing the character; click says what it is, double-click creates it. Gaps hide while the search narrows. Click selects; double-click opens the editor.
 2. **Editor (M4):** `views/GlyphCanvas`. Metric guides with overshoot zones; sidebearing lines (drag the right one for width; the left one moves the origin with the drawing fixed, Alt slides the drawing in a fixed width); fixed context glyphs ghosted (H beside capitals / figures, n beside the rest); components dashed, read-only; outline shaded or not (Fill toggle); Curvz node shapes; anchors named. Pick / marquee / drag (one step, snapped on release) / nudge; Ctrl+scroll zoom, scroll / middle / Space pan. Editing geometry is GTK-free in `geom/` (Curvz's Vec2, CubicSegment, BezierPath rules on `model::Contour`).
-3. **Spacing / kerning:** a live HarfBuzz-shaped text strip. Click a pair and drag to kern; profile readouts are shown. (M6, M8)
+3. **Spacing / kerning:** a text strip laid out from the model (advances + class kerning; HarfBuzz shaping arrives with export, M9). Click a glyph to select, a join to pick the pair (drag / arrows kern it, Alt = exception), drag the band under a glyph for its sidebearings; metrics keys marked when off. Profile readouts arrive in M8. (M6, M8)
 4. **Preview:** waterfall sizes, sample text, light/dark. (M6)
 5. **Report:** results from all checks, with click-to-navigate. (M7)
 
@@ -260,13 +260,13 @@ granjon/                        project root (not a git repo)
 
 ### Source modules (initial)
 ```
-model/      Composite [M5], Find [M1c], Bounds [M1b], Font (= undo store), Glyph, Outline (Node, Contour, Component, Anchor), FontRecords (FontInfo, Metrics, Kerning, MetricsKeys, Features)   [M1: built]
+model/      Spacing [M6] (strip text, kerning lookup, layout, metrics keys), Composite [M5], Find [M1c], Bounds [M1b], Font (= undo store), Glyph, Outline (Node, Contour, Component, Anchor), FontRecords (FontInfo, Metrics, Kerning, MetricsKeys, Features)   [M1: built]
 command/    Document (font + journal), Verbs + verb table   [M1: built]
 io/         Plist, Glif, Ufo (save_ufo / load_ufo)   [M2: built]
 unicode/    Embedded, UcdTable, Blocks, Agl, CharSet   [M3: built]  (model/Coverage)
 geom/       Vec2, CubicSegment, Edit (Curvz node rules, hit-test)   [M4: built]; Profile, BooleanOps, CubicToQuad, Direction to come
 core/       Settings (app preferences, JSON, not undoable)   [M4b: built]
-views/      ViewContext, Navigator, Inspector, OverviewGrid, GlyphPaint, GlyphSearch [M1b/c], GlyphCanvas [M4]; SpacingStrip, PreviewPane, ReportList to come
+views/      ViewContext, Navigator, Inspector, OverviewGrid, GlyphPaint, GlyphSearch [M1b/c], GlyphCanvas [M4], SpacingStrip [M6]; PreviewPane, ReportList to come
 check/      Check, Report, concrete checks
 export/     SfntWriter, tables/*, OtfExporter, TtfExporter, Woff2Exporter
 import/     FtImporter, SvgImporter
@@ -283,11 +283,13 @@ Work stops at each milestone for a compile/run report before continuing.
 1b. **M1b UI shell:** three-pane layout, segmented view switcher, navigator, inspector cards, overview cards, house CSS.
 2. **M2 Persist:** UFO read/write round-trip (save, reload, byte-compare).   [s01: done]
 3. **M3 Overview:** glyph grid, Unicode data, char-set coverage.   [s02: done]
-4. **M4 Editor:** Curvz canvas port with metric guides and sidebearings.   [s03: built, awaiting run report]
+4. **M4 Editor:** Curvz canvas port with metric guides and sidebearings.   [s03: done]
 5. **M5 Components & anchors:** auto-build composites from decomposition.   [s03: done]
 5b. **M5b Precision:** node types, handle fields, Shift / Alt / Ctrl drags, adaptive grid, snapping.   [s03: done]
-5c. **M5c Guides:** rulers, glyph + font guidelines, snap to guides, align / distribute, measure.   [s03: built, awaiting run report]
-6. **M6 Spacing:** HarfBuzz strip, metrics keys, class kerning.
+5c. **M5c Guides:** rulers, glyph + font guidelines, snap to guides, align / distribute, measure.   [s03: done]
+5d. **M5d Direction:** contour arrows, wrong-way tint, correct / reverse.   [s03: done]
+5e. **M5e Node navigation:** amber start node, open-end bar, Make first, Tab / Ctrl+Tab / ` traversal.   [s04: done]
+6. **M6 Spacing:** spacing strip (own layout; HarfBuzz with export), metrics keys, class kerning.   [s04: built, awaiting crc]
 7. **M7 Checks:** report framework plus first checks (origin, zones, overshoot, direction).
 8. **M8 Profiles:** contact gap, optical area, kern-to-gap.
 9. **M9 Export OTF:** sfnt writer + CFF; validate by FreeType reload.

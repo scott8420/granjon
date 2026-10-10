@@ -1,6 +1,7 @@
 #include "command/Verbs.hpp"
 
 #include "model/Composite.hpp"
+#include "model/Spacing.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -677,6 +678,21 @@ bool correct_directions(FontJournal& j, Font& f, const std::vector<std::string>&
     });
 }
 
+bool make_first(FontJournal& j, Font& f, const std::string& glyph, int contour, int index, std::string* why) {
+    auto no = [&](const char* w) { if (why) *why = w; return false; };
+    const Glyph* was = f.glyph(glyph);
+    if (!was || contour < 0 || contour >= static_cast<int>(was->contours.size()) || index < 0 ||
+        index >= static_cast<int>(was->contours[contour].nodes.size()))
+        return no("No such node");
+    if (!was->contours[contour].closed) return no("An open contour starts at its loose end");
+    if (index == 0) return no("That node is the start already");
+    return j.run("Make first", {glyph}, [&] {
+        Glyph g = glyph_copy(f, glyph);
+        geom::set_start(g.contours[contour], index);
+        f.put(glyph, Record{g});
+    });
+}
+
 // ── font records ───────────────────────────────────────────────────────────
 
 bool set_family(FontJournal& j, Font& f, const std::string& family) {
@@ -723,6 +739,61 @@ bool set_kern(FontJournal& j, Font& f, const std::string& left, const std::strin
         else            k.pairs[{left, right}] = value;
         f.put(Font::kKerning, Record{k});
     }, "kern:" + left + "|" + right);
+}
+
+// ── spacing (M6) ───────────────────────────────────────────────────────────
+
+bool kern_pair(FontJournal& j, Font& f, const std::string& left, const std::string& right, int value,
+               bool exception) {
+    if (!f.glyph(left) || !f.glyph(right)) return false;
+    const auto key = model::kern_target(f.kerning(), left, right, exception);
+    const auto it = f.kerning().pairs.find(key);
+    if ((it == f.kerning().pairs.end() && value == 0) || (it != f.kerning().pairs.end() && it->second == value))
+        return false;
+    return j.run("Kern " + left + " " + right, {Font::kKerning}, [&] {
+        model::Kerning k = f.kerning();
+        if (value == 0) k.pairs.erase(key);
+        else            k.pairs[key] = value;
+        f.put(Font::kKerning, Record{k});
+    }, "kern:" + key.first + "|" + key.second);
+}
+
+void kern_drag_begin(FontJournal& j, Font& f, const std::string& left, const std::string& right) {
+    drag().names.clear();
+    drag().at_press.clear();
+    if (f.glyph(left) && f.glyph(right)) j.begin("Kern " + left + " " + right, {Font::kKerning});
+}
+
+bool set_metrics_key(FontJournal& j, Font& f, const std::string& glyph, const model::MetricsKeys::Key& key) {
+    if (!f.glyph(glyph)) return false;
+    const auto& keys = f.metrics_keys().keys;
+    const bool empty = key.left.empty() && key.right.empty() && key.width.empty();
+    const auto it = keys.find(glyph);
+    if (it == keys.end() ? empty : it->second == key) return false;
+    return j.run(empty ? "Clear metrics key" : "Metrics key", {Font::kMetricsKeys}, [&] {
+        model::MetricsKeys k = f.metrics_keys();
+        if (empty) k.keys.erase(glyph);
+        else       k.keys[glyph] = key;
+        f.put(Font::kMetricsKeys, Record{k});
+    }, "mkey:" + glyph);
+}
+
+bool apply_metrics_keys(FontJournal& j, Font& f, const std::vector<std::string>& glyphs, std::size_t* changed) {
+    const std::set<std::string> want(glyphs.begin(), glyphs.end());
+    std::vector<std::string> ids;
+    for (const auto& n : model::key_order(f))
+        if (want.empty() || want.count(n)) ids.push_back(n);
+    // Count first (from the font as it is), so the label can say how many.
+    std::size_t n = 0;
+    for (const auto& name : ids) if (model::check_key(f, name).off()) ++n;
+    if (changed) *changed = n;
+    if (n == 0) return false;
+    const std::string label = ids.size() == 1 ? "Apply metrics key"
+                                              : "Apply metrics keys (" + std::to_string(n) + " glyphs)";
+    return j.run(label, ids, [&] {
+        for (const auto& name : ids)   // referenced glyphs first: a chain sees the new values
+            if (auto g = model::apply_key(f, name)) f.put(name, Record{*g});
+    });
 }
 
 // ── the verb table ─────────────────────────────────────────────────────────
@@ -832,11 +903,23 @@ const std::vector<Verb>& verbs() {
                           Align::Top); }},
         {"reverse_contours", [](FontJournal& j, Font& f) { reverse_contours(j, f, "H", {0, 2}); }},
         {"correct_directions", [](FontJournal& j, Font& f) { correct_directions(j, f, {"H", "n", "o", "O"}); }},
+        {"make_first",   [](FontJournal& j, Font& f) { make_first(j, f, "o", 0, 2); }},
         {"set_family",   [](FontJournal& j, Font& f) { set_family(j, f, "Garamond Nova"); }},
         {"set_style",    [](FontJournal& j, Font& f) { set_style(j, f, "Italic"); }},
         {"set_units_per_em", [](FontJournal& j, Font& f) { set_units_per_em(j, f, 2048); }},
         {"set_metric",   [](FontJournal& j, Font& f) { set_metric(j, f, Metrics::Field::XHeight, 480); }},
         {"set_kern",     [](FontJournal& j, Font& f) { set_kern(j, f, "H", "n", -20); }},
+        {"kern_pair",    [](FontJournal& j, Font& f) { kern_pair(j, f, "O", "H", -25); }},
+        {"kern_drag",    [](FontJournal& j, Font& f) {
+             kern_drag_begin(j, f, "n", "o");
+             kern_pair(j, f, "n", "o", -3);
+             kern_pair(j, f, "n", "o", -8);
+             drag_end(j, f); }},
+        {"kern_pair_exception", [](FontJournal& j, Font& f) { kern_pair(j, f, "O", "H", -5, true); }},
+        {"set_metrics_key", [](FontJournal& j, Font& f) { set_metrics_key(j, f, "n", {"60", "60", ""}); }},
+        {"apply_metrics_keys", [](FontJournal& j, Font& f) {
+             // The fixture carries keys (o = |n ...) -- see make_fixture.
+             apply_metrics_keys(j, f, {}); }},
     };
     return table;
 }

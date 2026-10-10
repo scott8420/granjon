@@ -1,4 +1,5 @@
 #include "Shell.hpp"
+#include "model/Spacing.hpp"
 
 #include "model/Find.hpp"
 #include "unicode/Blocks.hpp"
@@ -105,6 +106,22 @@ void Shell::on_font_directions() {  // handler: the menu's "Correct contour dire
         say("Every contour already runs the right way.", false);
 }
 
+void Shell::on_font_metrics_keys() {  // handler: the menu's "Apply metrics keys in every glyph" (M6)
+    std::size_t n = 0;
+    std::vector<std::string> cyclic;
+    model::key_order(m_doc.font, &cyclic);
+    std::string loop;
+    for (const auto& c : cyclic) loop += (loop.empty() ? "" : ", ") + c;
+    if (command::apply_metrics_keys(m_doc.journal, m_doc.font, {}, &n))
+        say(m_doc.journal.undo_label() + ". Ctrl+Z takes it back." +
+            (loop.empty() ? "" : "  Keys refer in a circle at: " + loop), !loop.empty());
+    else if (m_doc.font.metrics_keys().keys.empty())
+        say("No glyph has a metrics key yet -- type one in the inspector's METRICS card.", false);
+    else
+        say("Every metrics key already matches." + (loop.empty() ? "" : "  Keys refer in a circle at: " + loop),
+            !loop.empty());
+}
+
 void Shell::on_font_anchors() {  // handler: the menu's "Add default anchors to every letter and mark"
     std::string why;
     if (command::add_default_anchors(m_doc.journal, m_doc.font, m_doc.font.glyph_order(), &why))
@@ -173,6 +190,8 @@ void Shell::on_view(const Glib::ustring& id) {  // handler: the view switcher
     m_stack.set_visible_child(id);
     m_act_view->change_state(Glib::Variant<Glib::ustring>::create(id));
     if (id == "editor") m_editor.focus_canvas();   // arrows and Escape go to the canvas
+    if (id == "spacing") m_spacing.focus_strip();
+    else m_ctx.set_kern_pick(std::nullopt);   // the pair belongs to the strip
 }
 
 void Shell::on_toggle_navigator() {  // handler: F9

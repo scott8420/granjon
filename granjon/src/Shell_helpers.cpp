@@ -200,6 +200,7 @@ void Shell::repaint_changed() {  // helper
     if (!m_ctx.selected.empty() && !m_doc.font.glyph(m_ctx.selected)) m_ctx.select({});
     update_title();
     m_editor.refresh();
+    m_spacing.refresh();   // live through a kern / sidebearing drag
     if (m_doc.journal.in_gesture()) return;   // m_dirty keeps collecting until the release
     const auto dirty = std::move(m_dirty);
     m_dirty.clear();
@@ -218,6 +219,7 @@ void Shell::repaint() {  // helper
     if (!m_ctx.selected.empty() && !m_doc.font.glyph(m_ctx.selected)) m_ctx.select({});
     update_title();
     m_editor.refresh();
+    m_spacing.refresh();
     m_dirty.clear();   // a full repaint covers everything
     m_navigator.refresh();
     m_overview.refresh();

@@ -26,6 +26,9 @@ public:
 private:
     void build_font_page();
     void build_glyph_page();
+    void build_kern_page();            // M6: the Spacing view's picked pair
+    void refresh_kern();
+    void on_key_rule();
     void on_family();
     void on_style();
     void on_upm();
@@ -62,6 +65,19 @@ private:
     widgets::SpinButton  m_width;
     widgets::Label       m_lsb;
     widgets::Label       m_rsb;
+    // metrics key (M6): one rule line, its state, apply
+    widgets::Entry       m_key;
+    widgets::Label       m_key_state;
+    widgets::Button      m_key_apply;
+    // kern page (M6)
+    widgets::Label       m_kern_title;
+    widgets::DrawingArea m_kern_preview;
+    widgets::Label       m_kern_left;
+    widgets::Label       m_kern_right;
+    widgets::Label       m_kern_entry;
+    widgets::SpinButton  m_kern_value;
+    widgets::Button      m_kern_exception;
+    widgets::Button      m_kern_remove;
     widgets::Entry       m_unicodes;
     widgets::Label       m_section;
     widgets::Label       m_uname;      // UCD name of the first code point
@@ -111,6 +127,7 @@ private:
     widgets::Label       m_outline_info;
     widgets::Button      m_correct;
     widgets::Button      m_reverse;
+    widgets::Button      m_make_first;   // M5e: the picked node leads its contour
 };
 
 }  // namespace granjon::views

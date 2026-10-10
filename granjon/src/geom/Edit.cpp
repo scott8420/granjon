@@ -424,6 +424,12 @@ void reverse(Contour& c) {
     if (c.closed) std::rotate(c.nodes.rbegin(), c.nodes.rbegin() + 1, c.nodes.rend());   // the start stays first
 }
 
+bool set_start(Contour& c, int index) {
+    if (!c.closed || index <= 0 || index >= static_cast<int>(c.nodes.size())) return false;
+    std::rotate(c.nodes.begin(), c.nodes.begin() + index, c.nodes.end());
+    return true;
+}
+
 int depth(const std::vector<Contour>& cs, int index) {
     if (index < 0 || index >= static_cast<int>(cs.size()) || cs[index].nodes.empty()) return 0;
     // A point of this contour: the middle of its first segment (a start node

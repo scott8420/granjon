@@ -17,6 +17,8 @@
 
 namespace granjon::core {
 
+constexpr int kSpacingSizeMin = 24, kSpacingSizeMax = 400;
+
 struct Settings {
     // ── General ───────────────────────────────────────────────────────────
     bool        reopen_last  = true;   // open the last font at launch
@@ -37,6 +39,10 @@ struct Settings {
     // The sections (Unicode blocks, "Unencoded") shown open; the rest are
     // folded to their header. Empty = all folded.
     std::vector<std::string> navigator_open;
+
+    // ── Spacing (M6) ──────────────────────────────────────────────────────
+    std::string spacing_text = "nnHOHnn nonon HOHOH";   // the strip's text (the /name syntax works)
+    int         spacing_size = 96;                     // px per em, kSpacingSizeMin..Max
 
     // ── Overview ──────────────────────────────────────────────────────────
     int         overview_cell    = 84;     // px, kOverviewCellMin..Max

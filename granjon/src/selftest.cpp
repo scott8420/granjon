@@ -28,6 +28,7 @@
 #include "model/Font.hpp"
 #include "model/Composite.hpp"
 #include "model/Coverage.hpp"
+#include "model/Spacing.hpp"
 #include "unicode/Agl.hpp"
 #include "unicode/Blocks.hpp"
 #include "unicode/CharSet.hpp"
@@ -945,6 +946,140 @@ int main() {
             check("reverse_contours: one step", cmd::reverse_contours(x.j, x.f, "o", {0}) && x.j.size() == 2 &&
                   geom::signed_area(x.f.glyph("o")->contours[0]) < 0);
             check("reverse_contours: a bad index is refused", !cmd::reverse_contours(x.j, x.f, "o", {9}));
+        }
+        {   // M5e: make first -- a rotation; shape, handles, direction kept.
+            Fix x;
+            const model::Contour c0 = x.f.glyph("o")->contours[0];
+            const auto n = static_cast<int>(c0.nodes.size());
+            model::Contour c = c0;
+            check("set_start: rotates", geom::set_start(c, 2) && c.nodes[0] == c0.nodes[2] &&
+                  c.nodes[n - 2] == c0.nodes[0] && c.nodes.size() == c0.nodes.size());
+            check("set_start: direction kept", std::abs(geom::signed_area(c) - geom::signed_area(c0)) < 1e-6);
+            check("set_start: the start itself is nothing to do", !geom::set_start(c, 0));
+            model::Contour open = c0;
+            open.closed = false;
+            check("set_start: an open contour is refused", !geom::set_start(open, 1));
+            std::string why;
+            check("make_first: one step, the node leads", cmd::make_first(x.j, x.f, "o", 0, 1, &why) &&
+                  x.j.size() == 1 && x.f.glyph("o")->contours[0].nodes[0] == c0.nodes[1]);
+            check("make_first: the start again is refused, with a reason",
+                  !cmd::make_first(x.j, x.f, "o", 0, 0, &why) && !why.empty() && x.j.size() == 1);
+            check("make_first: a bad index is refused", !cmd::make_first(x.j, x.f, "o", 0, 99) &&
+                  !cmd::make_first(x.j, x.f, "o", 7, 1));
+            x.j.undo();
+            check("make_first: undo restores the start", x.f.glyph("o")->contours[0] == c0);
+        }
+        {   // M6: the strip text, kerning lookup, layout.
+            Fix x;
+            using V = std::vector<std::string>;
+            std::vector<std::string> miss;
+            check("strip: characters map", model::parse_strip(x.f, "nHo") == V{"n", "H", "o"});
+            check("strip: /names, a space ends one", model::parse_strip(x.f, "/n/o /H") == V{"n", "o", "H"});
+            check("strip: /name then a character", model::parse_strip(x.f, "/Odotbelow H") == V{"Odotbelow", "H"});
+            check("strip: unknowns skipped and listed",
+                  model::parse_strip(x.f, "nx/zzz", &miss) == V{"n"} && miss == V{"x", "/zzz"});
+            const auto& k = x.f.kerning();
+            check("kern_group: member / none", model::kern_group(k, "O", 1) == "public.kern1.O" &&
+                  model::kern_group(k, "H", 1).empty() && model::kern_group(k, "O", 2).empty());
+            const auto oh = model::kern_lookup(k, "O", "H");
+            check("kern_lookup: through the group", oh.found && oh.value == -10 && oh.key.first == "public.kern1.O");
+            check("kern_lookup: a group member too", model::kern_lookup(k, "Odotbelow", "H").value == -10);
+            check("kern_lookup: glyph pair", model::kern_lookup(k, "H", "O").value == -15);
+            check("kern_lookup: none", !model::kern_lookup(k, "n", "o").found);
+            check("kern_target: the entry in effect", model::kern_target(k, "O", "H", false) ==
+                  model::KernKey{"public.kern1.O", "H"});
+            check("kern_target: exception", model::kern_target(k, "O", "H", true) == model::KernKey{"O", "H"});
+            check("kern_target: no groups, itself", model::kern_target(k, "n", "o", false) == model::KernKey{"n", "o"});
+            check("kern_kind", model::kern_kind({"public.kern1.O", "H"}) == "group / glyph" &&
+                  model::kern_kind({"O", "H"}) == "glyph / glyph");
+            const auto lay = model::layout_strip(x.f, {"H", "O", "H"});
+            check("layout: advances + kerning", lay.size() == 3 && lay[0].x == 0 && lay[1].kern == -15 &&
+                  lay[1].x == 685 && lay[2].kern == -10 && lay[2].x == 685 + 760 - 10);
+        }
+        {   // M6: kern_pair writes the entry in effect / an exception; 0 removes.
+            Fix x;
+            check("kern_pair: group entry, one step", cmd::kern_pair(x.j, x.f, "Odotbelow", "H", -30) &&
+                  x.j.size() == 1 && model::kern_lookup(x.f.kerning(), "O", "H").value == -30);
+            check("kern_pair: same value, nothing", !cmd::kern_pair(x.j, x.f, "O", "H", -30));
+            check("kern_pair: Alt -> exception, the group untouched", cmd::kern_pair(x.j, x.f, "O", "H", -5, true) &&
+                  model::kern_lookup(x.f.kerning(), "O", "H").value == -5 &&
+                  model::kern_lookup(x.f.kerning(), "Odotbelow", "H").value == -30);
+            check("kern_pair: the exception is now in effect",
+                  model::kern_target(x.f.kerning(), "O", "H", false) == model::KernKey{"O", "H"});
+            check("kern_pair: 0 removes", cmd::kern_pair(x.j, x.f, "O", "H", 0) &&
+                  x.f.kerning().pairs.count({"O", "H"}) == 0 &&
+                  model::kern_lookup(x.f.kerning(), "O", "H").value == -30);
+            check("kern_pair: new pair, no groups", cmd::kern_pair(x.j, x.f, "n", "o", 12) &&
+                  x.f.kerning().pairs.at({"n", "o"}) == 12);
+        }
+        {   // M6: metrics keys -- expressions, rules, evaluation, apply.
+            Fix x;
+            auto e = model::parse_key_expr("60");
+            check("key expr: number", e.valid && e.ref.empty() && e.number == 60);
+            e = model::parse_key_expr("=n");
+            check("key expr: =n", e.valid && e.ref == "n" && e.side == 0);
+            e = model::parse_key_expr("|n");
+            check("key expr: |n", e.valid && e.ref == "n" && e.side == '|');
+            e = model::parse_key_expr("n.R");
+            check("key expr: n.R", e.valid && e.ref == "n" && e.side == 'R');
+            e = model::parse_key_expr("=n+10");
+            check("key expr: =n+10", e.valid && e.ref == "n" && e.number == 10);
+            e = model::parse_key_expr("o.alt - 4.5");
+            check("key expr: dotted name, minus", e.valid && e.ref == "o.alt" && e.number == -4.5);
+            check("key expr: bad ones", !model::parse_key_expr("n+").valid && !model::parse_key_expr("|n.L").valid &&
+                  !model::parse_key_expr("").valid);
+            model::MetricsKeys::Key r;
+            std::string why;
+            check("rule: L=R=60", model::parse_key_rule("L=R=60", "n", &r) && r.left == "60" && r.right == "60" &&
+                  r.width.empty());
+            check("rule: =o (both sides)", model::parse_key_rule("=o", "n", &r) && r.left == "o" && r.right == "o");
+            check("rule: L=n R=|o W=500", model::parse_key_rule("L=n R=|o W=500", "H", &r) && r.left == "n" &&
+                  r.right == "|o" && r.width == "500");
+            check("rule: n: L=R=60", model::parse_key_rule("n: L=R=60", "n", &r) && r.left == "60");
+            check("rule: another glyph's rule refused", !model::parse_key_rule("m: L=R=60", "n", &r, &why) && !why.empty());
+            check("rule: m=n", model::parse_key_rule("m=n", "m", &r) && r.left == "n" && r.right == "n");
+            check("rule: b.L=l.L", model::parse_key_rule("b.L=l.L", "b", &r) && r.left == "l.L" && r.right.empty());
+            check("rule: garbage refused", !model::parse_key_rule("Q=5", "n", &r) && !model::parse_key_rule("L=", "n", &r));
+            check("rule: empty = no key", model::parse_key_rule("  ", "n", &r) && r == model::MetricsKeys::Key{});
+            for (const char* t : {"L=R=60", "=o", "L=n R=|o W=500", "=|n", "W=n+10"}) {
+                model::MetricsKeys::Key a, b;
+                model::parse_key_rule(t, "H", &a);
+                model::parse_key_rule(model::format_key_rule(a), "H", &b);
+                check(std::string("rule: round trip ") + t, a == b && model::format_key_rule(a) == t);
+            }
+            check("rule: a stored '=60' shows as L=R=60", model::format_key_rule({"=60", "=60", ""}) == "L=R=60");
+            check("rule: L==60 stores 60", model::parse_key_rule("L==60", "n", &r) && r.left == "60");
+            check("eval: n's left", model::eval_key_side(x.f, "n", 'L') == 70.0);
+            check("eval: opposite + offset", model::eval_key_side(x.f, "|o+10", 'L') == 60.0);
+            check("eval: width", model::eval_key_side(x.f, "n", 'W') == 560.0);
+            check("eval: missing glyph", !model::eval_key_side(x.f, "zz", 'L'));
+            const auto c = model::check_key(x.f, "n");
+            check("check: the fixture's n is off (60 asked, 70 drawn)", c.has_key && c.left_off && c.right_off &&
+                  !c.width_off && c.left == 60.0);
+            check("check: no key", !model::check_key(x.f, "o").has_key);
+            // A chain: o follows n; n is 60 / 60.
+            check("set_metrics_key: one step", cmd::set_metrics_key(x.j, x.f, "o", {"n", "n", ""}) && x.j.size() == 1);
+            check("set_metrics_key: same, nothing", !cmd::set_metrics_key(x.j, x.f, "o", {"n", "n", ""}));
+            const auto ord = model::key_order(x.f);
+            check("key_order: referenced first", ord.size() == 2 && ord[0] == "n" && ord[1] == "o");
+            std::size_t n = 0;
+            check("apply_metrics_keys: one step", cmd::apply_metrics_keys(x.j, x.f, {}, &n) && x.j.size() == 2 && n >= 1);
+            const auto sn = model::sidebearings(x.f, *x.f.glyph("n"));
+            const auto so = model::sidebearings(x.f, *x.f.glyph("o"));
+            check("apply: n is 60 / 60", sn && sn->left == 60 && sn->right == 60);
+            check("apply: o followed the new n", so && so->left == 60 && so->right == 60);
+            check("apply: the drawing kept its width", x.f.glyph("n")->advance == 560 - 20);
+            check("apply: again, nothing", !cmd::apply_metrics_keys(x.j, x.f, {}) && !model::check_key(x.f, "o").off());
+            x.j.undo();
+            check("apply: undo restores", model::check_key(x.f, "n").off());
+            check("set_metrics_key: empty removes", cmd::set_metrics_key(x.j, x.f, "o", {}) &&
+                  !x.f.metrics_keys().keys.count("o"));
+            // A cycle is listed, not a hang.
+            cmd::set_metrics_key(x.j, x.f, "H", {"O", "", ""});
+            cmd::set_metrics_key(x.j, x.f, "O", {"H", "", ""});
+            std::vector<std::string> cyc;
+            model::key_order(x.f, &cyc);
+            check("key_order: a cycle is reported", !cyc.empty());
         }
         {   // A point drag is one step on whole units.
             Fix x;

@@ -9,6 +9,7 @@
 #include <glibmm/main.h>
 #include <gtkmm/eventcontrollermotion.h>
 #include <gtkmm/eventcontrollerscroll.h>
+#include <gtkmm/root.h>
 #include <pangomm/layout.h>
 
 #include <algorithm>
@@ -40,6 +41,7 @@ constexpr double NF[3] = {0.96, 0.96, 0.96};         // node fill
 constexpr double NS[3] = {0.20, 0.50, 1.00};         // selected
 constexpr double NK[3] = {0.88, 0.88, 0.88};         // node stroke
 constexpr double NB[4] = {0.00, 0.00, 0.00, 0.55};   // dark halo
+constexpr double ST[3] = {0.98, 0.70, 0.12};         // start node: amber (Curvz tail)
 constexpr double HL[4] = {0.55, 0.68, 1.00, 0.70};   // handle line
 constexpr double HC[4] = {0.30, 0.60, 1.00, 0.95};   // handle dot
 constexpr double AN[3] = {0.89, 0.30, 0.30};         // anchors (Granjon's own)
@@ -945,6 +947,25 @@ void GlyphCanvas::draw_overlay(const Cairo::RefPtr<Cairo::Context>& cr, const mo
         cr->stroke();
     };
 
+    // The start node (M5e): an amber diamond, a touch larger, with a faint
+    // ring -- Curvz's tail colour, so the start reads in a dense outline.
+    auto draw_start = [&](Vec2 p, bool picked) {
+        const double rr = (picked ? nr_sel : nr) * 1.3;
+        cr->set_source_rgba(ST[0], ST[1], ST[2], 0.35);
+        cr->set_line_width(1.0);
+        cr->arc(p.x, p.y, rr * 2.4, 0, 2 * M_PI);
+        cr->stroke();
+        cr->set_source_rgba(NB[0], NB[1], NB[2], NB[3]);
+        build(p, 4, rr + 1.2);
+        cr->fill();
+        cr->set_source_rgb(ST[0], ST[1], ST[2]);
+        build(p, 4, rr);
+        cr->fill_preserve();
+        if (picked) { cr->set_source_rgb(NS[0], NS[1], NS[2]); cr->set_line_width(2.0); }
+        else        { cr->set_source_rgb(NK[0], NK[1], NK[2]); cr->set_line_width(1.2); }
+        cr->stroke();
+    };
+
     for (int c = 0; c < static_cast<int>(g.contours.size()); ++c) {
         const auto& nodes = g.contours[c].nodes;
         for (int i = 0; i < static_cast<int>(nodes.size()); ++i) {
@@ -965,8 +986,28 @@ void GlyphCanvas::draw_overlay(const Cairo::RefPtr<Cairo::Context>& cr, const mo
                 case model::Node::Type::Cusp:      shape = 2; break;
                 default:                           shape = 3; break;
             }
-            if (i == 0) shape = 4;
-            draw_node(to_screen({n.x, n.y}), shape, m_pick.count({c, i, Part::Node}) > 0);
+            const bool picked = m_pick.count({c, i, Part::Node}) > 0;
+            if (i == 0) draw_start(to_screen({n.x, n.y}), picked);
+            else        draw_node(to_screen({n.x, n.y}), shape, picked);
+        }
+        // An open contour's END: a short bar across the path -- a loose end.
+        if (!g.contours[c].closed && nodes.size() >= 2) {
+            const auto& e = nodes.back();
+            const auto& p = nodes[nodes.size() - 2];
+            const Vec2 a = to_screen({e.x, e.y});
+            Vec2 from = e.has_in() ? to_screen({e.cx1, e.cy1}) : to_screen({p.x, p.y});
+            Vec2 t{a.x - from.x, a.y - from.y};
+            const double len = std::hypot(t.x, t.y);
+            if (len > 1e-6) {
+                t = {t.x / len, t.y / len};
+                const Vec2 nrm{-t.y, t.x};
+                const double half = 6.0;
+                cr->set_line_width(2.0);
+                cr->set_source_rgba(ST[0], ST[1], ST[2], 1.0);
+                cr->move_to(a.x + t.x * 5 - nrm.x * half, a.y + t.y * 5 - nrm.y * half);
+                cr->line_to(a.x + t.x * 5 + nrm.x * half, a.y + t.y * 5 + nrm.y * half);
+                cr->stroke();
+            }
         }
     }
 }
@@ -1358,7 +1399,27 @@ bool GlyphCanvas::on_key(guint keyval, guint, Gdk::ModifierType state) {
 
     if (keyval == GDK_KEY_Escape) {
         if (m_mode != Mode::None) cancel_drag();
+        else if (m_pick.empty() && !m_ctx.guide_pick) {
+            // Nothing left to drop: give the focus back (the canvas keeps Tab).
+            if (auto* root = dynamic_cast<Gtk::Widget*>(m_area.get_root()))
+                root->child_focus(Gtk::DirectionType::TAB_FORWARD);
+        }
         else { m_pick.clear(); m_ctx.guide_pick.reset(); say_pick(); m_area.queue_draw(); }
+        return true;
+    }
+    // M5e traversal: Tab / Shift+Tab walk the nodes, Ctrl jumps contours;
+    // ` / Shift+` walk nodes AND handles (Alt+Tab belongs to the desktop).
+    {
+        const bool tab   = keyval == GDK_KEY_Tab || keyval == GDK_KEY_KP_Tab || keyval == GDK_KEY_ISO_Left_Tab;
+        const bool grave = keyval == GDK_KEY_grave || keyval == GDK_KEY_asciitilde || keyval == GDK_KEY_dead_grave;
+        if ((tab || grave) && m_mode == Mode::None) {
+            const int dir = (shift || keyval == GDK_KEY_ISO_Left_Tab || keyval == GDK_KEY_asciitilde) ? -1 : 1;
+            step_pick(dir, tab && ctrl, grave);
+            return true;
+        }
+    }
+    if ((keyval == GDK_KEY_f || keyval == GDK_KEY_F) && !ctrl && !shift && m_mode == Mode::None) {
+        make_first();
         return true;
     }
     if ((keyval == GDK_KEY_m || keyval == GDK_KEY_M) && !ctrl) {   // hold M: measure
@@ -1474,6 +1535,98 @@ void GlyphCanvas::on_motion(double x, double y) {
     }
 }
 
+// ── node traversal (M5e) ──────────────────────────────────────────────────
+void GlyphCanvas::step_pick(int dir, bool contour, bool handles) {
+    const model::Glyph* g = glyph();
+    if (!g) return;
+    std::vector<int> live;   // contours with nodes
+    for (int c = 0; c < static_cast<int>(g->contours.size()); ++c)
+        if (!g->contours[c].nodes.empty()) live.push_back(c);
+    if (live.empty()) return;
+    // Where we stand: the pick's first outline point (a handle counts).
+    std::optional<PointRef> at;
+    for (const auto& p : m_pick)
+        if (p.contour >= 0 && geom::valid(*g, p) &&
+            (p.part == Part::Node || p.part == Part::In || p.part == Part::Out)) { at = p; break; }
+    PointRef next{};
+    if (!at) {
+        // Nothing picked: forward starts at the first contour's start; back
+        // ends at the last contour (its start on a contour jump, else its last node).
+        const int c = dir > 0 ? live.front() : live.back();
+        const int n = static_cast<int>(g->contours[c].nodes.size());
+        next = {c, (dir > 0 || contour) ? 0 : n - 1, Part::Node};
+    } else if (contour) {
+        auto it = std::find(live.begin(), live.end(), at->contour);
+        int k = static_cast<int>(it - live.begin());
+        k = (k + dir + static_cast<int>(live.size())) % static_cast<int>(live.size());
+        next = {live[k], 0, Part::Node};
+    } else {
+        // The contour's walk, in its direction: in-handle, node, out-handle
+        // per node (handles only with `handles`, and only where they exist).
+        const auto& nodes = g->contours[at->contour].nodes;
+        std::vector<PointRef> walk;
+        for (int i = 0; i < static_cast<int>(nodes.size()); ++i) {
+            if (handles && nodes[i].has_in())  walk.push_back({at->contour, i, Part::In});
+            walk.push_back({at->contour, i, Part::Node});
+            if (handles && nodes[i].has_out()) walk.push_back({at->contour, i, Part::Out});
+        }
+        PointRef here = *at;
+        if (!handles) here.part = Part::Node;   // from a handle, Tab walks on from its node
+        auto it = std::find(walk.begin(), walk.end(), here);
+        if (it == walk.end()) it = std::find(walk.begin(), walk.end(), PointRef{at->contour, at->index, Part::Node});
+        const int sz = static_cast<int>(walk.size());
+        int k = static_cast<int>(it - walk.begin());
+        if (here.part != at->part) {
+            // From a handle, Tab goes to the node on that side: an in-handle
+            // leads to its own node forward, an out-handle back.
+            const bool own = (at->part == Part::In) == (dir > 0);
+            if (!own) k = (k + dir + sz) % sz;
+        } else {
+            k = (k + dir + sz) % sz;
+        }
+        next = walk[k];
+    }
+    m_pick.clear();
+    m_pick.insert(next);
+    m_ctx.guide_pick.reset();
+    keep_in_view(geom::position(*g, next));
+    say_pick();
+    m_area.queue_draw();
+}
+
+void GlyphCanvas::keep_in_view(geom::Vec2 font_pt) {
+    const double w = m_area.get_width(), h = m_area.get_height();
+    if (w <= 0 || h <= 0) return;
+    const double margin = 48;   // clear of the rulers, with room to see around it
+    const Vec2 p = to_screen(font_pt);
+    if (p.x < margin)          m_ox += margin - p.x;
+    else if (p.x > w - margin) m_ox -= p.x - (w - margin);
+    if (p.y < margin)          m_oy += margin - p.y;
+    else if (p.y > h - margin) m_oy -= p.y - (h - margin);
+}
+
+void GlyphCanvas::make_first() {
+    const model::Glyph* g = glyph();
+    if (!g || m_pick.size() != 1) {
+        if (m_ctx.say) m_ctx.say("Make first: pick one node", true);
+        return;
+    }
+    const PointRef p = *m_pick.begin();
+    if (p.contour < 0 || p.part != Part::Node) {
+        if (m_ctx.say) m_ctx.say("Make first: pick one node", true);
+        return;
+    }
+    std::string why;
+    if (command::make_first(m_ctx.doc.journal, m_ctx.doc.font, m_shown, p.contour, p.index, &why)) {
+        m_pick.clear();
+        m_pick.insert({p.contour, 0, Part::Node});   // the same node, now index 0
+        say_pick();
+        m_area.queue_draw();
+    } else if (!why.empty() && m_ctx.say) {
+        m_ctx.say(why, true);
+    }
+}
+
 // The status line speaks for the pick: one point's coordinates, else a count.
 void GlyphCanvas::say_pick() {
     m_ctx.pick_changed.emit();
@@ -1502,7 +1655,14 @@ void GlyphCanvas::say_pick() {
                 what = std::string("Node (") + type_name(g->contours[p.contour].nodes[p.index].type) + ")";
                 break;
         }
-        m_ctx.say(what + "   " + fmt(v.x) + ", " + fmt(v.y), false);
+        std::string where;
+        if (p.contour >= 0) {
+            const auto& c = g->contours[p.contour];
+            where = "   node " + std::to_string(p.index + 1) + " of " + std::to_string(c.nodes.size()) +
+                    (p.index == 0 ? " (start)" : "") + ", contour " + std::to_string(p.contour + 1) + " of " +
+                    std::to_string(g->contours.size());
+        }
+        m_ctx.say(what + "   " + fmt(v.x) + ", " + fmt(v.y) + where, false);
         return;
     }
     m_ctx.say(std::to_string(m_pick.size()) + " points picked", false);

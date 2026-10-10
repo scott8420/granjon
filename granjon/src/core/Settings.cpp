@@ -44,6 +44,11 @@ Settings load_settings(const std::string& file) {
     const json e = j.value("editor", json::object());
     const json o = j.value("overview", json::object());
     const json n = j.value("navigator", json::object());
+    const json sp = j.value("spacing", json::object());
+    if (sp.is_object()) {
+        get(sp, "text", s.spacing_text);
+        get(sp, "size", s.spacing_size);
+    }
     if (n.is_object()) get(n, "open", s.navigator_open);
     if (g.is_object()) {
         get(g, "reopen_last", s.reopen_last);
@@ -68,6 +73,7 @@ Settings load_settings(const std::string& file) {
     if (s.overview_cell < kOverviewCellMin || s.overview_cell > kOverviewCellMax) s.overview_cell = d.overview_cell;
     if (s.sidebearing_mod != "alt" && s.sidebearing_mod != "ctrl" && s.sidebearing_mod != "shift")
         s.sidebearing_mod = d.sidebearing_mod;
+    if (s.spacing_size < kSpacingSizeMin || s.spacing_size > kSpacingSizeMax) s.spacing_size = d.spacing_size;
     if (s.context_upper.empty()) s.context_upper = d.context_upper;
     if (s.context_lower.empty()) s.context_lower = d.context_lower;
     return s;
@@ -86,6 +92,7 @@ bool save_settings(const std::string& file, const Settings& s) {
                     {"handles_relative", s.handles_relative}}},
         {"overview", {{"cell", s.overview_cell}, {"charset", s.overview_charset}}},
         {"navigator", {{"open", s.navigator_open}}},
+        {"spacing", {{"text", s.spacing_text}, {"size", s.spacing_size}}},
     };
     std::error_code ec;
     const auto dir = std::filesystem::path(file).parent_path();

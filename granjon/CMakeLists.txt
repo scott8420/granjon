@@ -70,6 +70,7 @@ add_library(granjon_core STATIC
     src/unicode/CharSet.cpp
     src/model/Coverage.cpp
     src/model/Composite.cpp
+    src/model/Spacing.cpp
     ${GRANJON_DATA_CPP}
     src/command/Verbs.cpp
     # UFO 3 source format: plist + GLIF via libxml2 (io/). M2.
@@ -140,6 +141,7 @@ add_executable(granjon
     src/views/Inspector.cpp
     src/views/OverviewGrid.cpp
     src/views/GlyphCanvas.cpp
+    src/views/SpacingStrip.cpp
     src/Shell.cpp
     src/Shell_zones.cpp
     src/Shell_bindings.cpp

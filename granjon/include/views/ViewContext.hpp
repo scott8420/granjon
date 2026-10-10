@@ -37,6 +37,16 @@ struct ViewContext {
     // A picked guide (M5c), instead of points: owner "" = font-wide.
     struct GuideRef { std::string owner; int index = -1; };
     std::optional<GuideRef> guide_pick;   // emits pick_changed too
+    // The Spacing view's picked pair (M6): two glyph names. The inspector's
+    // KERN card shows and edits it.
+    struct KernPick { std::string left, right; bool operator==(const KernPick&) const = default; };
+    std::optional<KernPick> kern_pick;
+    sigc::signal<void()>    kern_pick_changed;
+    void set_kern_pick(std::optional<KernPick> p) {
+        if (p == kern_pick) return;
+        kern_pick = std::move(p);
+        kern_pick_changed.emit();
+    }
     std::string        selected;                         // glyph name; "" = the font
     sigc::signal<void()> selection_changed;              // emitted by select() only
 
