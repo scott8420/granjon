@@ -205,7 +205,7 @@ Panels (always present, collapsible): **Navigator** (source list by Unicode bloc
 | Export OTF | model → CFF Type 2 charstrings (1:1 cubic) + sfnt tables |
 | Export TTF | model → cubic→quadratic (error tolerance) → glyf/loca + sfnt tables |
 | Export WOFF2 | compressed wrapper over OTF/TTF |
-| Export SVG | single glyph, for Curvz round-trip |
+| Export SVG | a glyph or the Spacing text as plain outline paths (M9c) -- the logo hand-off, and the Curvz round-trip |
 
 ### Pre-export steps
 - Decompose or keep components per the format.
@@ -269,7 +269,7 @@ geom/       Vec2, CubicSegment, Edit (Curvz node rules, hit-test)   [M4: built];
 core/       Settings (app preferences, JSON, not undoable)   [M4b: built]
 views/      ViewContext, Navigator, Inspector, OverviewGrid, GlyphPaint, GlyphSearch [M1b/c], GlyphCanvas [M4], SpacingStrip [M6], ReportList [M7], PreviewPane [M9]
 check/      Check, Report, concrete checks
-export/     Sfnt (writer, assembly), OtfData (generated spec tables), Cff, Tables (head hhea maxp OS/2 name cmap post hmtx), Gpos (kern), Otf (prepare, compile, export)   [M9: built]; Quad (cu2qu), Ttf (glyf loca maxp1 post2 gasp)   [M10a: built]; WOFF2 to come
+export/     Sfnt (writer, assembly), OtfData (generated spec tables), Cff, Tables (head hhea maxp OS/2 name cmap post hmtx), Gpos (kern), Otf (prepare, compile, export)   [M9: built]; Quad (cu2qu), Ttf (glyf loca maxp1 post2 gasp)   [M10a: built]; Codes (drawing-code listings, SVG)   [M9c: built]; WOFF2 to come
 import/     FtImporter, SvgImporter
 ```
 
@@ -293,6 +293,7 @@ Work stops at each milestone for a compile/run report before continuing.
 6. **M6 Spacing:** spacing strip (own layout; HarfBuzz with export), metrics keys, class kerning.   [s04: done]
 7. **M7 Checks:** report framework plus first checks (origin, zones, overshoot, direction).   [s04: done]
 8. **M8 Profiles:** contact gap, optical area, kern-to-gap.   [s04: built, awaiting crc]
-9. **M9 Export OTF:** sfnt writer + CFF; validate by FreeType reload.   [s05: built, awaiting crc]
-10. **M10 Export TTF / WOFF2:** cubic → quadratic, overlap removal, ttfautohint hook.   [s05: M10a TTF built; M10b WOFF2 + overlaps to come]
+9. **M9 Export OTF:** sfnt writer + CFF; validate by FreeType reload.   [s05: done]
+9c. **M9c Drawing codes + SVG:** inspector CODE card (CFF / TrueType / SVG path), Export SVG of a glyph or the Spacing text.   [s05: built, awaiting crc]
+10. **M10 Export TTF / WOFF2:** cubic → quadratic, overlap removal, ttfautohint hook.   [s05: M10a TTF done; M10b WOFF2 + overlaps to come]
 11. **M11 Import:** TTF/OTF via FreeType; SVG glyph import.

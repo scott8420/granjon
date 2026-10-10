@@ -9,6 +9,7 @@
 #include "unicode/Blocks.hpp"
 #include "unicode/UcdTable.hpp"
 #include "views/GlyphPaint.hpp"
+#include "export/Codes.hpp"
 
 #include <gtkmm/eventcontrollerfocus.h>
 #include <gtkmm/grid.h>
@@ -166,7 +167,12 @@ Inspector::Inspector(ViewContext& ctx)
       m_outline_info("inspector.outline_info"),
       m_correct("inspector.correct_directions"),
       m_reverse("inspector.reverse_contours"),
-      m_make_first("inspector.make_first") {
+      m_make_first("inspector.make_first"),
+      m_code_fmt("inspector.code_format"),
+      m_code_scroll("inspector.code_scroll"),
+      m_code("inspector.code"),
+      m_code_summary("inspector.code_summary"),
+      m_code_copy("inspector.code_copy") {
     add_css_class("inspector");
     set_policy(Gtk::PolicyType::NEVER, Gtk::PolicyType::AUTOMATIC);
     set_size_request(290, -1);
@@ -557,7 +563,62 @@ void Inspector::build_glyph_page() {
     on_commit(m_note, [this] { on_note(); });
     note.wide(m_note);
 
+    // CODE (M9c): the drawing as the files carry it. Read-only; follows edits.
+    Card code(*page, "CODE");
+    m_code_fmt.set_model(Gtk::StringList::create({"CFF (OTF)", "TrueType (TTF)", "SVG path"}));
+    m_code_fmt.set_tooltip_text("CFF: the charstring the OTF holds, disassembled. TrueType: the points after the "
+                                "quadratic conversion (ttx's <pt> lines). SVG: the path Export SVG writes. Remembered.");
+    m_code_fmt.property_selected().signal_changed().connect([this] {
+        if (m_painting) return;
+        static const char* ids[] = {"cff", "truetype", "svg"};
+        const auto i = std::min<guint>(m_code_fmt.get_selected(), 2);
+        m_ctx.settings.code_format = ids[i];
+        if (m_ctx.save_settings) m_ctx.save_settings();
+        refresh_code();
+    });
+    code.field("Format", m_code_fmt);
+    m_code.set_editable(false);
+    m_code.set_cursor_visible(false);
+    m_code.set_monospace(true);
+    m_code.set_wrap_mode(Gtk::WrapMode::NONE);
+    m_code.set_left_margin(6);
+    m_code.set_top_margin(4);
+    m_code.add_css_class("code");
+    m_code_scroll.set_child(m_code);
+    m_code_scroll.set_policy(Gtk::PolicyType::AUTOMATIC, Gtk::PolicyType::AUTOMATIC);
+    m_code_scroll.set_size_request(-1, 220);
+    m_code_scroll.set_has_frame(true);
+    code.wide(m_code_scroll);
+    auto code_row = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::HORIZONTAL, 8);
+    m_code_summary.add_css_class("dim");
+    m_code_summary.set_xalign(0.0f);
+    m_code_summary.set_hexpand(true);
+    m_code_summary.set_ellipsize(Pango::EllipsizeMode::END);
+    m_code_copy.set_label("Copy");
+    m_code_copy.set_tooltip_text("Copy the listing");
+    m_code_copy.signal_clicked().connect([this] {
+        m_code.get_clipboard()->set_text(m_code.get_buffer()->get_text());
+        if (m_ctx.say) m_ctx.say("Copied the " + std::string(m_code_fmt.get_selected() == 0 ? "CFF" : m_code_fmt.get_selected() == 1 ? "TrueType" : "SVG") + " listing.", false);
+    });
+    code_row->append(m_code_summary);
+    code_row->append(m_code_copy);
+    code.wide(*code_row);
+
     m_pages.add(*page, "glyph");
+}
+
+void Inspector::refresh_code() {
+    const auto& s = m_ctx.settings.code_format;
+    const guint want = s == "truetype" ? 1u : s == "svg" ? 2u : 0u;
+    const bool was = m_painting;
+    m_painting = true;
+    if (m_code_fmt.get_selected() != want) m_code_fmt.set_selected(want);
+    m_painting = was;
+    if (m_ctx.selected.empty() || !m_ctx.doc.font.glyph(m_ctx.selected)) return;
+    const auto fmt = want == 1 ? otf::CodeFormat::TrueType : want == 2 ? otf::CodeFormat::Svg : otf::CodeFormat::Cff;
+    const auto code = otf::glyph_code(m_ctx.doc.font, m_ctx.selected, fmt);
+    m_code.get_buffer()->set_text(code.text);
+    m_code_summary.set_text(code.summary);
 }
 
 void Inspector::refresh() {
@@ -628,6 +689,7 @@ void Inspector::refresh() {
         if (!m_note.has_focus()) m_note.set_text(g->note);
         refresh_parts(*g);
         m_preview.queue_draw();
+        refresh_code();
     }
     m_painting = false;
     refresh_pick();

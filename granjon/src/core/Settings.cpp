@@ -58,6 +58,8 @@ Settings load_settings(const std::string& file) {
     }
     const json ex = j.value("export", json::object());
     if (ex.is_object()) get(ex, "folder", s.export_folder);
+    if (const json in = j.value("inspector", json::object()); in.is_object()) get(in, "code_format", s.code_format);
+    if (s.code_format != "cff" && s.code_format != "truetype" && s.code_format != "svg") s.code_format = Settings{}.code_format;
     if (g.is_object()) {
         get(g, "reopen_last", s.reopen_last);
         get(g, "last_font", s.last_font);
@@ -103,6 +105,7 @@ bool save_settings(const std::string& file, const Settings& s) {
         {"spacing", {{"text", s.spacing_text}, {"size", s.spacing_size}}},
         {"preview", {{"text", s.preview_text}, {"kern", s.preview_kern}, {"invert", s.preview_invert}}},
         {"export", {{"folder", s.export_folder}}},
+        {"inspector", {{"code_format", s.code_format}}},
     };
     std::error_code ec;
     const auto dir = std::filesystem::path(file).parent_path();

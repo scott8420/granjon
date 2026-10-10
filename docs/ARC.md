@@ -239,3 +239,10 @@ Newest session at the bottom.
   - App: Export TTF… (☰, Ctrl+Shift+E) -- one `export_font(ttf)` behind both actions.
   - `otf_check.py` takes TTF: outlines compared with fontTools' cu2qu of the source (thin strokes lose ~1 % area to a 1-unit tolerance in both).
   - Selftest 706 / 0: cu2qu vs fontTools' numbers, direction, glyf decoded back point for point, hmtx lsb = xMin, post 2 names, GPOS / cmap identical to the OTF's.
+- M10a: crc (Scott). On "the OTF is slightly smaller": the outlines are about the same (CFF 152 KB, glyf 156 KB); the TTF also stores names (post 2, ~10 KB) and loca (~4 KB). CFF subroutinization (backlog) would shrink the OTF more.
+- M9c: drawing codes + Export SVG (Scott: fonts' drawing data -- can we see it? "both").
+  - `export/Codes`: `glyph_code` (CFF: the real charstring bytes disassembled; TrueType: cu2qu points as ttx <pt> lines; SVG: path data, y down from the ascender) and `text_svg` / `export_svg` (layout_strip placement, kerning applied, one named <path> per glyph, plain fill, viewBox in units, 100 px per em). `prepare_glyph` split out of `prepare` so one glyph goes through the same steps.
+  - Inspector: CODE card (format dropdown, monospace read-only listing, summary, Copy); setting `inspector.code_format`. `widgets::TextView` added (widened on demand).
+  - ☰: Export glyph as SVG…, Export Spacing text as SVG… (same folder memory as the font exports).
+  - Checked: Termes text "Granjon AVATAR Øg&@" exported and rendered by rsvg -- kerned, 17 paths, valid XML. Headless shot: the CODE card on Q (138 bytes, 8 operators).
+  - Selftest 717 / 0.

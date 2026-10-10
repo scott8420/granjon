@@ -11,6 +11,8 @@
 #include "Registry.hpp"
 #include "core/Recents.hpp"
 #include "export/Otf.hpp"
+#include "export/Codes.hpp"
+#include "model/Spacing.hpp"
 
 #include <gtkmm/filedialog.h>
 #include <giomm/asyncresult.h>
@@ -252,6 +254,49 @@ void Shell::on_toggle_inspector() {  // handler: Ctrl+I
     const bool show = !m_inspector.get_visible();
     m_inspector.set_visible(show);
     m_act_insp->change_state(Glib::Variant<bool>::create(show));
+}
+
+}  // namespace granjon
+
+namespace granjon {
+
+// Export SVG (M9c): outlines as plain artwork -- the selected glyph, or the
+// Spacing strip's text set with its kerning, one <path> per glyph, y flipped.
+// The "convert to outlines" hand-off; read-only on the font.
+void Shell::export_svg(bool strip) {  // helper
+    std::vector<std::string> names;
+    std::string base;
+    if (strip) {
+        names = model::parse_strip(m_doc.font, m_settings.spacing_text);
+        base = otf::postscript_name(m_doc.font.info().family, m_doc.font.info().style) + "-text";
+        if (names.empty()) { say("The Spacing text sets no glyphs -- type some in the Spacing view first.", true); return; }
+    } else {
+        if (m_ctx.selected.empty() || !m_doc.font.glyph(m_ctx.selected)) { say("Select a glyph to export it as SVG.", true); return; }
+        names = {m_ctx.selected};
+        base = m_ctx.selected;
+    }
+    auto dialog = Gtk::FileDialog::create();
+    dialog->set_title(strip ? "Export Spacing text as SVG" : "Export glyph as SVG");
+    dialog->set_initial_name(base + ".svg");
+    std::error_code ec;
+    if (!m_settings.export_folder.empty() && std::filesystem::is_directory(m_settings.export_folder, ec))
+        dialog->set_initial_folder(Gio::File::create_for_path(m_settings.export_folder));
+    else if (!m_doc.path.empty())
+        dialog->set_initial_folder(Gio::File::create_for_path(std::filesystem::path(m_doc.path).parent_path().string()));
+    dialog->save(*this, [this, dialog, names](const Glib::RefPtr<Gio::AsyncResult>& result) {
+        Glib::RefPtr<Gio::File> file;
+        try { file = dialog->save_finish(result); } catch (const Glib::Error&) { return; }
+        if (!file) return;
+        std::filesystem::path p = file->get_path();
+        if (p.extension() != ".svg") p += ".svg";
+        std::string err;
+        if (!otf::export_svg(m_doc.font, names, p, {}, &err)) { say("Could not export: " + err, true); return; }
+        m_settings.export_folder = p.parent_path().string();
+        save_settings();
+        say("Exported " + p.filename().string() + " \u2014 " + std::to_string(names.size()) + " glyph" +
+            (names.size() == 1 ? "" : "s") + " as outlines.", false);
+        if (auto lg = log::get(log::Area::Io)) lg->info("export svg '{}': {} glyphs", p.string(), names.size());
+    });
 }
 
 }  // namespace granjon

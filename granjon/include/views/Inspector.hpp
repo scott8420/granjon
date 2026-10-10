@@ -44,6 +44,7 @@ private:
     void on_handle_xy(bool out);       // the In / Out rows of a picked node
     void on_node_type(int type);
     void refresh_guide();              // the GUIDE card (a picked guide, M5c)
+    void refresh_code();               // the CODE card (M9c)
     void on_guide_field();
     void on_anchor_name();
 
@@ -134,6 +135,12 @@ private:
     widgets::Button      m_correct;
     widgets::Button      m_reverse;
     widgets::Button      m_make_first;   // M5e: the picked node leads its contour
+    // code (M9c): the glyph as the files carry it
+    widgets::DropDown       m_code_fmt;
+    widgets::ScrolledWindow m_code_scroll;
+    widgets::TextView       m_code;
+    widgets::Label          m_code_summary;
+    widgets::Button         m_code_copy;
 };
 
 }  // namespace granjon::views

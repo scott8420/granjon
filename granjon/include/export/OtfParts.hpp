@@ -34,6 +34,9 @@ struct Prepared {
 };
 
 Prepared prepare(const model::Font& f, const OtfOptions& opt, OtfReport& rep);
+// One glyph through the same steps (flattened, snapped, bbox, production
+// name) -- the code view and Export SVG use it on their own.
+OutGlyph prepare_glyph(const model::Font& f, const model::Glyph& g);
 
 // Type 2 charstring for one glyph (widths against the Private DICT's
 // defaultWidthX / nominalWidthX).

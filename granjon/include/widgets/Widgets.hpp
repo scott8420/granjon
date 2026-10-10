@@ -19,6 +19,7 @@
 #include <gtkmm/spinbutton.h>
 #include <gtkmm/stack.h>
 #include <gtkmm/stacksidebar.h>
+#include <gtkmm/textview.h>
 
 // The wrapper aliases. Widen on demand, not for symmetry (CANON). Each line is
 // the whole cost of making a GTK widget name-mandatory in Granjon's app code.
@@ -42,5 +43,6 @@ using ScrolledWindow = Named<Gtk::ScrolledWindow>;
 using SpinButton     = Named<Gtk::SpinButton>;
 using Stack          = Named<Gtk::Stack>;
 using StackSidebar   = Named<Gtk::StackSidebar>;
+using TextView       = Named<Gtk::TextView>;
 
 }  // namespace granjon::widgets

@@ -95,6 +95,8 @@ add_library(granjon_core STATIC
     # M10a: TrueType -- cu2qu (cubic -> quadratic) and glyf / loca / post 2 / gasp.
     src/export/Quad.cpp
     src/export/Ttf.cpp
+    # M9c: the drawing codes (CFF / TrueType / SVG path listings) and Export SVG.
+    src/export/Codes.cpp
 )
 target_include_directories(granjon_core PUBLIC include)
 # libxml2 parses plist / GLIF. C, GTK-free: it keeps the core's seam intact.

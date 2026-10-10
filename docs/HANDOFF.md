@@ -13,13 +13,19 @@
 ## Status — s05 (written as we go)
 - **M8 profiles:** crc (s05 open).
 - **M9 export OTF: crc** (Scott, on r2: export via the dialog, GNOME Fonts reads the file, the Preview renders and follows the desktop's dark mode).
-- **M10a export TTF: built, shipped (`s05_m10a_export_ttf.zip` -- the one to install; every earlier s05 zip is superseded), awaiting Scott's crc.**
+- **M10a export TTF: crc** (Scott). He noticed the OTF is slightly smaller than the TTF: same outline size (CFF 152 KB vs glyf 156 KB on Termes); the gap is post 2's stored names (~10 KB) and loca (~4 KB). CFF subroutines would shrink the OTF further (follow-on).
+- **M9c drawing codes + Export SVG: built, shipped (`s05_m9c_codes_svg.zip` -- the one to install; every earlier s05 zip is superseded), awaiting Scott's crc.** Scott asked (s05) whether a font's drawing data can be seen, and for both a code view and outline export.
+- M9c: the inspector's **CODE** card (glyph page, last card): Format = CFF (the OTF's charstring disassembled -- operands then operator, batched groups one per line), TrueType (ttx-style `<pt x y on>` lines after cu2qu and the direction flip), or SVG path (what Export SVG writes); size / count summary; Copy. Follows edits (after a drag, at release); the format is remembered (`inspector.code_format`). ☰ **Export glyph as SVG…** and **Export Spacing text as SVG…**: plain filled paths, y flipped, no transforms, one `<path id="gN-name">` per glyph, the strip's kerning applied, viewBox in font units, width / height at 100 px per em, the text in `<desc>`.
 - M10a: cu2qu ported from fontTools (cubic -> fewest quadratics within 1/1000 em, implied on-curves; same points as fontTools on the test curves), glyf / loca (short when it fits) / maxp 1.0 / post 2 / gasp; every contour reversed to TrueType's direction; OVERLAP_SIMPLE set; the rest shared with the OTF. App: **Export TTF…** (☰, **Ctrl+Shift+E**).
-- Selftest 706 / 0 (16 new for TTF). Built against Ubuntu 24.04, g++ 13.3, gtkmm 4.10 / GTK 4.14, pango 1.52, RelWithDebInfo; the known GCC 13 / fmt false positive x3. **No new package.**
+- Selftest 717 / 0 (16 new for TTF, 11 for codes + SVG). Built against Ubuntu 24.04, g++ 13.3, gtkmm 4.10 / GTK 4.14, pango 1.52, RelWithDebInfo; the known GCC 13 / fmt false positive x3. **No new package.**
 - Outside validation (`scripts/otf_check.py`, now OTF or TTF; TrueType outlines compared with fontTools' own cu2qu of the source, i.e. what fontmake would ship): Termes + groups and Termes at 2048 UPM as TTF, and a TTF exported through the app's dialog, pass OTS, fontTools, outlines (1090 glyphs), FreeType, HarfBuzz (25,579 pairs). OTF vs TTF rendered by FreeType at 160 px overlay with no visible difference. Termes TTF: ~55 ms, 217 KB, 52,715 points.
 - Before M10a: Scott ran M9 r1 and asked that the Preview page follow the desktop's dark mode -> r2 (see decisions).
 
-What to look at in M10a:
+What to look at in M9c:
+- Select a glyph; the inspector's last card, **CODE**. Switch CFF / TrueType / SVG; nudge a node in the editor and watch it follow. Copy, paste into a text editor. Compare with `ttx -t glyf` on an exported TTF: the <pt> lines should match.
+- ☰ **Export Spacing text as SVG…** with a word in the Spacing strip; open the .svg in Inkscape / Illustrator: one path per letter, named, kerned, no font needed.
+
+What to look at in M10a (crc):
 - **Ctrl+Shift+E / ☰ Export TTF…:** proposes `Family-Style.ttf`; status line and log as for OTF (the log adds the glyf point count).
 - Open the .ttf in GNOME Fonts beside the .otf: they should look the same. (Don't install a "TeX Gyre Termes" build -- it collides with the real one; My Termes is safe.)
 
@@ -30,6 +36,7 @@ What to look at in M9:
 - On Termes: whether the Preview's kerning matches the Spacing strip on the same pairs (it should, exactly -- the GPOS is built from the strip's lookup).
 
 ## Decisions made in s05
+- M9c: the code view shows what the FILES carry (production name noted beside yours; the CFF width written absolute for reading; the TTF after conversion), read-only. SVG export is outlines only (no <text>, no font, no transforms) -- the logo hand-off; em = 100 px by default (a setting can follow). Two menu items (glyph / Spacing text) rather than guessing from the front view.
 - TTF (M10a): cu2qu at 1/1000 em (fontmake's default); contours all reversed (consistent, so nonzero fill is unchanged -- not the depth-based direction fix); OVERLAP_SIMPLE on every glyph's first point (overlaps kept until M10b); components decomposed (TrueType composites are a size follow-on); no hints, gasp = smooth at all sizes; loca short when the glyf fits; post 2 carries the production names. The Preview stays on the OTF.
 - Thin strokes (tie accents, outline (C) / (R)) lose ~1 % area to the 1-unit tolerance -- the same as fontTools'; the checker compares against fontTools' conversion, not the cubic.
 - Export OTF is Ctrl+E (free in the shortcut registry) with its own section in ☰; it always asks where (an "export again to the same file" can follow if you want one).

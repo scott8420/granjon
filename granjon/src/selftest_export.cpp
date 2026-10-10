@@ -9,6 +9,7 @@
 #include "export/Otf.hpp"
 #include "export/OtfParts.hpp"
 #include "export/Quad.hpp"
+#include "export/Codes.hpp"
 #include "export/OtfData.hpp"
 #include "geom/Edit.hpp"
 #include "model/Spacing.hpp"
@@ -588,6 +589,47 @@ void selftest_export(const Check& check_) {
         const fs::path to = dir / otf::default_file_name(f.info(), ".ttf");
         check("ttf: export writes Family-Style.ttf", otf::export_ttf(f, to, opt, nullptr, &why2) && fs::file_size(to) > 0 &&
               to.filename() == "Untitled-Regular.ttf", why2);
+        fs::remove_all(dir);
+    }
+
+    // ── M9c: drawing codes + SVG ──
+    std::cout << "M9c drawing codes + SVG\n";
+    {
+        auto count = [](const std::string& s, const std::string& w) {
+            int n = 0;
+            for (std::size_t i = s.find(w); i != std::string::npos; i = s.find(w, i + w.size())) ++n;
+            return n;
+        };
+        const auto cff = otf::glyph_code(f, "H", otf::CodeFormat::Cff);
+        check("codes: CFF for H -- width, 3 rmoveto, endchar", cff.text.find("700 % the width") != std::string::npos &&
+              count(cff.text, "rmoveto") == 3 && count(cff.text, "endchar") == 1 && !cff.summary.empty(), cff.summary);
+        const auto c = otf::glyph_code(f, "c", otf::CodeFormat::Cff);
+        check("codes: CFF for c -- rrcurveto", c.text.find("rrcurveto") != std::string::npos);
+        const auto tt = otf::glyph_code(f, "H", otf::CodeFormat::TrueType);
+        check("codes: TrueType for H -- 3 contours, 12 on-curve points", count(tt.text, "<contour>") == 3 &&
+              count(tt.text, "<pt ") == 12 && count(tt.text, "on=\"0\"") == 0, tt.summary);
+        const auto tc = otf::glyph_code(f, "c", otf::CodeFormat::TrueType);
+        check("codes: TrueType for c -- off-curve points", count(tc.text, "on=\"0\"") > 0, tc.summary);
+        const auto sv = otf::glyph_code(f, "H", otf::CodeFormat::Svg);
+        check("codes: SVG path for H -- 3 subpaths, y down from the ascender", count(sv.text, "M") == 3 &&
+              sv.text.find("M80 750") != std::string::npos, sv.text.substr(0, 80));
+        check("codes: a missing glyph gives nothing", otf::glyph_code(f, "nope", otf::CodeFormat::Cff).text.empty());
+        check("codes: production name shown with the designer's", otf::glyph_code(f, "myA", otf::CodeFormat::Cff).text.find("uni0041 (yours: myA)") != std::string::npos);
+
+        const std::string svg = otf::text_svg(f, {"H", "O", "c"});
+        const int kern = model::kern_lookup(f.kerning(), "H", "O").value + model::kern_lookup(f.kerning(), "O", "c").value;
+        const std::string vb = "viewBox=\"0 0 " + std::to_string(700 + 760 + 500 + kern) + " ";
+        check("svg: one path per glyph, kerned width in the viewBox", count(svg, "<path ") == 3 && svg.find(vb) != std::string::npos &&
+              svg.find("id=\"g2-O\"") != std::string::npos, vb);
+        check("svg: plain filled artwork (no transform, no font)", svg.find("transform") == std::string::npos &&
+              svg.find("<text") == std::string::npos && svg.find("fill=\"#000000\"") != std::string::npos);
+        check("svg: the text in its description", svg.find("Outlines from Granjon: HOc") != std::string::npos);
+        namespace fs = std::filesystem;
+        const fs::path dir = fs::temp_directory_path() / "granjon_selftest_svg";
+        fs::remove_all(dir);
+        fs::create_directories(dir);
+        std::string why3;
+        check("svg: export writes the file", otf::export_svg(f, {"H", "O"}, dir / "HO.svg", {}, &why3) && fs::file_size(dir / "HO.svg") > 0, why3);
         fs::remove_all(dir);
     }
 }

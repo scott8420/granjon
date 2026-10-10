@@ -49,6 +49,7 @@ struct Settings {
     bool        preview_kern = true;     // the compiled kerning on
     bool        preview_invert = false;  // show the page in the OTHER mode than the desktop's
     std::string export_folder;           // where the Export dialog starts
+    std::string code_format = "cff";     // the inspector CODE card (M9c): "cff" | "truetype" | "svg"
 
     // ── Overview ──────────────────────────────────────────────────────────
     int         overview_cell    = 84;     // px, kOverviewCellMin..Max

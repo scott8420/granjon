@@ -64,6 +64,28 @@ std::string production_name(const model::Glyph& g) {
     return buf;
 }
 
+OutGlyph prepare_glyph(const model::Font& f, const model::Glyph& src) {
+    OutGlyph o;
+    o.source   = src.name;
+    o.name     = production_name(src);
+    o.unicodes = src.unicodes;
+    o.advance  = static_cast<int>(std::clamp(std::lround(src.advance), 0L, 65535L));
+    model::Glyph flat;
+    flat.contours = src.contours;
+    for (const auto& k : src.components)
+        for (auto& c : geom::component_contours(f, k)) flat.contours.push_back(std::move(c));
+    flat.snap();
+    if (auto b = model::bounds(f, flat)) {
+        o.empty = false;
+        o.xmin = static_cast<int>(std::floor(b->x0));
+        o.ymin = static_cast<int>(std::floor(b->y0));
+        o.xmax = static_cast<int>(std::ceil(b->x1));
+        o.ymax = static_cast<int>(std::ceil(b->y1));
+    }
+    o.contours = std::move(flat.contours);
+    return o;
+}
+
 Prepared prepare(const model::Font& f, const OtfOptions& opt, OtfReport& rep) {
     Prepared p;
     p.info    = f.info();
@@ -110,25 +132,15 @@ Prepared prepare(const model::Font& f, const OtfOptions& opt, OtfReport& rep) {
         }
         if (o.name != name) ++rep.renamed;
         used.insert(o.name);
-        o.unicodes = src.unicodes;
-        o.advance  = static_cast<int>(std::clamp(std::lround(src.advance), 0L, 65535L));
-
-        model::Glyph flat;
-        flat.contours = src.contours;
-        for (const auto& k : src.components)
-            for (auto& c : geom::component_contours(f, k)) flat.contours.push_back(std::move(c));
+        OutGlyph shaped = prepare_glyph(f, src);
+        o.unicodes = std::move(shaped.unicodes);
+        o.advance  = shaped.advance;
+        o.contours = std::move(shaped.contours);
+        o.empty = shaped.empty;
+        o.xmin = shaped.xmin; o.ymin = shaped.ymin; o.xmax = shaped.xmax; o.ymax = shaped.ymax;
         if (!src.components.empty()) ++rep.decomposed;
-        flat.snap();
-        for (const auto& c : flat.contours)
+        for (const auto& c : o.contours)
             if (!c.closed && c.nodes.size() > 1) ++rep.open_contours;
-        if (auto b = model::bounds(f, flat)) {
-            o.empty = false;
-            o.xmin = static_cast<int>(std::floor(b->x0));
-            o.ymin = static_cast<int>(std::floor(b->y0));
-            o.xmax = static_cast<int>(std::ceil(b->x1));
-            o.ymax = static_cast<int>(std::ceil(b->y1));
-        }
-        o.contours = std::move(flat.contours);
         p.glyphs.push_back(std::move(o));
     }
     if (rep.made_notdef) {   // its bbox, as for the rest
