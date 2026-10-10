@@ -261,3 +261,8 @@ Newest session at the bottom.
   - Verbs: `pen_press` (opens a gesture: new path / next node / close / continue-from-start with the reversal in the same step; refuses a closed contour) + `pen_drag`; `drag_end` commits snapped, `drag_cancel` takes it back. `pen_new_path` in the verb table (one step); add / close / continue / undo covered in selftest_edit.
   - Canvas: Pen toggle (P), Mode::Pen press / drag / release, Shift 45 degrees (click position and drag), Alt cusp, click the first node to close, click an open end to pick the path up, Enter / Escape end, Escape again leaves; rubber band + closing ring (`draw_pen`); crosshair. Shortcuts registry: P, Enter / Escape rows.
   - Selftest 757 / 0. Headless: drawn and closed beside Termes O.
+- Scott on M5g: "jog the ruler over to the right and add a tool panel and use standard icons for the toggle tools with hints."
+- M5h tool panel.
+  - GlyphCanvas: `m_work` (horizontal) = `m_tools` (vertical panel) | `m_area` -- the left ruler moves right with the canvas. Tools as a ToggleButton group: Pick (V), Pen (P), Measure, Hand; `tool()`, `set_tool()`, `on_tool_changed()` (cursor, status line, ends a pen path, measure / pan state follow the tool; the M and Space holds still work inside Pick and no longer drop a chosen tool on release). Fill / Context / Grid / Snap moved into the panel under a separator, icon buttons, same preference wiring.
+  - Eight symbolic SVG icons (currentColor) in resources/icons, listed in the gresource. Tooltips: name, key, use. CSS `.tool-panel` with house tokens (accent when checked).
+  - Shortcuts registry: V row. Selftest 757 / 0. Headless shots (with the SVG pixbuf loader installed in the sandbox): panel, Pen hint.

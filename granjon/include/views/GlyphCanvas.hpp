@@ -102,6 +102,17 @@ private:
     widgets::ToggleButton m_grid;           // the zoom-adaptive grid (a preference)
     widgets::ToggleButton m_snap;           // snapping (a preference)
     widgets::ToggleButton m_pen;            // M5g: the pen tool (P)
+    // M5h: the tool panel down the canvas's left edge -- tools (one at a time)
+    // above, the view toggles below.
+    widgets::ToggleButton m_tool_pick;      // V
+    widgets::ToggleButton m_tool_measure;   // (hold M still works)
+    widgets::ToggleButton m_tool_hand;      // (hold Space still works)
+    widgets::Box          m_tools;
+    widgets::Box          m_work;           // the panel | the canvas
+    enum class Tool { Pick, Pen, Measure, Hand };
+    Tool tool() const;
+    void set_tool(Tool t);
+    void on_tool_changed();
     widgets::Button      m_fit_button;
     widgets::Button      m_anchors;          // default anchors for this glyph
     widgets::Label       m_readout;          // pointer x, y -- or the drag's delta

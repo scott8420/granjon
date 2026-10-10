@@ -14,7 +14,10 @@
 - **M8 profiles:** crc (s05 open).
 - **M9 export OTF: crc** (Scott, on r2: export via the dialog, GNOME Fonts reads the file, the Preview renders and follows the desktop's dark mode).
 - **M10a export TTF: crc** (Scott). He noticed the OTF is slightly smaller than the TTF: same outline size (CFF 152 KB vs glyf 156 KB on Termes); the gap is post 2's stored names (~10 KB) and loca (~4 KB). CFF subroutines would shrink the OTF further (follow-on).
-- **M5g pen tool: built, shipped (`s05_m5g_pen.zip` -- the one to install; every earlier s05 zip is superseded), awaiting Scott's crc.**
+- **M5h tool panel: built, shipped (`s05_m5h_tool_panel.zip` -- the one to install; every earlier s05 zip is superseded), awaiting Scott's crc.** Scott (s05, on seeing the pen): "jog the ruler over to the right and add a tool panel and use standard icons for the toggle tools with hints."
+- M5h: a tool panel down the editor canvas's left edge (the canvas and its left ruler move right of it). Tools, one at a time: **Pick (V)**, **Pen (P)**, **Measure** (hold M still works), **Hand** (hold Space still works); below a rule, the view toggles **Fill, Context, Grid, Snap** (remembered as before). Icons are Granjon's own symbolic SVGs (arrow, pen nib, ruler, hand, drop, context bars, grid, magnet -- `resources/icons/scalable/apps/granjon-tool-*` / `granjon-view-*`, in the gresource): the stock themes don't carry drawing tools on every desktop. Each tooltip: name, key, how to use it. Escape in Measure / Hand returns to Pick. The top bar keeps the title, Anchors, Fit, readout, zoom.
+- Sandbox notes: icons need GTK's SVG pixbuf loader (installed here for the shots); the house CSS needs GTK >= 4.16 (var()), so the sandbox (4.14) shows the checked tools grey instead of the accent -- Scott's Fedora has it.
+- **M5g pen tool: crc** (Scott, by moving on to the panel).
 - M5g: **Pen** button in the editor bar / **P**. Click = corner node; click-drag = Symmetric node, handles along the drag (Alt: out-handle alone -> corner; Shift: 45-degree drags, and a plain click Shift-constrained to 45 degrees from the last node); click the first node = close (a drag there shapes the closing curve's arrival); click an open path's end node = go on from it (from the first node: the path is reversed in the next step); Enter / Escape end the path, Escape again leaves the pen. Each node one undo step (press-drag-release is a gesture). Dashed rubber band from the last node to the pointer (a curve when the last node has a handle); the first node rings when a click would close. Crosshair cursor. Status line guides each step. Conventions are the common ones (Illustrator / Glyphs) -- Curvz's source wasn't in hand.
 - Selftest 757 / 0 (9 pen tests in `selftest_edit.cpp`, `pen_new_path` in the verb table). Headless: a triangle-with-a-curve drawn beside Termes O, open (rubber band) and closed.
 - **M5f node editing: crc** (Scott). Scott chose the editor's drawing tools as next (s05: "gtg"); M5f is the node half, the pen tool is M5g.
@@ -27,7 +30,11 @@
 - Outside validation (`scripts/otf_check.py`, now OTF or TTF; TrueType outlines compared with fontTools' own cu2qu of the source, i.e. what fontmake would ship): Termes + groups and Termes at 2048 UPM as TTF, and a TTF exported through the app's dialog, pass OTS, fontTools, outlines (1090 glyphs), FreeType, HarfBuzz (25,579 pairs). OTF vs TTF rendered by FreeType at 160 px overlay with no visible difference. Termes TTF: ~55 ms, 217 KB, 52,715 points.
 - Before M10a: Scott ran M9 r1 and asked that the Preview page follow the desktop's dark mode -> r2 (see decisions).
 
-What to look at in M5g:
+What to look at in M5h:
+- Editor: the panel at the canvas's left. Hover each button -- the hint. Click Pen / Measure / Hand / Pick, and the keys V, P; hold M and Space inside Pick still work. Fill / Context / Grid / Snap as before.
+- Whether the icons read as the tools at a glance (they are mine -- say which to redraw).
+
+What to look at in M5g (crc):
 - Editor, **P** (or the Pen button). Draw a box with clicks; close it on the first node. Draw a bowl with click-drags; try Alt mid-drag for a cusp, Shift for 45 degrees.
 - End a path open (Enter), then click its end to go on; click its START to go on from there.
 - Ctrl+Z after each node takes one node off. Escape twice: back to picking.
@@ -54,6 +61,7 @@ What to look at in M9:
 - On Termes: whether the Preview's kerning matches the Spacing strip on the same pairs (it should, exactly -- the GPOS is built from the strip's lookup).
 
 ## Decisions made in s05
+- M5h: tools are a toggle group in a panel; the view toggles live in the same panel under a rule (the top bar stays for glyph actions). Own icons rather than theme icons (availability). Measure and Hand became tools as well as holds.
 - M5g: one undo step per node (not per path) -- a slip costs one Ctrl+Z. The pen draws open paths and closes them; it never adds to a closed contour (insert a node with a double-click instead). A new path starts Drafted on an Empty glyph. No auto-direction: the Checks report / Correct directions handle a path drawn clockwise.
 - M5f: Delete keeps the shape by default (the refit), as Glyphs does; a "delete without refit" modifier can follow if wanted. Double-click a segment = add node (double-click a node still flips corner / smooth). L / C act on segments whose BOTH end nodes are picked. A contour left with fewer than two nodes is removed. Results snap to whole units like every edit.
 - M9c: the code view shows what the FILES carry (production name noted beside yours; the CFF width written absolute for reading; the TTF after conversion), read-only. SVG export is outlines only (no <text>, no font, no transforms) -- the logo hand-off; em = 100 px by default (a setting can follow). Two menu items (glyph / Spacing text) rather than guessing from the front view.

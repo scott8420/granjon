@@ -382,3 +382,25 @@ popover.checklist-popover .badge { margin-left: 4px; }
 .editor-tab button { min-height: 24px; padding: 0 6px; border-radius: 6px; background: none; color: inherit; }
 .editor-tab button.tab-close { min-width: 18px; padding: 0 4px; opacity: 0.6; }
 .editor-tab button.tab-close:hover { opacity: 1; background-color: var(--hover-bg); }
+
+/* M5h: the editor's tool panel -- a narrow column left of the canvas.
+   Tools above (one at a time), view toggles below; on = the accent. */
+.tool-panel {
+    padding: 6px 4px;
+    border-right: 1px solid var(--bg-edge);
+    background-color: var(--bg-surface);
+}
+.tool-panel button.tool {
+    min-width: 30px; min-height: 30px;
+    padding: 4px;
+    border-radius: 7px;
+    color: var(--fg-secondary);
+}
+.tool-panel button.tool:hover { background-color: var(--hover-bg); }
+.tool-panel button.tool:checked,
+.tool-panel button.tool:checked:hover {
+    background-color: var(--accent);
+    background-image: none;
+    color: var(--accent-fg);
+    box-shadow: none;
+}

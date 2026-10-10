@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
+  <!-- Granjon tool icon (M5h). Symbolic: currentColor only. -->
+  <path fill="currentColor" fill-rule="evenodd" d="M1.2 10.8 L10.8 1.2 L14.8 5.2 L5.2 14.8 Z M3 10.8 L5.2 13 L13 5.2 L10.8 3 Z"/>
+  <path fill="currentColor" d="M5.3 8.5 L6.8 10 L7.5 9.3 L6 7.8 Z M7.3 6.5 L8.3 7.5 L9 6.8 L8 5.8 Z M9.3 4.5 L10.8 6 L11.5 5.3 L10 3.8 Z"/>
+</svg>

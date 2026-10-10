@@ -11,6 +11,7 @@
 #include <gtkmm/eventcontrollermotion.h>
 #include <gtkmm/eventcontrollerscroll.h>
 #include <gtkmm/root.h>
+#include <gtkmm/separator.h>
 #include <pangomm/layout.h>
 
 #include <algorithm>
@@ -76,7 +77,12 @@ GlyphCanvas::GlyphCanvas(ViewContext& ctx)
       m_fill("editor.fill"),
       m_grid("editor.grid"),
       m_snap("editor.snap"),
-      m_pen("editor.pen"),
+      m_pen("editor.tool_pen"),
+      m_tool_pick("editor.tool_pick"),
+      m_tool_measure("editor.tool_measure"),
+      m_tool_hand("editor.tool_hand"),
+      m_tools("editor.tools", Gtk::Orientation::VERTICAL, 2),
+      m_work("editor.work", Gtk::Orientation::HORIZONTAL, 0),
       m_fit_button("editor.fit"),
       m_anchors("editor.anchors"),
       m_readout("editor.readout"),
@@ -111,18 +117,6 @@ GlyphCanvas::GlyphCanvas(ViewContext& ctx)
     m_zoom.set_width_chars(16);
     m_zoom.set_xalign(1.0f);
     m_bar.append(m_title);
-    m_pen.set_label("Pen");
-    m_pen.set_tooltip_text("The pen (P). Click: a corner node. Drag: a smooth node (Alt: the out-handle alone; "
-                           "Shift: 45 degrees). Click the first node: close. Click an open path's end: continue it. "
-                           "Enter / Escape: end the path; Escape again: back to picking.");
-    m_pen.signal_toggled().connect([this] {
-        if (!m_pen.get_active()) end_path(false);
-        m_area.set_cursor(m_pen.get_active() ? "crosshair" : "default");
-        if (m_ctx.say) m_ctx.say(m_pen.get_active() ? "Pen: click for a corner, drag for a curve; P or Escape leaves the pen."
-                                                    : "Picking.", false);
-        m_area.grab_focus();
-    });
-    m_bar.append(m_pen);
     m_anchors.set_label("Anchors");
     m_anchors.set_tooltip_text("Add default anchors to this glyph (top / bottom; _top / _bottom on a mark) -- one undo step");
     m_anchors.signal_clicked().connect([this] {
@@ -133,8 +127,6 @@ GlyphCanvas::GlyphCanvas(ViewContext& ctx)
         m_area.grab_focus();
     });
     m_bar.append(m_anchors);
-    m_bar.append(m_context);
-    m_bar.append(m_fill);
     m_grid.set_label("Grid");
     m_grid.set_active(m_ctx.settings.editor_grid);
     m_grid.set_tooltip_text("A grid that follows the zoom: tenths of a unit close in, whole units drawn stronger");
@@ -142,8 +134,6 @@ GlyphCanvas::GlyphCanvas(ViewContext& ctx)
     m_snap.set_active(m_ctx.settings.editor_snap);
     m_snap.set_tooltip_text("Drags snap to the grid (when shown), the metric lines, the sidebearings and the other nodes. "
                             "Ctrl (fine drag) never snaps.");
-    m_bar.append(m_grid);
-    m_bar.append(m_snap);
     m_bar.append(m_fit_button);
     m_readout.add_css_class("dim");
     m_readout.set_width_chars(11);
@@ -181,7 +171,54 @@ GlyphCanvas::GlyphCanvas(ViewContext& ctx)
     m_area.set_vexpand(true);
     m_area.set_focusable(true);
     m_area.set_draw_func(sigc::mem_fun(*this, &GlyphCanvas::on_draw));
-    append(m_area);
+
+    // ── the tool panel (M5h, Scott) ────────────────────────────────────────
+    // Tools are one-at-a-time (a toggle group); the view toggles below keep
+    // their own state. Icons are Granjon's own symbolic SVGs (resources/icons):
+    // the stock themes don't carry drawing tools on every desktop.
+    m_tools.add_css_class("tool-panel");
+    auto icon_button = [](Gtk::ToggleButton& b, const char* icon, const std::string& tip) {
+        b.set_icon_name(icon);
+        b.set_tooltip_text(tip);
+        b.add_css_class("flat");
+        b.add_css_class("tool");
+        b.set_focus_on_click(false);
+    };
+    icon_button(m_tool_pick, "granjon-tool-pick-symbolic",
+                "Pick (V)\nClick, Shift+click or drag a box to pick nodes, handles, anchors, components; drag to move. "
+                "Double-click a segment: add a node; a node: corner / smooth.");
+    icon_button(m_pen, "granjon-tool-pen-symbolic",
+                "Pen (P)\nClick: a corner node. Drag: a smooth node (Alt: the out-handle alone; Shift: 45 degrees). "
+                "Click the first node: close. Click an open path's end: go on. Enter / Escape: end the path.");
+    icon_button(m_tool_measure, "granjon-tool-measure-symbolic",
+                "Measure (hold M)\nDrag: distance and angle. Click: the stems through that point.");
+    icon_button(m_tool_hand, "granjon-tool-hand-symbolic",
+                "Hand (hold Space)\nDrag to pan. Ctrl+scroll zooms; Ctrl+0 fits.");
+    m_pen.set_group(m_tool_pick);
+    m_tool_measure.set_group(m_tool_pick);
+    m_tool_hand.set_group(m_tool_pick);
+    m_tool_pick.set_active(true);
+    for (auto* b : {&m_tool_pick, &m_pen, &m_tool_measure, &m_tool_hand}) {
+        b->signal_toggled().connect([this, b] { if (b->get_active()) on_tool_changed(); });
+        m_tools.append(*b);
+    }
+    auto rule = Gtk::make_managed<Gtk::Separator>(Gtk::Orientation::HORIZONTAL);
+    rule->set_margin_top(6);
+    rule->set_margin_bottom(6);
+    m_tools.append(*rule);
+    icon_button(m_fill, "granjon-view-fill-symbolic", "Fill\nShade the outline. Remembered.");
+    icon_button(m_context, "granjon-view-context-symbolic",
+                "Context\nGhost a context glyph either side: H beside capitals and figures, n beside the rest. Remembered.");
+    icon_button(m_grid, "granjon-view-grid-symbolic",
+                "Grid\nA grid that follows the zoom: tenths of a unit close in, whole units drawn stronger. Remembered.");
+    icon_button(m_snap, "granjon-view-snap-symbolic",
+                "Snap\nDrags snap to the grid (when shown), the metric lines, the sidebearings and the other nodes. "
+                "Ctrl (fine drag) never snaps. Remembered.");
+    for (auto* b : {&m_fill, &m_context, &m_grid, &m_snap}) m_tools.append(*b);
+    m_work.append(m_tools);
+    m_work.append(m_area);
+    m_work.set_vexpand(true);
+    append(m_work);
 
     m_drag = Gtk::GestureDrag::create();
     m_drag->set_button(GDK_BUTTON_PRIMARY);
@@ -1500,6 +1537,14 @@ bool GlyphCanvas::on_key(guint keyval, guint, Gdk::ModifierType state) {
         set_pen(!m_pen.get_active());
         return true;
     }
+    if ((keyval == GDK_KEY_v || keyval == GDK_KEY_V) && !ctrl && m_mode == Mode::None) {
+        set_tool(Tool::Pick);
+        return true;
+    }
+    if (keyval == GDK_KEY_Escape && m_mode == Mode::None && (tool() == Tool::Measure || tool() == Tool::Hand)) {
+        set_tool(Tool::Pick);
+        return true;
+    }
     if ((keyval == GDK_KEY_Return || keyval == GDK_KEY_KP_Enter) && m_pen.get_active() && m_mode == Mode::None) {
         end_path();
         return true;
@@ -1618,6 +1663,7 @@ bool GlyphCanvas::on_key(guint keyval, guint, Gdk::ModifierType state) {
 
 void GlyphCanvas::on_key_released(guint keyval, guint, Gdk::ModifierType) {
     if (keyval == GDK_KEY_m || keyval == GDK_KEY_M) {
+        if (tool() == Tool::Measure) return;   // the Measure tool keeps measuring
         m_measure = false;
         if (m_mode == Mode::Measure) m_mode = Mode::None;
         m_meas_dragged = false;
@@ -1629,7 +1675,7 @@ void GlyphCanvas::on_key_released(guint keyval, guint, Gdk::ModifierType) {
         return;
     }
     if (keyval == GDK_KEY_space) {
-        m_space = false;
+        m_space = tool() == Tool::Hand;
         on_motion(m_mx, m_my);   // put the right cursor back
     }
 }
@@ -1648,6 +1694,7 @@ void GlyphCanvas::on_motion(double x, double y) {
         return;
     }
     if (m_mode == Mode::Marquee || m_mode == Mode::Points) return;
+    if (m_measure && !m_space) { m_area.set_cursor("crosshair"); return; }
     const int side = m_mode == Mode::None ? sidebearing_at(x, y) : m_side;
     if (m_space) {
         m_area.set_cursor(m_mode == Mode::Pan ? "grabbing" : "grab");
@@ -1802,7 +1849,7 @@ void GlyphCanvas::say_pick() {
 // ── the pen (M5g) ──────────────────────────────────────────────────────────
 
 void GlyphCanvas::set_pen(bool on) {
-    if (m_pen.get_active() != on) m_pen.set_active(on);   // the toggle's handler does the rest
+    set_tool(on ? Tool::Pen : Tool::Pick);   // the group's handler does the rest
 }
 
 bool GlyphCanvas::pen_path_live() const {
@@ -1852,6 +1899,42 @@ void GlyphCanvas::draw_pen(const Cairo::RefPtr<Cairo::Context>& cr, const model:
         cr->stroke();
     }
     cr->restore();
+}
+
+// ── the tool panel (M5h) ──────────────────────────────────────────────────
+
+GlyphCanvas::Tool GlyphCanvas::tool() const {
+    if (m_pen.get_active()) return Tool::Pen;
+    if (m_tool_measure.get_active()) return Tool::Measure;
+    if (m_tool_hand.get_active()) return Tool::Hand;
+    return Tool::Pick;
+}
+
+void GlyphCanvas::set_tool(Tool t) {
+    Gtk::ToggleButton& b = t == Tool::Pen ? static_cast<Gtk::ToggleButton&>(m_pen)
+                         : t == Tool::Measure ? static_cast<Gtk::ToggleButton&>(m_tool_measure)
+                         : t == Tool::Hand ? static_cast<Gtk::ToggleButton&>(m_tool_hand)
+                                           : static_cast<Gtk::ToggleButton&>(m_tool_pick);
+    if (!b.get_active()) b.set_active(true);
+}
+
+void GlyphCanvas::on_tool_changed() {
+    const Tool t = tool();
+    if (t != Tool::Pen) end_path(false);
+    m_measure = t == Tool::Measure;
+    m_space = t == Tool::Hand;
+    if (t != Tool::Measure) { m_meas_a = m_meas_b = {}; m_stem_h.reset(); m_stem_v.reset(); }
+    m_area.set_cursor(t == Tool::Pen || t == Tool::Measure ? "crosshair" : t == Tool::Hand ? "grab" : "default");
+    if (m_ctx.say) {
+        switch (t) {
+            case Tool::Pen:     m_ctx.say("Pen: click for a corner, drag for a curve; V or Escape for picking.", false); break;
+            case Tool::Measure: m_ctx.say("Measure: drag a distance, click for the stems; V for picking.", false); break;
+            case Tool::Hand:    m_ctx.say("Hand: drag to pan; V for picking.", false); break;
+            case Tool::Pick:    m_ctx.say("Pick.", false); break;
+        }
+    }
+    m_area.queue_draw();
+    m_area.grab_focus();
 }
 
 }  // namespace granjon::views
