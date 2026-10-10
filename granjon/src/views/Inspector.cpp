@@ -131,6 +131,13 @@ Inspector::Inspector(ViewContext& ctx)
       m_iny("inspector.in_y"),
       m_outx("inspector.out_x"),
       m_outy("inspector.out_y"),
+      m_guide_what("inspector.guide_what"),
+      m_gx("inspector.guide_x"),
+      m_gy("inspector.guide_y"),
+      m_gangle("inspector.guide_angle"),
+      m_gname("inspector.guide_name"),
+      m_gfont("inspector.guide_font"),
+      m_gdelete("inspector.guide_delete"),
       m_comp_list("inspector.components", Gtk::Orientation::VERTICAL, 2),
       m_comp_add("inspector.component_add"),
       m_decompose("inspector.decompose"),
@@ -147,7 +154,7 @@ Inspector::Inspector(ViewContext& ctx)
     build_glyph_page();
     set_child(m_pages);
     m_ctx.selection_changed.connect([this] { refresh(); });
-    m_ctx.pick_changed.connect([this] { refresh_pick(); });
+    m_ctx.pick_changed.connect([this] { refresh_pick(); refresh_guide(); });
 }
 
 void Inspector::build_font_page() {
@@ -304,11 +311,82 @@ void Inspector::build_glyph_page() {
         refresh_pick();
     });
     pick.wide(m_relative);
+    // Align / distribute: two picked nodes or anchors, or more.
+    {
+        static const char* names[] = {"Left", "Centre", "Right", "\u2194", "Top", "Middle", "Bottom", "\u2195"};
+        static const command::Align ops[] = {command::Align::Left, command::Align::HCenter, command::Align::Right,
+                                             command::Align::DistributeH, command::Align::Top, command::Align::VMiddle,
+                                             command::Align::Bottom, command::Align::DistributeV};
+        auto rows = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::VERTICAL, 4);
+        for (int r = 0; r < 2; ++r) {
+            auto row = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::HORIZONTAL, 0);
+            row->add_css_class("linked");
+            row->add_css_class("node-types");
+            row->set_homogeneous(true);
+            for (int k = r * 4; k < r * 4 + 4; ++k) {
+                auto b = Gtk::make_managed<Gtk::Button>(names[k]);
+                b->set_tooltip_text(k == 3 ? "Space them evenly across, between the outermost two"
+                                   : k == 7 ? "Space them evenly up, between the outermost two"
+                                            : "Align to the pick's edge / centre -- one undo step");
+                const auto op = ops[k];
+                b->signal_clicked().connect([this, op] {
+                    command::align_points(m_ctx.doc.journal, m_ctx.doc.font, m_ctx.selected, m_ctx.pick, op);
+                });
+                row->append(*b);
+            }
+            rows->append(*row);
+        }
+        m_align_rows = rows;
+        pick.wide(*rows);
+    }
     m_ctx.settings_changed.connect([this] {
         if (m_relative.get_active() != m_ctx.settings.handles_relative) m_relative.set_active(m_ctx.settings.handles_relative);
     });
     on_commit(m_anchor_name, [this] { on_anchor_name(); });
     m_anchor_name_label = pick.field("Name", m_anchor_name);
+
+    // ── GUIDE: a picked guide ───────────────────────────────────────────────
+    Card guide(*page, "GUIDE");
+    m_guide_card = guide.box;
+    m_guide_what.set_xalign(0.0f);
+    m_guide_what.add_css_class("hint");
+    guide.wide(m_guide_what);
+    spin_setup(m_gx, -32768, 32767);
+    spin_setup(m_gy, -32768, 32767);
+    spin_setup(m_gangle, 0, 359);
+    for (auto* s : {&m_gx, &m_gy, &m_gangle}) s->signal_value_changed().connect([this] { on_guide_field(); });
+    m_gx_label = guide.field("X", m_gx);
+    m_gy_label = guide.field("Y", m_gy);
+    guide.field("Angle", m_gangle);
+    on_commit(m_gname, [this] { on_guide_field(); });
+    m_gname.set_placeholder_text("optional");
+    guide.field("Name", m_gname);
+    m_gfont.set_label("Whole font");
+    m_gfont.set_tooltip_text("On: every glyph shows this guide (font-wide). Off: this glyph only.");
+    m_gfont.signal_toggled().connect([this] {
+        if (m_painting || !m_ctx.guide_pick) return;
+        const bool want_font = m_gfont.get_active();
+        const bool is_font = m_ctx.guide_pick->owner.empty();
+        if (want_font == is_font || m_ctx.selected.empty()) return;
+        int at = -1;
+        if (command::move_guide_owner(m_ctx.doc.journal, m_ctx.doc.font, m_ctx.selected, want_font,
+                                      m_ctx.guide_pick->index, &at))
+            m_ctx.guide_pick = ViewContext::GuideRef{want_font ? std::string{} : m_ctx.selected, at};
+        m_ctx.pick_changed.emit();
+    });
+    m_gdelete.set_label("Delete");
+    m_gdelete.signal_clicked().connect([this] {
+        if (!m_ctx.guide_pick) return;
+        command::remove_guide(m_ctx.doc.journal, m_ctx.doc.font, m_ctx.guide_pick->owner, m_ctx.guide_pick->index);
+        m_ctx.guide_pick.reset();
+        m_ctx.pick_changed.emit();
+    });
+    {
+        auto row = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::HORIZONTAL, 6);
+        row->append(m_gfont);
+        row->append(m_gdelete);
+        guide.wide(*row);
+    }
 
     // ── COMPONENTS ──────────────────────────────────────────────────────────
     Card comps(*page, "COMPONENTS");
@@ -440,6 +518,7 @@ void Inspector::refresh() {
     }
     m_painting = false;
     refresh_pick();
+    refresh_guide();
 }
 
 namespace {
@@ -502,8 +581,10 @@ void Inspector::refresh_pick() {
             if (geom::valid(*g, p) && (p.part == Part::Node || p.part == Part::In || p.part == Part::Out))
                 nodes.insert({p.contour, p.index});
     const bool one = g && m_ctx.pick.size() == 1 && geom::valid(*g, *m_ctx.pick.begin());
-    m_pick_card->set_visible(one || !nodes.empty());
-    if (!g || (!one && nodes.empty())) return;
+    std::size_t anchors_picked = 0;
+    if (g) for (const auto& q : m_ctx.pick) if (geom::valid(*g, q) && q.part == Part::Anchor) ++anchors_picked;
+    m_pick_card->set_visible(one || !nodes.empty() || anchors_picked >= 2);
+    if (!g || (!one && nodes.empty() && anchors_picked < 2)) return;
     const bool was = m_painting;
     m_painting = true;
 
@@ -528,6 +609,10 @@ void Inspector::refresh_pick() {
     for (auto* w : std::initializer_list<Gtk::Widget*>{&m_px, &m_py, m_x_label, m_y_label}) w->set_visible(one);
     for (auto* w : std::initializer_list<Gtk::Widget*>{m_in_row, m_out_row, m_in_label, m_out_label}) w->set_visible(node);
     m_relative.set_visible(node || handle);
+    std::size_t alignable = 0;
+    for (const auto& q : m_ctx.pick)
+        if (geom::valid(*g, q) && (q.part == Part::Node || q.part == Part::Anchor)) ++alignable;
+    if (m_align_rows) m_align_rows->set_visible(alignable >= 2);
 
     std::string what = std::to_string(nodes.size()) + " nodes";
     if (one) {
@@ -561,6 +646,44 @@ void Inspector::refresh_pick() {
     if (m_anchor_name_label) m_anchor_name_label->set_visible(anchor);
     if (anchor && !m_anchor_name.has_focus()) m_anchor_name.set_text(g->anchors[p.index].name);
     m_painting = was;
+}
+
+void Inspector::refresh_guide() {
+    if (!m_guide_card) return;
+    const model::Guide* gd = nullptr;
+    if (m_ctx.guide_pick) {
+        const auto& r = *m_ctx.guide_pick;
+        const auto* gs = r.owner.empty() ? &m_ctx.doc.font.info().guides
+                         : m_ctx.doc.font.glyph(r.owner) ? &m_ctx.doc.font.glyph(r.owner)->guides : nullptr;
+        if (gs && r.index >= 0 && r.index < static_cast<int>(gs->size())) gd = &(*gs)[r.index];
+    }
+    m_guide_card->set_visible(gd != nullptr);
+    if (!gd) return;
+    const bool was = m_painting;
+    m_painting = true;
+    const bool font = m_ctx.guide_pick->owner.empty();
+    m_guide_what.set_text(std::string(gd->horizontal() ? "Horizontal" : gd->vertical() ? "Vertical" : "Angled") +
+                          (font ? " guide, whole font" : " guide, this glyph"));
+    m_gx.set_visible(!gd->horizontal());
+    m_gx_label->set_visible(!gd->horizontal());
+    m_gy.set_visible(!gd->vertical());
+    m_gy_label->set_visible(!gd->vertical());
+    if (!m_gx.has_focus()) m_gx.set_value(gd->x);
+    if (!m_gy.has_focus()) m_gy.set_value(gd->y);
+    if (!m_gangle.has_focus()) m_gangle.set_value(gd->angle);
+    if (!m_gname.has_focus()) m_gname.set_text(gd->name);
+    m_gfont.set_active(font);
+    m_painting = was;
+}
+
+void Inspector::on_guide_field() {
+    if (m_painting || !m_ctx.guide_pick) return;
+    model::Guide gd;
+    gd.x = m_gx.get_value();
+    gd.y = m_gy.get_value();
+    gd.angle = m_gangle.get_value();
+    gd.name = m_gname.get_text();
+    command::set_guide(m_ctx.doc.journal, m_ctx.doc.font, m_ctx.guide_pick->owner, m_ctx.guide_pick->index, gd);
 }
 
 void Inspector::on_pick_xy() {

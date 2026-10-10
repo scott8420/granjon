@@ -91,6 +91,17 @@ double snap_axis(double v, const std::vector<double>& targets, double grid, doub
 // Shift's axis lock: keep the larger component of d, zero the other.
 Vec2 axis_lock(Vec2 d);
 
+// ── guides + measuring (M5c) ───────────────────────────────────────────────
+// Distance from pt to the guide's line.
+double guide_distance(const model::Guide& g, Vec2 pt);
+// Everything the glyph draws as plain contours (its own + components').
+std::vector<model::Contour> all_contours(const model::Font& f, const model::Glyph& g);
+// Where the outline crosses the line y = at (horizontal) or x = at, sorted.
+std::vector<double> crossings(const std::vector<model::Contour>& cs, bool horizontal, double at);
+// The stem through pt along one axis: the nearest crossing on each side.
+// nullopt when pt is not between two crossings.
+std::optional<std::pair<double, double>> stem_at(const std::vector<model::Contour>& cs, Vec2 pt, bool horizontal);
+
 // ── hit testing ────────────────────────────────────────────────────────────
 struct Hit {
     enum class Kind { None, Node, HandleIn, HandleOut, Anchor, Segment };

@@ -12,6 +12,7 @@
 #include <pangomm/layout.h>
 
 #include <algorithm>
+#include <cstdio>
 #include <cctype>
 #include <cmath>
 #include <iomanip>
@@ -29,6 +30,9 @@ constexpr double kMinScale = 0.01, kMaxScale = 64.0;   // px per font unit
 constexpr double kHitPx    = 6.0;                       // pick tolerance, screen px
 constexpr double kDragPx   = 3.0;                       // movement before a press becomes a drag
 constexpr double kPanStep  = 24.0;                      // px per scroll step
+constexpr double kRuler    = 20.0;                      // ruler strip, px (top and left)
+constexpr double GF[3] = {0.20, 0.75, 0.80};            // glyph guides (teal)
+constexpr double GG[3] = {0.72, 0.45, 0.95};            // font guides (violet)
 
 // Curvz's overlay palette (BezierPath::draw_editor_overlay), unchanged: it was
 // tuned to read on both dark and light artboards.
@@ -304,6 +308,7 @@ void GlyphCanvas::refresh() {
         if (m_mode != Mode::None) cancel_drag();
         m_shown = m_ctx.selected;
         m_pick.clear();
+        if (m_ctx.guide_pick && !m_ctx.guide_pick->owner.empty()) m_ctx.guide_pick.reset();
         m_ctx.pick_changed.emit();
         m_fitted = false;   // a new glyph: fit it on the next draw
     }
@@ -312,6 +317,7 @@ void GlyphCanvas::refresh() {
         const std::size_t had = m_pick.size();
         for (auto it = m_pick.begin(); it != m_pick.end();)
             it = geom::valid(*g, *it) ? std::next(it) : m_pick.erase(it);
+        if (m_ctx.guide_pick && !picked_guide()) { m_ctx.guide_pick.reset(); m_ctx.pick_changed.emit(); }
         if (m_pick.size() != had) m_ctx.pick_changed.emit();
         std::string t = g->name;
         if (!g->unicodes.empty()) {
@@ -401,6 +407,7 @@ void GlyphCanvas::on_draw(const Cairo::RefPtr<Cairo::Context>& cr, int w, int h)
 
     if (m_grid.get_active()) draw_grid(cr, w, h);
     draw_guides(cr, w, h, *g);
+    draw_user_guides(cr, w, h, *g);
 
     // A path in font units, built under the y-up matrix, stroked in pixels.
     auto font_path = [&](const model::Glyph& gg, double xoff) {
@@ -487,6 +494,7 @@ void GlyphCanvas::on_draw(const Cairo::RefPtr<Cairo::Context>& cr, int w, int h)
         cr->unset_dash();
     }
 
+    draw_measure(cr, *g);
     if (m_mode == Mode::Marquee) {
         const double x0 = std::min(m_press_x, m_mx), y0 = std::min(m_press_y, m_my);
         cr->rectangle(std::round(x0) + 0.5, std::round(y0) + 0.5, std::round(std::abs(m_mx - m_press_x)),
@@ -496,6 +504,207 @@ void GlyphCanvas::on_draw(const Cairo::RefPtr<Cairo::Context>& cr, int w, int h)
         cr->set_source_rgba(NS[0], NS[1], NS[2], 0.8);
         cr->set_line_width(1.0);
         cr->stroke();
+    }
+    draw_rulers(cr, w, h);
+}
+
+// ── guides, rulers, measure (M5c) ─────────────────────────────────────────
+
+const model::Guide* GlyphCanvas::picked_guide() const {
+    if (!m_ctx.guide_pick) return nullptr;
+    const auto& r = *m_ctx.guide_pick;
+    const std::vector<model::Guide>* gs = nullptr;
+    if (r.owner.empty()) gs = &m_ctx.doc.font.info().guides;
+    else if (const model::Glyph* g = m_ctx.doc.font.glyph(r.owner)) gs = &g->guides;
+    if (!gs || r.index < 0 || r.index >= static_cast<int>(gs->size())) return nullptr;
+    return &(*gs)[r.index];
+}
+
+std::optional<ViewContext::GuideRef> GlyphCanvas::guide_at(double sx, double sy) const {
+    const model::Glyph* g = glyph();
+    if (!g) return std::nullopt;
+    const geom::Vec2 p = to_font(sx, sy);
+    const double tol = 4.0 / m_s;
+    std::optional<ViewContext::GuideRef> best;
+    double best_d = tol;
+    auto scan = [&](const std::vector<model::Guide>& gs, const std::string& owner) {
+        for (int i = 0; i < static_cast<int>(gs.size()); ++i) {
+            const double d = geom::guide_distance(gs[i], p);
+            if (d <= best_d) { best_d = d; best = ViewContext::GuideRef{owner, i}; }
+        }
+    };
+    scan(m_ctx.doc.font.info().guides, {});
+    scan(g->guides, g->name);   // the glyph's own win a tie (drawn on top)
+    return best;
+}
+
+geom::Vec2 GlyphCanvas::snap_to_node(geom::Vec2 p) const {
+    const model::Glyph* g = glyph();
+    if (!g) return p;
+    const double tol = kHitPx / m_s;
+    geom::Vec2 best = p;
+    double best_d = tol;
+    for (const auto& c : geom::all_contours(m_ctx.doc.font, *g))
+        for (const auto& n : c.nodes) {
+            const double d = geom::Vec2{n.x, n.y}.dist(p);
+            if (d < best_d) { best_d = d; best = {n.x, n.y}; }
+        }
+    return best;
+}
+
+void GlyphCanvas::draw_user_guides(const Cairo::RefPtr<Cairo::Context>& cr, int w, int h, const model::Glyph& g) {
+    const model::Guide* picked = picked_guide();
+    Pango::FontDescription small;
+    small.set_size(8 * PANGO_SCALE);
+    auto line = [&](const model::Guide& gd, const double* col, bool hot) {
+        cr->set_source_rgba(col[0], col[1], col[2], hot ? 0.95 : 0.6);
+        cr->set_line_width(hot ? 2.0 : 1.0);
+        if (gd.horizontal()) {
+            const double y = std::round(to_screen({0, gd.y}).y) + 0.5;
+            cr->move_to(0, y);
+            cr->line_to(w, y);
+        } else if (gd.vertical()) {
+            const double x = std::round(to_screen({gd.x, 0}).x) + 0.5;
+            cr->move_to(x, 0);
+            cr->line_to(x, h);
+        } else {   // angled: through (x, y), long enough to cross the view
+            const double a = gd.angle * M_PI / 180.0;
+            const geom::Vec2 dir{std::cos(a), std::sin(a)};
+            const double far = (w + h) / m_s;
+            const geom::Vec2 p0 = to_screen(geom::Vec2{gd.x, gd.y} - dir * far);
+            const geom::Vec2 p1 = to_screen(geom::Vec2{gd.x, gd.y} + dir * far);
+            cr->move_to(p0.x, p0.y);
+            cr->line_to(p1.x, p1.y);
+        }
+        cr->stroke();
+        if (!gd.name.empty()) {
+            auto layout = m_area.create_pango_layout(gd.name);
+            layout->set_font_description(small);
+            cr->set_source_rgba(col[0], col[1], col[2], 0.9);
+            if (gd.vertical()) cr->move_to(to_screen({gd.x, 0}).x + 4, kRuler + 4);
+            else               cr->move_to(w - 8 - 7.0 * gd.name.size(), to_screen({gd.x, gd.y}).y - 13);
+            layout->show_in_cairo_context(cr);
+        }
+    };
+    for (const auto& gd : m_ctx.doc.font.info().guides) line(gd, GG, &gd == picked);
+    for (const auto& gd : g.guides) line(gd, GF, &gd == picked);
+    if (m_mode == Mode::Guide && m_guide_new) {   // the one being dragged out of a ruler
+        model::Guide gd;
+        if (m_guide_h) gd.y = m_guide_preview.y;
+        else { gd.x = m_guide_preview.x; gd.angle = 90; }
+        line(gd, GF, true);
+    }
+}
+
+void GlyphCanvas::draw_rulers(const Cairo::RefPtr<Cairo::Context>& cr, int w, int h) {
+    const auto fg = m_area.get_color();
+    const double r = fg.get_red(), gr = fg.get_green(), b = fg.get_blue();
+    // The strips: the canvas colour darkened a touch by the foreground.
+    cr->set_source_rgba(r, gr, b, 0.07);
+    cr->rectangle(0, 0, w, kRuler);
+    cr->rectangle(0, kRuler, kRuler, h - kRuler);
+    cr->fill();
+    cr->set_source_rgba(r, gr, b, 0.25);
+    cr->set_line_width(1.0);
+    cr->move_to(0, kRuler - 0.5); cr->line_to(w, kRuler - 0.5);
+    cr->move_to(kRuler - 0.5, kRuler); cr->line_to(kRuler - 0.5, h);
+    cr->stroke();
+    // Ticks: the grid's step, labels where they fit (>= 60 px apart).
+    const double step = geom::grid_step(m_s, 6.0);
+    const double label = geom::grid_step(m_s, 60.0);
+    Pango::FontDescription small;
+    small.set_size(7 * PANGO_SCALE);
+    auto ticks = [&](bool top) {
+        const geom::Vec2 lo = to_font(kRuler, h), hi = to_font(w, kRuler);
+        const double from = top ? lo.x : lo.y, to = top ? hi.x : hi.y;
+        const long k0 = static_cast<long>(std::floor(from / step)), k1 = static_cast<long>(std::ceil(to / step));
+        if (k1 - k0 > 3000) return;
+        for (long k = k0; k <= k1; ++k) {
+            const double v = k * step;
+            const bool lab = std::abs(v / label - std::round(v / label)) < 1e-6;
+            const bool mid = !lab && std::abs(v / (label / 2) - std::round(v / (label / 2))) < 1e-6;
+            const double len = lab ? 9 : mid ? 6 : 3;
+            if (top) {
+                const double x = std::round(to_screen({v, 0}).x) + 0.5;
+                if (x < kRuler) continue;
+                cr->move_to(x, kRuler);
+                cr->line_to(x, kRuler - len);
+            } else {
+                const double y = std::round(to_screen({0, v}).y) + 0.5;
+                if (y < kRuler) continue;
+                cr->move_to(kRuler, y);
+                cr->line_to(kRuler - len, y);
+            }
+            cr->set_source_rgba(r, gr, b, 0.45);
+            cr->stroke();
+            if (lab) {
+                auto layout = m_area.create_pango_layout(fmt(v));
+                layout->set_font_description(small);
+                cr->set_source_rgba(r, gr, b, 0.65);
+                if (top) {
+                    cr->move_to(to_screen({v, 0}).x + 2, 1);
+                    layout->show_in_cairo_context(cr);
+                } else {
+                    int lw = 0, lh = 0;
+                    layout->get_pixel_size(lw, lh);
+                    cr->save();
+                    cr->move_to(1, to_screen({0, v}).y - 2);
+                    cr->rotate(-M_PI / 2);
+                    layout->show_in_cairo_context(cr);
+                    cr->restore();
+                }
+            }
+        }
+    };
+    ticks(true);
+    ticks(false);
+}
+
+void GlyphCanvas::draw_measure(const Cairo::RefPtr<Cairo::Context>& cr, const model::Glyph&) {
+    if (!m_measure) return;
+    Pango::FontDescription small;
+    small.set_size(8 * PANGO_SCALE);
+    small.set_weight(Pango::Weight::BOLD);
+    const double MC[3] = {0.98, 0.62, 0.20};   // measure: amber
+    auto tag = [&](const std::string& s, geom::Vec2 at) {
+        auto layout = m_area.create_pango_layout(s);
+        layout->set_font_description(small);
+        int lw = 0, lh = 0;
+        layout->get_pixel_size(lw, lh);
+        cr->set_source_rgba(0, 0, 0, 0.7);
+        cr->rectangle(at.x - 3, at.y - 2, lw + 6, lh + 4);
+        cr->fill();
+        cr->set_source_rgb(MC[0], MC[1], MC[2]);
+        cr->move_to(at.x, at.y);
+        layout->show_in_cairo_context(cr);
+    };
+    auto seg = [&](geom::Vec2 a, geom::Vec2 b) {
+        const auto sa = to_screen(a), sb = to_screen(b);
+        cr->set_source_rgb(MC[0], MC[1], MC[2]);
+        cr->set_line_width(1.5);
+        cr->move_to(sa.x, sa.y);
+        cr->line_to(sb.x, sb.y);
+        cr->stroke();
+        for (const auto& e : {sa, sb}) { cr->arc(e.x, e.y, 3, 0, 2 * M_PI); cr->fill(); }
+    };
+    if (m_meas_dragged) {
+        const geom::Vec2 d = m_meas_b - m_meas_a;
+        seg(m_meas_a, m_meas_b);
+        std::ostringstream o;
+        o << fmt(std::round(d.length() * 10) / 10) << "   " << fmt(std::round(std::atan2(d.y, d.x) * 1800 / M_PI) / 10)
+          << "\u00B0   \u0394 " << fmt(std::round(d.x)) << ", " << fmt(std::round(d.y));
+        tag(o.str(), to_screen(m_meas_b) + geom::Vec2{10, -18});
+    }
+    if (m_stem_h) {
+        seg({m_stem_h->first, m_stem_at.y}, {m_stem_h->second, m_stem_at.y});
+        tag(fmt(std::round((m_stem_h->second - m_stem_h->first) * 10) / 10),
+            to_screen({(m_stem_h->first + m_stem_h->second) / 2, m_stem_at.y}) + geom::Vec2{-10, -20});
+    }
+    if (m_stem_v) {
+        seg({m_stem_at.x, m_stem_v->first}, {m_stem_at.x, m_stem_v->second});
+        // At the top end, right of the line -- clear of the horizontal stem's tag.
+        tag(fmt(std::round((m_stem_v->second - m_stem_v->first) * 10) / 10),
+            to_screen({m_stem_at.x, m_stem_v->second}) + geom::Vec2{8, -4});
     }
 }
 
@@ -744,6 +953,28 @@ void GlyphCanvas::on_press(double x, double y) {
     if (!g) { m_mode = Mode::None; return; }
     if (m_space) { m_mode = Mode::Pan; return; }
 
+    // Measure (hold M): measures, never edits.
+    if (m_measure) {
+        m_mode = Mode::Measure;
+        m_meas_a = m_meas_b = snap_to_node(to_font(x, y));
+        m_meas_dragged = false;
+        m_stem_h.reset();
+        m_stem_v.reset();
+        m_area.queue_draw();
+        return;
+    }
+    // The rulers: drag a new guide out (top: horizontal, left: vertical).
+    if (y < kRuler || x < kRuler) {
+        if (y < kRuler && x < kRuler) { m_mode = Mode::None; return; }   // the corner
+        m_mode = Mode::Guide;
+        m_guide_new = true;
+        m_guide_h = y < kRuler;
+        m_guide_preview = to_font(x, y);
+        m_area.queue_draw();
+        return;
+    }
+    m_guide_new = false;
+
     const auto st = m_drag->get_current_event_state();
     const bool shift = (st & Gdk::ModifierType::SHIFT_MASK) == Gdk::ModifierType::SHIFT_MASK;
     const geom::Hit hit = geom::hit_test(*g, to_font(x, y), kHitPx / m_s);
@@ -752,6 +983,7 @@ void GlyphCanvas::on_press(double x, double y) {
     m_unpick.reset();
 
     auto pick_one = [&](PointRef ref) {
+        m_ctx.guide_pick.reset();
         if (ref.part != Part::Component) m_lead = ref;   // a component's offset does not snap
         if (shift) {
             // Shift on a picked one: a Shift-DRAG constrains the move; only a
@@ -776,6 +1008,16 @@ void GlyphCanvas::on_press(double x, double y) {
         m_press_advance = g->advance;
     } else if (hit.kind == K::Segment || hit.kind == K::None) {
         if (hit.kind == K::None) {
+            // A guide under the pointer: pick it (drag moves it; drop it on a ruler to delete).
+            if (const auto gr = guide_at(x, y)) {
+                m_pick.clear();
+                m_ctx.guide_pick = gr;
+                if (const model::Guide* gd = picked_guide()) m_guide_press = *gd;
+                m_mode = Mode::Guide;
+                say_pick();
+                m_area.queue_draw();
+                return;
+            }
             // Inside a component's drawing: pick the whole component.
             const int ci = geom::component_at(m_ctx.doc.font, *g, to_font(x, y));
             if (ci >= 0) {
@@ -787,6 +1029,7 @@ void GlyphCanvas::on_press(double x, double y) {
             m_mode = Mode::Marquee;
             m_press_pick = shift ? m_pick : geom::Points{};
             if (!shift) m_pick.clear();
+            m_ctx.guide_pick.reset();
             say_pick();
             m_area.queue_draw();
             return;
@@ -810,6 +1053,48 @@ void GlyphCanvas::on_press(double x, double y) {
 
 void GlyphCanvas::on_drag(double dx, double dy) {
     switch (m_mode) {
+        case Mode::Measure:
+            m_meas_b = snap_to_node(to_font(m_press_x + dx, m_press_y + dy));
+            m_meas_dragged = m_meas_dragged || std::hypot(dx, dy) >= kDragPx;
+            m_area.queue_draw();
+            return;
+        case Mode::Guide: {
+            if (m_guide_new) {
+                m_guide_preview = to_font(m_press_x + dx, m_press_y + dy);
+                m_area.queue_draw();
+                return;
+            }
+            auto& doc = m_ctx.doc;
+            if (!m_ctx.guide_pick) return;
+            if (!m_began) {
+                if (std::hypot(dx, dy) < kDragPx) return;
+                command::guide_drag_begin(doc.journal, doc.font, m_ctx.guide_pick->owner, m_ctx.guide_pick->index);
+                m_began = doc.journal.in_gesture();
+                if (!m_began) return;
+            }
+            model::Guide gd = m_guide_press;
+            const geom::Vec2 d{dx / m_s, -dy / m_s};
+            if (gd.horizontal())    gd.y += d.y;
+            else if (gd.vertical()) gd.x += d.x;
+            else { gd.x += d.x; gd.y += d.y; }
+            // Snap a straight guide onto a node / metric line / the grid.
+            if (m_snap.get_active() && (gd.horizontal() || gd.vertical())) {
+                std::vector<double> t;
+                const auto& m = doc.font.metrics();
+                if (gd.horizontal()) t = {0.0, double(m.x_height), double(m.cap_height), double(m.ascender), double(m.descender)};
+                else                 t = {0.0, m_press_glyph.advance};
+                if (const model::Glyph* g = glyph())
+                    for (const auto& c : g->contours)
+                        for (const auto& n : c.nodes) t.push_back(gd.horizontal() ? n.y : n.x);
+                const double grid = m_grid.get_active() ? std::max(1.0, geom::grid_step(m_s)) : 0.0;
+                double& v = gd.horizontal() ? gd.y : gd.x;
+                v = geom::snap_axis(v, t, grid, kHitPx / m_s);
+            }
+            command::set_guide(doc.journal, doc.font, m_ctx.guide_pick->owner, m_ctx.guide_pick->index, gd);
+            m_readout.set_text(gd.horizontal() ? "y " + fmt(std::round(gd.y)) : gd.vertical() ? "x " + fmt(std::round(gd.x))
+                                                 : fmt(std::round(gd.x)) + ", " + fmt(std::round(gd.y)));
+            return;
+        }
         case Mode::Pan:
             m_ox = m_press_ox + dx;
             m_oy = m_press_oy + dy;
@@ -883,6 +1168,11 @@ void GlyphCanvas::on_drag(double dx, double dy) {
                             xs.push_back(n.x);
                             ys.push_back(n.y);
                         }
+                    for (const std::vector<model::Guide>* gs : std::initializer_list<const std::vector<model::Guide>*>{&doc.font.info().guides, &m_press_glyph.guides})
+                        for (const auto& gd : *gs) {
+                            if (gd.horizontal()) ys.push_back(gd.y);
+                            else if (gd.vertical()) xs.push_back(gd.x);
+                        }
                     const double grid = m_grid.get_active() ? std::max(1.0, geom::grid_step(m_s)) : 0.0;
                     const double tol = kHitPx / m_s;
                     const geom::Vec2 p0 = geom::position(m_press_glyph, m_lead);
@@ -918,9 +1208,52 @@ void GlyphCanvas::on_drag(double dx, double dy) {
     }
 }
 
-void GlyphCanvas::on_release(double /*dx*/, double /*dy*/) {
+void GlyphCanvas::on_release(double dx, double dy) {
     const Mode was = m_mode;
     m_mode = Mode::None;
+    if (was == Mode::Measure) {
+        if (!m_meas_dragged) {   // a click: the stems through that point
+            if (const model::Glyph* g = glyph()) {
+                const auto cs = geom::all_contours(m_ctx.doc.font, *g);
+                m_stem_at = to_font(m_press_x, m_press_y);
+                m_stem_h = geom::stem_at(cs, m_stem_at, true);
+                m_stem_v = geom::stem_at(cs, m_stem_at, false);
+            }
+        }
+        m_area.queue_draw();
+        return;
+    }
+    if (was == Mode::Guide) {
+        auto& doc = m_ctx.doc;
+        const double rx = m_press_x + dx, ry = m_press_y + dy;
+        const bool on_ruler = rx < kRuler || ry < kRuler;
+        if (m_guide_new) {
+            m_guide_new = false;
+            if (!on_ruler && glyph()) {
+                const geom::Vec2 p = to_font(rx, ry);
+                model::Guide gd;
+                if (m_guide_h) { gd.y = p.y; gd.angle = 0; }
+                else           { gd.x = p.x; gd.angle = 90; }
+                if (command::add_guide(doc.journal, doc.font, m_shown, gd)) {
+                    m_pick.clear();
+                    m_ctx.guide_pick = ViewContext::GuideRef{m_shown, static_cast<int>(glyph()->guides.size()) - 1};
+                }
+            }
+        } else if (m_began) {
+            if (on_ruler && m_ctx.guide_pick) {   // dropped back on a ruler: deleted
+                command::drag_cancel(doc.journal);
+                command::remove_guide(doc.journal, doc.font, m_ctx.guide_pick->owner, m_ctx.guide_pick->index);
+                m_ctx.guide_pick.reset();
+            } else {
+                command::drag_end(doc.journal, doc.font);
+            }
+        }
+        m_began = false;
+        m_readout.set_text("");
+        say_pick();
+        m_area.queue_draw();
+        return;
+    }
     if (m_unpick && !m_began) m_pick.erase(*m_unpick);   // it was a Shift-click, not a drag
     m_unpick.reset();
     if ((was == Mode::Points || was == Mode::Sidebearing) && m_began) {
@@ -957,7 +1290,18 @@ bool GlyphCanvas::on_key(guint keyval, guint, Gdk::ModifierType state) {
 
     if (keyval == GDK_KEY_Escape) {
         if (m_mode != Mode::None) cancel_drag();
-        else { m_pick.clear(); say_pick(); m_area.queue_draw(); }
+        else { m_pick.clear(); m_ctx.guide_pick.reset(); say_pick(); m_area.queue_draw(); }
+        return true;
+    }
+    if ((keyval == GDK_KEY_m || keyval == GDK_KEY_M) && !ctrl) {   // hold M: measure
+        if (!m_measure) { m_measure = true; m_area.set_cursor("crosshair"); m_area.queue_draw(); }
+        return true;
+    }
+    if ((keyval == GDK_KEY_Delete || keyval == GDK_KEY_KP_Delete || keyval == GDK_KEY_BackSpace) && !ctrl &&
+        m_ctx.guide_pick && m_mode == Mode::None) {
+        command::remove_guide(m_ctx.doc.journal, m_ctx.doc.font, m_ctx.guide_pick->owner, m_ctx.guide_pick->index);
+        m_ctx.guide_pick.reset();
+        say_pick();
         return true;
     }
     if ((keyval == GDK_KEY_Delete || keyval == GDK_KEY_KP_Delete || keyval == GDK_KEY_BackSpace) && !ctrl) {
@@ -1018,6 +1362,17 @@ bool GlyphCanvas::on_key(guint keyval, guint, Gdk::ModifierType state) {
 }
 
 void GlyphCanvas::on_key_released(guint keyval, guint, Gdk::ModifierType) {
+    if (keyval == GDK_KEY_m || keyval == GDK_KEY_M) {
+        m_measure = false;
+        if (m_mode == Mode::Measure) m_mode = Mode::None;
+        m_meas_dragged = false;
+        m_meas_a = m_meas_b = {};
+        m_stem_h.reset();
+        m_stem_v.reset();
+        m_area.set_cursor("default");
+        m_area.queue_draw();
+        return;
+    }
     if (keyval == GDK_KEY_space) {
         m_space = false;
         on_motion(m_mx, m_my);   // put the right cursor back

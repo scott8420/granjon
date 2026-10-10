@@ -71,7 +71,7 @@ private:
     std::string context_glyph(const model::Glyph& g) const;   // "H" / "n" or "" if the font lacks it
 
     // ── input ──────────────────────────────────────────────────────────────
-    enum class Mode { None, Points, Sidebearing, Marquee, Pan };
+    enum class Mode { None, Points, Sidebearing, Marquee, Pan, Guide, Measure };
     int  sidebearing_at(double sx, double sy) const;   // -1 none, 0 left, 1 right
     void on_press(double x, double y);
     void on_drag(double dx, double dy);
@@ -123,6 +123,23 @@ private:
     std::optional<geom::PointRef> m_unpick;   // Shift-pressed on a picked point: drop it if no drag follows                  // the point under the pointer at the press -- the one that snaps
     std::optional<double> m_snap_x, m_snap_y;   // what the lead snapped to (drawn while dragging)
     void draw_grid(const Cairo::RefPtr<Cairo::Context>& cr, int w, int h);
+    void draw_user_guides(const Cairo::RefPtr<Cairo::Context>& cr, int w, int h, const model::Glyph& g);
+    void draw_rulers(const Cairo::RefPtr<Cairo::Context>& cr, int w, int h);
+    void draw_measure(const Cairo::RefPtr<Cairo::Context>& cr, const model::Glyph& g);
+    std::optional<ViewContext::GuideRef> guide_at(double sx, double sy) const;
+    const model::Guide* picked_guide() const;
+    geom::Vec2 snap_to_node(geom::Vec2 p) const;   // the measure tool's ends
+    // guides (M5c)
+    bool        m_guide_new = false;        // dragging a new guide out of a ruler
+    bool        m_guide_h = true;           // ... horizontal (top ruler) or vertical (left ruler)
+    geom::Vec2  m_guide_preview;
+    model::Guide m_guide_press;             // an existing guide at the press
+    // measure (hold M)
+    bool        m_measure = false;
+    bool        m_meas_dragged = false;
+    geom::Vec2  m_meas_a, m_meas_b;
+    std::optional<std::pair<double, double>> m_stem_h, m_stem_v;   // stems at the click
+    geom::Vec2  m_stem_at;
     void update_readout(double sx, double sy);
 };
 

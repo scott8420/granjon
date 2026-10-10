@@ -1,49 +1,37 @@
 # Granjon handoff — s03 -> s04
 
-# s04_guides_rulers
+# s04_spacing_strip
 
 ## Files to upload
-- `s04_guides_rulers.zip` (made by `scripts/granjon_backup.sh -o s04_guides_rulers`)
+- `s04_spacing_strip.zip` (made by `scripts/granjon_backup.sh -o s04_spacing_strip`)
 - `RULES.md`, `HANDOFF.md`, `ARCHITECTURE.md`, `ARC.md`, `CANON.md`
 - No Curvz source needed (its geometry is in `geom/`; `BooleanOpsClipper` returns at M10).
 - Test fonts live in the project's `fonts/` folder (outside the repo): `My-Termes-Regular.granjon` (TeX Gyre Termes, 1090 glyphs). Upload it if the session should look at spacing on a real font.
 
 ---
 
-## Status — s03 ends at M5b (awaiting Scott's compile/run report)
-s03 ran M4 editor, M4b preferences, M5 components + anchors (all crc), and M5b precision (this report). Built against Ubuntu 24.04, g++ 13.3, gtkmm 4.10 / GTK 4.14, libxml2 2.9.14, spdlog 1.12. Clean, no warnings. Selftest 456 / 0. **No new package dependency.**
+## Status — s03 ends at M5c (awaiting Scott's compile/run report)
+s03 ran M4 editor, M4b preferences, M5 components + anchors, M5b precision, navigator folds, navigator pick -> overview -> tabs (all crc), and M5c guides / rulers / align / measure (this report). Built against Ubuntu 24.04, g++ 13.3, gtkmm 4.10 / GTK 4.14, libxml2 2.9.14, spdlog 1.12. Clean, no warnings. Selftest 507 / 0. **No new package dependency.**
 
-What to look at in M5b (Termes `a` is a good subject):
-- **Node type:** pick nodes, then Corner | Smooth | Sym. | Cusp on the inspector's PICK card (one undo for all of them). Double-click a node: corner <-> smooth.
-- **Handles:** pick ONE node -- the PICK card shows its X / Y and In / Out. "Relative to the node" switches the handle numbers between offsets and font coordinates (remembered). Type a value, Enter.
-- **While dragging:** Shift = horizontal / vertical only (a handle: from its node). Alt on a handle = it moves alone (the node becomes Corner). Ctrl = fine drag, a tenth of the speed.
-- **Grid** (editor toolbar): follows the zoom -- tenths close in, 20s / 50s far out; every tenth line stronger, whole units stronger when it shows tenths. The step reads beside the zoom ("58% . grid 20").
-- **Snap** (toolbar, on by default): the grabbed point lands on the metric lines, overshoot edges, sidebearings, other nodes, and the grid when it shows -- a dashed blue line shows what it caught. Ctrl turns it off for that drag.
-- **Readout:** the pointer's x, y in the toolbar; the drag's delta while dragging.
-- Toolbar toggles that are on are now blue.
-- **Navigator folds** (asked after M5b's crc): the arrow on a section header folds / opens it (Ctrl+click: all). Starts all folded; what you open is remembered.
-- **Navigator pick -> overview -> tabs:** click a section header and the overview shows that section (Ctrl+click adds sections); Ctrl / Shift+click glyphs (across sections) and the overview shows just those, with "Show all" to go back. Double-click in the navigator opens the pick -- or the whole section from its header -- as editor tabs (one per glyph, x to close). The inspector follows the glyph you last clicked.
+What to look at in M5c:
+- **Rulers** along the editor's top and left. **Drag out of the top ruler** for a horizontal guide, **the left ruler** for a vertical one. They belong to this glyph (teal).
+- **Click a guide** to pick it: the GUIDE card shows its position, angle, name; **Whole font** makes it a font-wide guide (violet, on every glyph). Drag it to move (it snaps); **drop it on a ruler** or press Delete to remove it. Saved in the UFO (glyph guidelines + fontinfo guidelines).
+- **Snap** now also catches straight guides.
+- **Align / distribute:** pick two or more nodes or anchors -- the PICK card shows Left / Centre / Right / ↔ and Top / Middle / Bottom / ↕ (↔ / ↕ space them evenly).
+- **Measure: hold M.** Drag for distance, angle and delta (the ends snap to nodes); click for the stem thickness through that point, across and up. Let go of M to go back to editing.
 
 ## Decisions made in s03
 - Context glyphs fixed (H / n), a preference since M4b.
 - Left-sidebearing drag moves the origin, drawing fixed; a modifier (Alt by default, a preference) slides the drawing.
 - Shading is a toggle, remembered.
 - `geom/` works on `model::Contour` directly; Curvz's node rules verbatim (its Cusp included). One change: a corner WITH handles going smooth keeps their lengths (Curvz re-seeded from the chord).
-- Precision split (M5b now, M5c rulers / guides / align / measure next). Handle numbers relative or absolute by a toggle; the grid adapts to zoom with whole units distinct; Snap catches metrics, sidebearings, nodes, grid; Shift / Alt / Ctrl on drags follow Curvz.
+- Precision split (M5b, then M5c). Guides: a new one belongs to its glyph, "Whole font" moves it; measure by holding M; align / distribute on the PICK card (Scott read these as defaults). Handle numbers relative or absolute by a toggle; the grid adapts to zoom with whole units distinct; Snap catches metrics, sidebearings, nodes, grid; Shift / Alt / Ctrl on drags follow Curvz.
 - Preferences are app state, not undoable; one tolerant JSON file; the views' own toggles write through to it.
 - Composites from canonical decomposition, anchor-placed, with no-anchor fallbacks; spacing accents stand in for missing combining marks; `.case` / `.cap` for capitals; dotless i / j. Missing parts -> nothing built, the parts named.
 - A drawn glyph with no Granjon status loads Drafted; Granjon writes Empty explicitly on a drawn glyph so it round-trips.
 - Delete takes anchors and components only until the pen tool (nodes).
 
-## s04 goal — Milestone M5c: guides and rulers (then M6)
-- Rulers along the canvas top and left (font units, following zoom / pan); drag out of a ruler to make a guide, drag one back to delete it.
-- Guides saved in the UFO: glyph guidelines (GLIF `<guideline>`) and font guidelines (fontinfo `guidelines`); horizontal, vertical, angled; pickable and typed in the PICK card; all through verbs.
-- Snap to guides (joins M5b's snapping).
-- Align / distribute picked nodes (left / centre / right, top / middle / bottom; distribute H / V), one step each.
-- A measure tool: distance and angle between two points, and the thickness across a stem at the pointer.
-**Stop at M5c**, then M6 below.
-
-## Then — Milestone M6: Spacing
+## s04 goal — Milestone M6: Spacing
 - A HarfBuzz-shaped strip (sample text / glyph string, `/name` syntax): click a glyph to select it, drag its sidebearings, click a pair and drag to kern (class kerning through the groups).
 - Metrics keys ("n: L=R=60", "m=n", "b.L=l.L") parsed and propagated, through verbs.
 - **New packages:** `harfbuzz-devel` (Fedora) / `libharfbuzz-dev`. HarfBuzz shapes from a font binary, so the strip needs a quick in-memory font build or a direct path -- the pre-implementation message settles which.

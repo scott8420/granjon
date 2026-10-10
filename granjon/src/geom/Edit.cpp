@@ -347,6 +347,55 @@ double snap_axis(double v, const std::vector<double>& targets, double grid, doub
 
 Vec2 axis_lock(Vec2 d) { return std::abs(d.x) >= std::abs(d.y) ? Vec2{d.x, 0} : Vec2{0, d.y}; }
 
+// ── guides + measuring ─────────────────────────────────────────────────────
+
+double guide_distance(const model::Guide& g, Vec2 pt) {
+    const double a = g.angle * M_PI / 180.0;
+    const Vec2 dir{std::cos(a), std::sin(a)};
+    const Vec2 rel = pt - Vec2{g.x, g.y};
+    return std::abs(rel.cross(dir));   // |dir| = 1
+}
+
+std::vector<Contour> all_contours(const model::Font& f, const model::Glyph& g) {
+    std::vector<Contour> out = g.contours;
+    for (const auto& k : g.components)
+        for (auto& c : component_contours(f, k)) out.push_back(std::move(c));
+    return out;
+}
+
+std::vector<double> crossings(const std::vector<Contour>& cs, bool horizontal, double at) {
+    std::vector<double> out;
+    auto edge = [&](Vec2 a, Vec2 b) {
+        const double pa = horizontal ? a.y : a.x, pb = horizontal ? b.y : b.x;
+        if ((pa <= at && pb > at) || (pb <= at && pa > at)) {   // half-open: a vertex counts once
+            const double t = (at - pa) / (pb - pa);
+            out.push_back(horizontal ? a.x + (b.x - a.x) * t : a.y + (b.y - a.y) * t);
+        }
+    };
+    for (const auto& c : cs) {
+        const int n = segment_count(c);
+        for (int s = 0; s < n; ++s) {
+            const CubicSegment seg = segment(c, s);
+            Vec2 prev = seg.p0;
+            for (int i = 1; i <= 32; ++i) {
+                const Vec2 cur = seg.at(i / 32.0);
+                edge(prev, cur);
+                prev = cur;
+            }
+        }
+    }
+    std::sort(out.begin(), out.end());
+    return out;
+}
+
+std::optional<std::pair<double, double>> stem_at(const std::vector<Contour>& cs, Vec2 pt, bool horizontal) {
+    const auto xs = crossings(cs, horizontal, horizontal ? pt.y : pt.x);
+    const double p = horizontal ? pt.x : pt.y;
+    const auto hi = std::upper_bound(xs.begin(), xs.end(), p);
+    if (hi == xs.begin() || hi == xs.end()) return std::nullopt;
+    return std::pair{*(hi - 1), *hi};
+}
+
 // ── hit testing ────────────────────────────────────────────────────────────
 
 Hit hit_test(const model::Glyph& g, Vec2 pt, double tol, bool show_handles) {

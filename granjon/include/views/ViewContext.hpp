@@ -34,6 +34,9 @@ struct ViewContext {
     // a single picked point. Cleared when the selected glyph changes.
     geom::Points          pick;
     sigc::signal<void()>  pick_changed;
+    // A picked guide (M5c), instead of points: owner "" = font-wide.
+    struct GuideRef { std::string owner; int index = -1; };
+    std::optional<GuideRef> guide_pick;   // emits pick_changed too
     std::string        selected;                         // glyph name; "" = the font
     sigc::signal<void()> selection_changed;              // emitted by select() only
 

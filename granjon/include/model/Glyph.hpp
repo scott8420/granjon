@@ -18,6 +18,7 @@ struct Glyph {
     std::vector<Contour>       contours;
     std::vector<Component>     components;
     std::vector<Anchor>        anchors;
+    std::vector<Guide>         guides;    // this glyph's guidelines (M5c)
     GlyphStatus                status = GlyphStatus::Empty;
     std::string                note;
     double                     order = 0; // place in the glyph order (sorts ascending)

@@ -29,6 +29,7 @@ void Glyph::snap() {
         }
     for (auto& a : anchors) { a.x = r(a.x); a.y = r(a.y); }
     for (auto& k : components) { k.dx = r(k.dx); k.dy = r(k.dy); }
+    for (auto& gd : guides) { gd.x = r(gd.x); gd.y = r(gd.y); }
 }
 
 bool Glyph::is_integral() const {

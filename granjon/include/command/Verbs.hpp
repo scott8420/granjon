@@ -98,6 +98,26 @@ bool set_position(FontJournal& j, Font& f, const std::string& glyph, const geom:
 bool add_default_anchors(FontJournal& j, Font& f, const std::vector<std::string>& glyphs,
                          std::string* why = nullptr);
 
+// ── guides + alignment (M5c) ───────────────────────────────────────────────
+// A guide's owner: a glyph name, or "" for the font (font-wide guides live in
+// FontInfo). Indices are into that owner's list.
+bool add_guide(FontJournal& j, Font& f, const std::string& owner, const model::Guide& g);
+bool remove_guide(FontJournal& j, Font& f, const std::string& owner, int index);
+// Replace a guide (typed fields; merges per guide). Inside a guide drag
+// (guide_drag_begin .. drag_end) it just writes.
+bool set_guide(FontJournal& j, Font& f, const std::string& owner, int index, const model::Guide& g);
+// Move a glyph guide to the font (to_font) or a font guide onto `glyph`. One
+// step touching both records. Returns the new index via `moved_to`.
+bool move_guide_owner(FontJournal& j, Font& f, const std::string& glyph, bool to_font, int index,
+                      int* moved_to = nullptr);
+// A guide drag: press .. release = ONE step, whole units on release (drag_end).
+void guide_drag_begin(FontJournal& j, Font& f, const std::string& owner, int index);
+
+enum class Align { Left, HCenter, Right, Top, VMiddle, Bottom, DistributeH, DistributeV };
+// The picked nodes (with their handles) and anchors, to the pick's bounds;
+// distribute spaces them evenly between the outermost two. ONE step.
+bool align_points(FontJournal& j, Font& f, const std::string& glyph, const geom::Points& pts, Align how);
+
 // ── font records ───────────────────────────────────────────────────────────
 bool set_family(FontJournal& j, Font& f, const std::string& family);
 bool set_style(FontJournal& j, Font& f, const std::string& style);

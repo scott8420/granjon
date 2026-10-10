@@ -40,6 +40,8 @@ private:
     void on_pick_xy();
     void on_handle_xy(bool out);       // the In / Out rows of a picked node
     void on_node_type(int type);
+    void refresh_guide();              // the GUIDE card (a picked guide, M5c)
+    void on_guide_field();
     void on_anchor_name();
 
     ViewContext&        m_ctx;
@@ -86,6 +88,17 @@ private:
     Gtk::Label*          m_out_label = nullptr;
     Gtk::Label*          m_x_label = nullptr;
     Gtk::Label*          m_y_label = nullptr;
+    // align / distribute the picked nodes + anchors (M5c)
+    Gtk::Box*            m_align_rows = nullptr;
+    // guide (M5c)
+    Gtk::Box*            m_guide_card = nullptr;
+    widgets::Label       m_guide_what;
+    widgets::SpinButton  m_gx, m_gy, m_gangle;
+    Gtk::Label*          m_gx_label = nullptr;
+    Gtk::Label*          m_gy_label = nullptr;
+    widgets::Entry       m_gname;
+    widgets::ToggleButton m_gfont;
+    widgets::Button      m_gdelete;
     widgets::Entry       m_anchor_name;
     // components + anchors (M5)
     widgets::Box         m_comp_list;

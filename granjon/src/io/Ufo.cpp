@@ -107,6 +107,18 @@ bool save_ufo(const Font& f, const std::string& path_str, std::string* err) {
     fi.set("descender", PValue::integer(m.descender));
     fi.set("xHeight", PValue::integer(m.x_height));
     fi.set("capHeight", PValue::integer(m.cap_height));
+    if (!info.guides.empty()) {
+        PValue arr = PValue::array();
+        for (const auto& gd : info.guides) {
+            PValue d = PValue::dictionary();
+            if (!gd.horizontal()) d.set("x", PValue::real(gd.x));
+            if (!gd.vertical())   d.set("y", PValue::real(gd.y));
+            if (!gd.horizontal() && !gd.vertical()) d.set("angle", PValue::real(gd.angle));
+            if (!gd.name.empty()) d.set("name", PValue::str(gd.name));
+            arr.arr.push_back(std::move(d));
+        }
+        fi.set("guidelines", std::move(arr));
+    }
     if (!write_file(tmp / "fontinfo.plist", write_plist(fi), err)) return false;
 
     // groups + kerning
@@ -223,6 +235,17 @@ bool load_ufo(const std::string& path_str, Font& into, std::string* err) {
         metrics.descender   = static_cast<int>(fi->get_number("descender").value_or(metrics.descender));
         metrics.x_height    = static_cast<int>(fi->get_number("xHeight").value_or(metrics.x_height));
         metrics.cap_height  = static_cast<int>(fi->get_number("capHeight").value_or(metrics.cap_height));
+        if (const PValue* gl = fi->get("guidelines"); gl && gl->kind == PValue::Kind::Array)
+            for (const auto& d : gl->arr) {
+                if (d.kind != PValue::Kind::Dict) continue;
+                model::Guide gd;
+                const auto x = d.get_number("x"), y = d.get_number("y"), a = d.get_number("angle");
+                gd.x = x.value_or(0);
+                gd.y = y.value_or(0);
+                gd.angle = a ? *a : (x && !y ? 90.0 : 0.0);
+                gd.name = d.get_string("name").value_or("");
+                info.guides.push_back(gd);
+            }
     }
 
     model::Kerning kerning;

@@ -285,8 +285,8 @@ Work stops at each milestone for a compile/run report before continuing.
 3. **M3 Overview:** glyph grid, Unicode data, char-set coverage.   [s02: done]
 4. **M4 Editor:** Curvz canvas port with metric guides and sidebearings.   [s03: built, awaiting run report]
 5. **M5 Components & anchors:** auto-build composites from decomposition.   [s03: done]
-5b. **M5b Precision:** node types, handle fields, Shift / Alt / Ctrl drags, adaptive grid, snapping.   [s03: built, awaiting run report]
-5c. **M5c Guides:** rulers, glyph + font guidelines, snap to guides, align / distribute, measure.
+5b. **M5b Precision:** node types, handle fields, Shift / Alt / Ctrl drags, adaptive grid, snapping.   [s03: done]
+5c. **M5c Guides:** rulers, glyph + font guidelines, snap to guides, align / distribute, measure.   [s03: built, awaiting run report]
 6. **M6 Spacing:** HarfBuzz strip, metrics keys, class kerning.
 7. **M7 Checks:** report framework plus first checks (origin, zones, overshoot, direction).
 8. **M8 Profiles:** contact gap, optical area, kern-to-gap.

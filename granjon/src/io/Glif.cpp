@@ -57,6 +57,16 @@ std::string write_glif(const Glyph& g) {
         o += std::string("  <unicode hex=\"") + buf + "\"/>\n";
     }
     if (!g.note.empty()) o += "  <note>" + xml_escape(g.note) + "</note>\n";
+    // Guidelines: horizontal -> y only, vertical -> x only, else x, y, angle (UFO 3).
+    for (const auto& gd : g.guides) {
+        o += "  <guideline";
+        if (gd.horizontal())     o += " y=\"" + format_number(gd.y) + "\"";
+        else if (gd.vertical())  o += " x=\"" + format_number(gd.x) + "\"";
+        else o += " x=\"" + format_number(gd.x) + "\" y=\"" + format_number(gd.y) + "\" angle=\"" +
+                  format_number(gd.angle) + "\"";
+        if (!gd.name.empty()) o += " name=\"" + xml_escape(gd.name) + "\"";
+        o += "/>\n";
+    }
     for (const auto& a : g.anchors)
         o += "  <anchor x=\"" + format_number(a.x) + "\" y=\"" + format_number(a.y) + "\" name=\"" +
              xml_escape(a.name) + "\"/>\n";
@@ -288,6 +298,14 @@ std::optional<Glyph> read_glif(const std::string& xml, std::string* err) {
             xmlChar* t = xmlNodeGetContent(c);
             g.note = t ? reinterpret_cast<const char*>(t) : "";
             if (t) xmlFree(t);
+        } else if (is(c, "guideline")) {
+            model::Guide gd;
+            const bool hx = attr(c, "x").has_value(), hy = attr(c, "y").has_value();
+            gd.x = num(c, "x", 0, ok);
+            gd.y = num(c, "y", 0, ok);
+            gd.angle = attr(c, "angle") ? num(c, "angle", 0, ok) : (hx && !hy ? 90.0 : 0.0);
+            gd.name = attr(c, "name").value_or("");
+            g.guides.push_back(gd);
         } else if (is(c, "anchor")) {
             g.anchors.push_back({attr(c, "name").value_or(""), num(c, "x", 0, ok), num(c, "y", 0, ok)});
         } else if (is(c, "outline")) {

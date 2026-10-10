@@ -28,6 +28,29 @@ struct Drag {
     std::vector<Glyph>       at_press;
 };
 Drag& drag() { static Drag d; return d; }
+std::vector<model::Guide> guides_of(const Font& f, const std::string& owner) {
+    if (owner.empty()) return f.info().guides;
+    const Glyph* g = f.glyph(owner);
+    return g ? g->guides : std::vector<model::Guide>{};
+}
+// Write `gs` back to its owner (inside a step).
+void put_guides(Font& f, const std::string& owner, std::vector<model::Guide> gs) {
+    if (owner.empty()) {
+        model::FontInfo i = f.info();
+        i.guides = std::move(gs);
+        f.put(Font::kInfo, Record{i});
+    } else {
+        Glyph g = glyph_copy(f, owner);
+        g.guides = std::move(gs);
+        f.put(owner, Record{g});
+    }
+}
+std::string owner_id(const std::string& owner) { return owner.empty() ? std::string(Font::kInfo) : owner; }
+model::Guide rounded(model::Guide g) { g.x = std::round(g.x); g.y = std::round(g.y); return g; }
+
+// The one live guide drag.
+struct GuideDrag { std::string owner; int index = -1; bool live = false; };
+GuideDrag& guide_drag() { static GuideDrag d; return d; }
 
 void translate(Glyph& g, double dx, double dy) {
     for (auto& c : g.contours)
@@ -284,6 +307,14 @@ bool nudge(FontJournal& j, Font& f, const std::string& glyph, const geom::Points
 bool drag_end(FontJournal& j, Font& f) {
     Drag& d = drag();
     if (!j.in_gesture()) return false;
+    if (GuideDrag& gd = guide_drag(); gd.live) {   // a guide drag: whole units on release
+        gd.live = false;
+        auto gs = guides_of(f, gd.owner);
+        if (gd.index >= 0 && gd.index < static_cast<int>(gs.size())) {
+            gs[gd.index] = rounded(gs[gd.index]);
+            j.run("Snap", {owner_id(gd.owner)}, [&] { put_guides(f, gd.owner, gs); });
+        }
+    }
     // Snap inside the gesture, so the step's AFTER is the integral outline.
     j.run("Snap", d.names, [&] {
         for (const auto& n : d.names) {
@@ -298,6 +329,7 @@ bool drag_end(FontJournal& j, Font& f) {
 }
 
 void drag_cancel(FontJournal& j) {
+    guide_drag().live = false;
     drag().names.clear();
     drag().at_press.clear();
     j.cancel();
@@ -485,6 +517,128 @@ bool add_default_anchors(FontJournal& j, Font& f, const std::vector<std::string>
     });
 }
 
+// ── guides + alignment (M5c) ───────────────────────────────────────────────
+
+
+bool add_guide(FontJournal& j, Font& f, const std::string& owner, const model::Guide& g) {
+    if (!owner.empty() && !f.glyph(owner)) return false;
+    return j.run(owner.empty() ? "Add font guide" : "Add guide", {owner_id(owner)}, [&] {
+        auto gs = guides_of(f, owner);
+        gs.push_back(rounded(g));
+        put_guides(f, owner, std::move(gs));
+    });
+}
+
+bool remove_guide(FontJournal& j, Font& f, const std::string& owner, int index) {
+    const auto gs0 = guides_of(f, owner);
+    if (index < 0 || index >= static_cast<int>(gs0.size())) return false;
+    return j.run(owner.empty() ? "Delete font guide" : "Delete guide", {owner_id(owner)}, [&] {
+        auto gs = guides_of(f, owner);
+        gs.erase(gs.begin() + index);
+        put_guides(f, owner, std::move(gs));
+    });
+}
+
+bool set_guide(FontJournal& j, Font& f, const std::string& owner, int index, const model::Guide& g) {
+    const auto gs0 = guides_of(f, owner);
+    if (index < 0 || index >= static_cast<int>(gs0.size())) return false;
+    const bool dragging = j.in_gesture() && guide_drag().live;
+    const model::Guide want = dragging ? g : rounded(g);
+    if (gs0[index] == want) return false;
+    return j.run("Guide", {owner_id(owner)}, [&] {
+        auto gs = guides_of(f, owner);
+        gs[index] = want;
+        put_guides(f, owner, std::move(gs));
+    }, "guide:" + owner + ":" + std::to_string(index));
+}
+
+bool move_guide_owner(FontJournal& j, Font& f, const std::string& glyph, bool to_font, int index, int* moved_to) {
+    if (!f.glyph(glyph)) return false;
+    const std::string from = to_font ? glyph : std::string{}, to = to_font ? std::string{} : glyph;
+    const auto src = guides_of(f, from);
+    if (index < 0 || index >= static_cast<int>(src.size())) return false;
+    const int dest_index = static_cast<int>(guides_of(f, to).size());
+    const bool ok = j.run(to_font ? "Guide to the whole font" : "Guide to this glyph only",
+                          {owner_id(from), owner_id(to)}, [&] {
+        auto a = guides_of(f, from);
+        const model::Guide g = a[index];
+        a.erase(a.begin() + index);
+        put_guides(f, from, std::move(a));
+        auto b = guides_of(f, to);
+        b.push_back(g);
+        put_guides(f, to, std::move(b));
+    });
+    if (ok && moved_to) *moved_to = dest_index;
+    return ok;
+}
+
+void guide_drag_begin(FontJournal& j, Font& f, const std::string& owner, int index) {
+    const auto gs = guides_of(f, owner);
+    if (index < 0 || index >= static_cast<int>(gs.size())) return;
+    guide_drag() = {owner, index, true};
+    drag().names.clear();   // drag_end then snaps no glyph outline -- only the guide below
+    drag().at_press.clear();
+    j.begin("Move guide", {owner_id(owner)});
+}
+
+bool align_points(FontJournal& j, Font& f, const std::string& glyph, const geom::Points& pts, Align how) {
+    const Glyph* was = f.glyph(glyph);
+    if (!was) return false;
+    using P = geom::PointRef::Part;
+    std::vector<geom::PointRef> refs;
+    for (const auto& p : pts)
+        if (geom::valid(*was, p) && (p.part == P::Node || p.part == P::Anchor)) refs.push_back(p);
+    if (refs.size() < 2) return false;
+    double x0 = 1e18, x1 = -1e18, y0 = 1e18, y1 = -1e18;
+    for (const auto& r : refs) {
+        const auto v = geom::position(*was, r);
+        x0 = std::min(x0, v.x); x1 = std::max(x1, v.x);
+        y0 = std::min(y0, v.y); y1 = std::max(y1, v.y);
+    }
+    // Each point's target.
+    std::vector<geom::Vec2> to(refs.size());
+    if (how == Align::DistributeH || how == Align::DistributeV) {
+        const bool h = how == Align::DistributeH;
+        std::vector<std::size_t> order(refs.size());
+        for (std::size_t i = 0; i < order.size(); ++i) order[i] = i;
+        std::stable_sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b) {
+            const auto va = geom::position(*was, refs[a]), vb = geom::position(*was, refs[b]);
+            return h ? va.x < vb.x : va.y < vb.y;
+        });
+        const double lo = h ? x0 : y0, hi = h ? x1 : y1;
+        for (std::size_t k = 0; k < order.size(); ++k) {
+            auto v = geom::position(*was, refs[order[k]]);
+            const double at = lo + (hi - lo) * static_cast<double>(k) / static_cast<double>(order.size() - 1);
+            (h ? v.x : v.y) = at;
+            to[order[k]] = v;
+        }
+    } else {
+        for (std::size_t i = 0; i < refs.size(); ++i) {
+            auto v = geom::position(*was, refs[i]);
+            switch (how) {
+                case Align::Left:    v.x = x0; break;
+                case Align::HCenter: v.x = (x0 + x1) / 2; break;
+                case Align::Right:   v.x = x1; break;
+                case Align::Top:     v.y = y1; break;
+                case Align::VMiddle: v.y = (y0 + y1) / 2; break;
+                case Align::Bottom:  v.y = y0; break;
+                default: break;
+            }
+            to[i] = v;
+        }
+    }
+    Glyph g = *was;
+    for (std::size_t i = 0; i < refs.size(); ++i) {
+        const Glyph before = g;
+        geom::move_points(g, before, {refs[i]}, to[i] - geom::position(before, refs[i]));
+    }
+    g.snap();
+    if (g == *was) return false;
+    static const char* names[] = {"Align left", "Align centre", "Align right", "Align top", "Align middle",
+                                  "Align bottom", "Distribute across", "Distribute up"};
+    return j.run(names[static_cast<int>(how)], {glyph}, [&] { f.put(glyph, Record{g}); });
+}
+
 // ── font records ───────────────────────────────────────────────────────────
 
 bool set_family(FontJournal& j, Font& f, const std::string& family) {
@@ -553,10 +707,15 @@ void make_fixture(Font& f) {
         f.put(n, Record{g});
         return g;
     };
-    add("H", U'H', 700, {box(80, 0, 170, 700), box(530, 0, 620, 700), box(170, 320, 530, 400)});
+    Glyph gh = add("H", U'H', 700, {box(80, 0, 170, 700), box(530, 0, 620, 700), box(170, 320, 530, 400)});
     add("O", U'O', 760, {box(60, -12, 700, 712)});
-    add("n", U'n', 560, {box(70, 0, 150, 500), box(410, 0, 490, 500)});
-    add("o", U'o', 540, {box(50, -10, 490, 510)});
+    Glyph gn = add("n", U'n', 560, {box(70, 0, 150, 500), box(410, 0, 490, 500)});
+    Glyph go = add("o", U'o', 540, {box(50, -10, 490, 510)});
+    // Guides (M5c): something for the guide verbs to change.
+    gh.guides = {{0, 400, 0, {}}};
+    gn.guides = {{0, 100, 0, {}}};
+    go.guides = {{0, 250, 0, {}}, {0, 100, 0, {}}};
+    for (const Glyph* g : {&gh, &gn, &go}) f.put(g->name, Record{*g});
     Glyph od = add("Odotbelow", U'Ọ', 760, {});
     od.components = {{"O"}};
     od.anchors = {{"bottom", 380, 0}};
@@ -618,6 +777,19 @@ const std::vector<Verb>& verbs() {
              drag_begin(j, f, {"Odotbelow"}, "Move component");
              drag_points(j, f, {{-1, 0, geom::PointRef::Part::Component}}, 13.7, -4.2);
              drag_end(j, f); }},
+        {"add_guide",    [](FontJournal& j, Font& f) { add_guide(j, f, "H", {0, 320, 0, "bar"}); }},
+        {"add_font_guide", [](FontJournal& j, Font& f) { add_guide(j, f, "", {0, 0, 90, "centre"}); }},
+        {"set_guide",    [](FontJournal& j, Font& f) { set_guide(j, f, "o", 0, {0, 260.4, 0, "middle"}); }},
+        {"remove_guide", [](FontJournal& j, Font& f) { remove_guide(j, f, "n", 0); }},
+        {"move_guide_owner", [](FontJournal& j, Font& f) { move_guide_owner(j, f, "H", true, 0); }},
+        {"guide_drag", [](FontJournal& j, Font& f) {
+             guide_drag_begin(j, f, "o", 1);
+             set_guide(j, f, "o", 1, {0, 117.6, 0, {}});
+             set_guide(j, f, "o", 1, {0, 121.3, 0, {}});
+             drag_end(j, f); }},
+        {"align_points", [](FontJournal& j, Font& f) {
+             align_points(j, f, "H", {{0, 2, geom::PointRef::Part::Node}, {1, 0, geom::PointRef::Part::Node}},
+                          Align::Top); }},
         {"set_family",   [](FontJournal& j, Font& f) { set_family(j, f, "Garamond Nova"); }},
         {"set_style",    [](FontJournal& j, Font& f) { set_style(j, f, "Italic"); }},
         {"set_units_per_em", [](FontJournal& j, Font& f) { set_units_per_em(j, f, 2048); }},

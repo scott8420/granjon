@@ -850,6 +850,70 @@ int main() {
                   x.f.glyph("o")->contours[0].nodes[0].type == T::Symmetric);
             check("set_node_type: again is no step", !cmd::set_node_type(x.j, x.f, "o", pts, T::Symmetric));
         }
+        {   // M5c: guides, alignment, measuring.
+            std::string why;
+            Fix x;
+            const auto o0 = *x.f.glyph("o");
+            check("guides: the fixture's", o0.guides.size() == 2 && x.f.glyph("H")->guides.size() == 1);
+            check("guide: add to the font", cmd::add_guide(x.j, x.f, "", {300, 0, 90, "centre"}) &&
+                  x.f.info().guides.size() == 1 && x.f.info().guides[0].vertical());
+            check("guide: set rounds outside a drag", cmd::set_guide(x.j, x.f, "o", 0, {0, 260.4, 0, "middle"}) &&
+                  x.f.glyph("o")->guides[0].y == 260 && x.f.glyph("o")->guides[0].name == "middle");
+            const std::size_t before = x.j.size();
+            cmd::guide_drag_begin(x.j, x.f, "o", 1);
+            cmd::set_guide(x.j, x.f, "o", 1, {0, 117.6, 0, {}});
+            check("guide drag: fractional mid-drag", x.f.glyph("o")->guides[1].y == 117.6);
+            cmd::set_guide(x.j, x.f, "o", 1, {0, 131.4, 0, {}});
+            cmd::drag_end(x.j, x.f);
+            check("guide drag: one step, whole units", x.j.size() == before + 1 && x.f.glyph("o")->guides[1].y == 131);
+            int at = -1;
+            check("guide: to the whole font", cmd::move_guide_owner(x.j, x.f, "H", true, 0, &at) &&
+                  x.f.glyph("H")->guides.empty() && x.f.info().guides.size() == 2 && at == 1);
+            x.j.undo();
+            check("guide: ... undone, both records", x.f.glyph("H")->guides.size() == 1 && x.f.info().guides.size() == 1);
+            check("guide: removed", cmd::remove_guide(x.j, x.f, "n", 0) && x.f.glyph("n")->guides.empty());
+            check("guide: a bad index is refused", !cmd::remove_guide(x.j, x.f, "n", 3));
+
+            // GLIF + fontinfo round-trip.
+            model::Glyph g = o0;
+            g.guides = {{0, 480, 0, "xh"}, {270, 0, 90, {}}, {100, 200, 45, "diag"}};
+            const auto back = io::read_glif(io::write_glif(g));
+            check("glif: guidelines round-trip", back && back->guides == g.guides);
+            namespace stdfs = std::filesystem;
+            const auto dir = stdfs::temp_directory_path() / "granjon_selftest_guides.granjon";
+            stdfs::remove_all(dir);
+            std::string err;
+            check("ufo: saves font guides", io::save_ufo(x.f, dir.string(), &err), err);
+            Font y;
+            check("ufo: reads them back", io::load_ufo(dir.string(), y, &err) && y.info().guides == x.f.info().guides &&
+                  y.glyph("o")->guides == x.f.glyph("o")->guides, err);
+            stdfs::remove_all(dir);
+
+            // Align / distribute (H's nodes).
+            using P = geom::PointRef::Part;
+            const geom::Points three{{0, 0, P::Node}, {1, 0, P::Node}, {2, 0, P::Node}};   // x 80, 530, 170
+            check("align: left", cmd::align_points(x.j, x.f, "H", three, cmd::Align::Left));
+            const auto& H = *x.f.glyph("H");
+            check("align: all at the leftmost x", H.contours[0].nodes[0].x == 80 && H.contours[1].nodes[0].x == 80 &&
+                  H.contours[2].nodes[0].x == 80);
+            x.j.undo();
+            check("distribute: across", cmd::align_points(x.j, x.f, "H", three, cmd::Align::DistributeH));
+            const auto& H2 = *x.f.glyph("H");
+            check("distribute: evenly between the outer two", H2.contours[0].nodes[0].x == 80 &&
+                  H2.contours[2].nodes[0].x == 305 && H2.contours[1].nodes[0].x == 530,
+                  std::to_string(H2.contours[2].nodes[0].x));
+            check("align: one point is no alignment", !cmd::align_points(x.j, x.f, "H", {{0, 0, P::Node}}, cmd::Align::Left));
+
+            // Measuring.
+            check("guide distance: horizontal", geom::guide_distance({0, 100, 0, {}}, {37, 130}) == 30);
+            check("guide distance: vertical", std::abs(geom::guide_distance({50, 0, 90, {}}, {20, 999}) - 30) < 1e-9);
+            const auto cs = geom::all_contours(x.f, *x.f.glyph("n"));   // stems 70..150, 410..490
+            const auto stem = geom::stem_at(cs, {100, 250}, true);
+            check("stem: across the left stem", stem && std::abs(stem->first - 70) < 1e-6 && std::abs(stem->second - 150) < 1e-6);
+            check("stem: in the counter, between the stems", geom::stem_at(cs, {300, 250}, true).has_value());
+            check("stem: outside the drawing", !geom::stem_at(cs, {600, 250}, true));
+            check("crossings: four through the n", geom::crossings(cs, true, 250).size() == 4);
+        }
         {   // A point drag is one step on whole units.
             Fix x;
             const geom::Points pts{{0, 0, geom::PointRef::Part::Node}};

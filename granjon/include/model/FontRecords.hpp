@@ -1,4 +1,5 @@
 #pragma once
+#include "model/Outline.hpp"
 // model::FontRecords -- the font-level records that are not glyphs. Each is one
 // undo record (one id in the store), replaced whole on change.
 #include <map>
@@ -17,6 +18,7 @@ struct FontInfo {
     std::string license;
     std::string vendor;            // OS/2 achVendID, 4 chars
     int         units_per_em = 1000;
+    std::vector<Guide> guides;     // font-wide guidelines (fontinfo.plist "guidelines")
     bool operator==(const FontInfo&) const = default;
 };
 

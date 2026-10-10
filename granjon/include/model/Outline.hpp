@@ -54,4 +54,15 @@ struct Anchor {
     bool operator==(const Anchor&) const = default;
 };
 
+// A guideline (UFO 3): the line through (x, y) at `angle` degrees,
+// counter-clockwise from the x axis. Horizontal = 0 (x does not matter),
+// vertical = 90 (y does not matter). On a glyph, or font-wide (FontInfo).
+struct Guide {
+    double      x = 0, y = 0, angle = 0;
+    std::string name;
+    bool horizontal() const { return angle == 0 || angle == 180; }
+    bool vertical() const   { return angle == 90 || angle == 270; }
+    bool operator==(const Guide&) const = default;
+};
+
 }  // namespace granjon::model
