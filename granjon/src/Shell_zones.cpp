@@ -124,9 +124,7 @@ void Shell::build_views() {  // zone: the view stack
     m_stack.add(m_editor, "editor", "Editor");
     m_stack.add(m_spacing, "spacing", "Spacing");
     add_stub_view("preview", "Preview", "Waterfall sizes, sample text, light and dark.");
-    add_stub_view("report", "Report",
-        "Every check's findings, each with why it matters and a fix / skip / fix-all "
-        "that goes through undo.");
+    m_stack.add(m_report, "report", "Report");
 }
 
 void Shell::add_stub_view(const char* id, const char* title, const char* what) {  // zone

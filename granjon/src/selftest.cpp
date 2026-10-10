@@ -29,6 +29,8 @@
 #include "model/Composite.hpp"
 #include "model/Coverage.hpp"
 #include "model/Spacing.hpp"
+#include "model/Checks.hpp"
+#include "model/Profiles.hpp"
 #include "unicode/Agl.hpp"
 #include "unicode/Blocks.hpp"
 #include "unicode/CharSet.hpp"
@@ -1080,6 +1082,114 @@ int main() {
             std::vector<std::string> cyc;
             model::key_order(x.f, &cyc);
             check("key_order: a cycle is reported", !cyc.empty());
+        }
+        {   // M7: checks -- each one found, fixed in one step, skipped, saved.
+            Fix x;
+            auto has = [](const std::vector<model::Finding>& xs, model::CheckId id) {
+                return std::count_if(xs.begin(), xs.end(), [&](const model::Finding& f) { return f.check == id; });
+            };
+            const auto fo = model::check_glyph(x.f, "O");
+            check("checks: O's counter runs the wrong way", has(fo, model::CheckId::Direction) == 1 &&
+                  fo[0].contour == 1 && fo[0].fixable && fo[0].key() == "direction|O|1");
+            check("checks: n is off its key", has(model::check_glyph(x.f, "n"), model::CheckId::Keys) == 1);
+            check("checks: H is clean", model::check_glyph(x.f, "H").empty());
+            check("checks: o's corners 10 off the lines are not near misses",
+                  has(model::check_glyph(x.f, "o"), model::CheckId::Zones) == 0);
+            // q: a box 2 units off the baseline, a round bottom ON the baseline
+            // with a right top, an open stroke, an off-grid x.
+            model::Glyph q;
+            q.name = "q"; q.unicodes = {U'q'}; q.advance = 600; q.order = 50;
+            {
+                model::Contour box;
+                for (auto [px, py] : {std::pair{50.0, 2.0}, {150.0, 2.0}, {150.0, 500.0}, {50.0, 500.0}})
+                    box.nodes.push_back(model::Node::corner(px, py));
+                model::Contour round;   // counter-clockwise: bottom, right, top, left
+                using T = model::Node::Type;
+                round.nodes = {{350, 0, 280, 0, 420, 0, T::Smooth}, {550, 256, 550, 120, 550, 390, T::Smooth},
+                               {350, 512, 420, 512, 280, 512, T::Smooth}, {200.5, 256, 200.5, 390, 200.5, 120, T::Smooth}};
+                model::Contour open;
+                open.closed = false;
+                open.nodes = {model::Node::corner(0, 600), model::Node::corner(100, 650)};
+                q.contours = {box, round, open};
+                model::Font::Loading load(x.f);
+                x.f.put("q", model::Record{q});
+            }
+            const auto fq = model::check_glyph(x.f, "q");
+            check("checks: zones -- two nodes 2 above the baseline", has(fq, model::CheckId::Zones) == 2);
+            const auto ov = std::find_if(fq.begin(), fq.end(), [](const model::Finding& f) {
+                return f.check == model::CheckId::Overshoot; });
+            check("checks: overshoot -- the round bottom sits on the baseline",
+                  has(fq, model::CheckId::Overshoot) == 1 && ov != fq.end() && ov->target == -12 && ov->index == 0);
+            check("checks: open contour", has(fq, model::CheckId::Open) == 1);
+            check("checks: off the grid", has(fq, model::CheckId::Origin) == 1);
+            std::size_t n = 0;
+            check("fix_findings: one step", cmd::fix_findings(x.j, x.f, fq, &n) && x.j.size() == 1 && n == fq.size());
+            const auto after = model::check_glyph(x.f, "q");
+            check("fix_findings: q is clean", after.empty(), std::to_string(after.size()) + " left");
+            const auto& rq = x.f.glyph("q")->contours[1].nodes[0];
+            check("fix_findings: the round bottom moved with its handles", rq.y == -12 && rq.cy1 == -12 && rq.cy2 == -12);
+            check("fix_findings: the box sits on the baseline", x.f.glyph("q")->contours[0].nodes[0].y == 0);
+            x.j.undo();
+            check("fix_findings: undo restores", *x.f.glyph("q") == q);
+            check("fix_findings: nothing fixable, nothing done",
+                  !cmd::fix_findings(x.j, x.f, {model::check_glyph(x.f, "H")}));
+            // Skips.
+            check("skip_findings: one step", cmd::skip_findings(x.j, x.f, fo) && model::is_skipped(x.f, fo[0]));
+            check("skip_findings: again, nothing", !cmd::skip_findings(x.j, x.f, fo));
+            cmd::rename_glyph(x.j, x.f, "O", "O.alt");
+            check("skips follow a rename", x.f.skips().keys.count("direction|O.alt|1") == 1 &&
+                  x.f.skips().keys.count("direction|O|1") == 0);
+            const auto dir = std::filesystem::temp_directory_path() / "granjon_selftest_skips.granjon";
+            std::filesystem::remove_all(dir);
+            std::string err;
+            model::Font back;
+            check("skips survive a save", io::save_ufo(x.f, dir.string(), &err) && io::load_ufo(dir.string(), back, &err) &&
+                  back.skips() == x.f.skips(), err);
+            std::filesystem::remove_all(dir);
+            check("skip_findings: unskip", cmd::skip_findings(x.j, x.f, model::check_glyph(x.f, "O.alt"), false) &&
+                  x.f.skips().keys.empty());
+        }
+        {   // M8: edge profiles and the pair readouts.
+            Fix x;
+            const auto ph = model::edge_profile(x.f, *x.f.glyph("H"));
+            bool stems = true, below = true;
+            for (std::size_t i = 0; i < ph.left.size(); ++i) {
+                if (ph.y(i) > 0 && ph.y(i) < 700) stems = stems && ph.left[i] == 80 && ph.right[i] == 620;
+                if (ph.y(i) < 0) below = below && !ph.ink(i);
+            }
+            check("profile: H's stems, nothing below the baseline", stems && below && ph.step == 10);
+            auto near = [](double a, double b) { return std::abs(a - b) < 0.5; };
+            const auto hh = model::read_pair(x.f, "H", "H");
+            check("pair H H: contact 160, optical 160, cap band", hh.ok && near(hh.contact, 160) &&
+                  near(hh.optical, 160) && hh.band == 'H' && !hh.disagree, std::to_string(hh.contact));
+            const auto nn = model::read_pair(x.f, "n", "n");
+            check("pair n n: 140 / 140, x band, control n n", near(nn.contact, 140) && near(nn.optical, 140) &&
+                  nn.band == 'x' && nn.control == "n n" && nn.proposed == 0);
+            const auto no = model::read_pair(x.f, "n", "o");
+            check("pair n o: 120, proposed +20 to match n n", near(no.optical, 120) && no.proposed == 20,
+                  no.proposed ? std::to_string(*no.proposed) : "none");
+            const auto col = model::read_pair_at(x.f, "H", "H", -200);
+            check("pair H H at -200: a collision reads negative", near(col.contact, -40));
+            // T o: the bar reaches over the o -- contact sees it, optical does not.
+            model::Glyph t;
+            t.name = "T"; t.unicodes = {U'T'}; t.advance = 700; t.order = 60;
+            {
+                auto box = [](double x0, double y0, double x1, double y1) {
+                    model::Contour c;
+                    for (auto [px, py] : {std::pair{x0, y0}, {x1, y0}, {x1, y1}, {x0, y1}})
+                        c.nodes.push_back(model::Node::corner(px, py));
+                    return c;
+                };
+                t.contours = {box(0, 600, 700, 700), box(300, 0, 400, 600)};
+                model::Font::Loading load(x.f);
+                x.f.put("T", model::Record{t});
+            }
+            const auto to = model::read_pair(x.f, "T", "o");
+            check("pair T o: contact is the bar's corner to the o (2D)", to.ok && to.contact > 100 && to.contact < 125 &&
+                  to.contact_ly > 590, std::to_string(to.contact));
+            check("pair T o: optical sees the stem, the readouts disagree", near(to.optical, 350) && to.disagree &&
+                  to.band == 'x');
+            check("pair: a missing glyph reads nothing", !model::read_pair(x.f, "T", "zz").ok);
         }
         {   // A point drag is one step on whole units.
             Fix x;

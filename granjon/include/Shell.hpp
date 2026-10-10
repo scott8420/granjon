@@ -7,6 +7,7 @@
 #include "views/GlyphCanvas.hpp"
 #include "views/OverviewGrid.hpp"
 #include "views/SpacingStrip.hpp"
+#include "views/ReportList.hpp"
 #include "views/ViewContext.hpp"
 
 #include <gtkmm/applicationwindow.h>
@@ -151,6 +152,7 @@ private:
     views::OverviewGrid   m_overview{m_ctx};
     views::GlyphCanvas    m_editor{m_ctx};
     views::SpacingStrip   m_spacing{m_ctx};
+    views::ReportList     m_report{m_ctx};
     views::Inspector      m_inspector{m_ctx};
 
     // Recents state (core data; UI holds it + resolves the path -- the seam).

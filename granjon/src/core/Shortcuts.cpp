@@ -169,6 +169,8 @@ const std::vector<ShortcutSpec>& shortcut_registry() {
         {"Mouse", "", {}, "Click a section's arrow", "Fold / open it (Ctrl+click: all); remembered"},
 
         // ── View ──────────────────────────────────────────────────────────────
+        {"Report", "", {}, "Click a finding", "Open the glyph in the editor with the spot picked"},
+        {"Report", "", {}, "Fix / Skip / Fix all", "Each click is one undo step; skips are saved with the font"},
         {"Spacing", "", {}, "Click a glyph", "Select it (the inspector follows)"},
         {"Spacing", "", {}, "Click between two glyphs", "Pick the pair (the inspector's KERN card)"},
         {"Spacing", "", {}, "Drag a picked pair  /  Left, Right", "Kern it (Shift x10) -- the entry in effect, else the groups' pair"},

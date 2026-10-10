@@ -260,13 +260,13 @@ granjon/                        project root (not a git repo)
 
 ### Source modules (initial)
 ```
-model/      Spacing [M6] (strip text, kerning lookup, layout, metrics keys), Composite [M5], Find [M1c], Bounds [M1b], Font (= undo store), Glyph, Outline (Node, Contour, Component, Anchor), FontRecords (FontInfo, Metrics, Kerning, MetricsKeys, Features)   [M1: built]
+model/      Profiles [M8] (edge profiles, contact / optical gap, kern-to-gap), Checks [M7] (six checks, fixes, skip keys), Spacing [M6] (strip text, kerning lookup, layout, metrics keys), Composite [M5], Find [M1c], Bounds [M1b], Font (= undo store), Glyph, Outline (Node, Contour, Component, Anchor), FontRecords (FontInfo, Metrics, Kerning, MetricsKeys, Features)   [M1: built]
 command/    Document (font + journal), Verbs + verb table   [M1: built]
 io/         Plist, Glif, Ufo (save_ufo / load_ufo)   [M2: built]
 unicode/    Embedded, UcdTable, Blocks, Agl, CharSet   [M3: built]  (model/Coverage)
 geom/       Vec2, CubicSegment, Edit (Curvz node rules, hit-test)   [M4: built]; Profile, BooleanOps, CubicToQuad, Direction to come
 core/       Settings (app preferences, JSON, not undoable)   [M4b: built]
-views/      ViewContext, Navigator, Inspector, OverviewGrid, GlyphPaint, GlyphSearch [M1b/c], GlyphCanvas [M4], SpacingStrip [M6]; PreviewPane, ReportList to come
+views/      ViewContext, Navigator, Inspector, OverviewGrid, GlyphPaint, GlyphSearch [M1b/c], GlyphCanvas [M4], SpacingStrip [M6], ReportList [M7]; PreviewPane to come
 check/      Check, Report, concrete checks
 export/     SfntWriter, tables/*, OtfExporter, TtfExporter, Woff2Exporter
 import/     FtImporter, SvgImporter
@@ -289,9 +289,9 @@ Work stops at each milestone for a compile/run report before continuing.
 5c. **M5c Guides:** rulers, glyph + font guidelines, snap to guides, align / distribute, measure.   [s03: done]
 5d. **M5d Direction:** contour arrows, wrong-way tint, correct / reverse.   [s03: done]
 5e. **M5e Node navigation:** amber start node, open-end bar, Make first, Tab / Ctrl+Tab / ` traversal.   [s04: done]
-6. **M6 Spacing:** spacing strip (own layout; HarfBuzz with export), metrics keys, class kerning.   [s04: built, awaiting crc]
-7. **M7 Checks:** report framework plus first checks (origin, zones, overshoot, direction).
-8. **M8 Profiles:** contact gap, optical area, kern-to-gap.
+6. **M6 Spacing:** spacing strip (own layout; HarfBuzz with export), metrics keys, class kerning.   [s04: done]
+7. **M7 Checks:** report framework plus first checks (origin, zones, overshoot, direction).   [s04: done]
+8. **M8 Profiles:** contact gap, optical area, kern-to-gap.   [s04: built, awaiting crc]
 9. **M9 Export OTF:** sfnt writer + CFF; validate by FreeType reload.
 10. **M10 Export TTF / WOFF2:** cubic → quadratic, overlap removal, ttfautohint hook.
 11. **M11 Import:** TTF/OTF via FreeType; SVG glyph import.

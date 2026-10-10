@@ -2,6 +2,8 @@
 
 #include "model/Composite.hpp"
 #include "model/Spacing.hpp"
+#include "model/Checks.hpp"
+#include "model/Profiles.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -168,7 +170,7 @@ bool rename_glyph(FontJournal& j, Font& f, const std::string& from, const std::s
     }
     if (f.glyph(to)) { say(why, "There is already a glyph named " + q(to) + "."); return false; }
 
-    std::vector<std::string> ids{from, to, Font::kKerning, Font::kMetricsKeys};
+    std::vector<std::string> ids{from, to, Font::kKerning, Font::kMetricsKeys, Font::kSkips};
     for (const auto& n : f.glyph_order())
         if (n != from && f.glyph(n)->uses(from)) ids.push_back(n);
 
@@ -177,7 +179,7 @@ bool rename_glyph(FontJournal& j, Font& f, const std::string& from, const std::s
         g.name = to;
         f.put(from, std::nullopt);
         f.put(to, Record{g});
-        for (std::size_t i = 4; i < ids.size(); ++i) {
+        for (std::size_t i = 5; i < ids.size(); ++i) {
             Glyph u = glyph_copy(f, ids[i]);
             for (auto& c : u.components) if (c.base == from) c.base = to;
             f.put(ids[i], Record{u});
@@ -201,6 +203,16 @@ bool rename_glyph(FontJournal& j, Font& f, const std::string& from, const std::s
             mk.keys[to] = key;
         }
         f.put(Font::kMetricsKeys, Record{mk});
+        // Skipped findings follow the glyph ("check|glyph|detail").
+        model::CheckSkips sk;
+        for (const auto& key : f.skips().keys) {
+            const auto a = key.find('|'), b = a == std::string::npos ? a : key.find('|', a + 1);
+            if (b != std::string::npos && key.substr(a + 1, b - a - 1) == from)
+                sk.keys.insert(key.substr(0, a + 1) + to + key.substr(b));
+            else
+                sk.keys.insert(key);
+        }
+        f.put(Font::kSkips, Record{sk});
     });
 }
 
@@ -758,6 +770,13 @@ bool kern_pair(FontJournal& j, Font& f, const std::string& left, const std::stri
     }, "kern:" + key.first + "|" + key.second);
 }
 
+bool kern_to_gap(FontJournal& j, Font& f, const std::string& left, const std::string& right, int* proposed) {
+    const auto r = model::read_pair(f, left, right);
+    if (!r.ok || !r.proposed) return false;
+    if (proposed) *proposed = *r.proposed;
+    return kern_pair(j, f, left, right, *r.proposed);
+}
+
 void kern_drag_begin(FontJournal& j, Font& f, const std::string& left, const std::string& right) {
     drag().names.clear();
     drag().at_press.clear();
@@ -794,6 +813,48 @@ bool apply_metrics_keys(FontJournal& j, Font& f, const std::vector<std::string>&
         for (const auto& name : ids)   // referenced glyphs first: a chain sees the new values
             if (auto g = model::apply_key(f, name)) f.put(name, Record{*g});
     });
+}
+
+// ── checks (M7) ────────────────────────────────────────────────────────────
+
+bool fix_findings(FontJournal& j, Font& f, const std::vector<model::Finding>& findings, std::size_t* fixed) {
+    std::map<std::string, std::vector<model::Finding>> geo;   // glyph -> geometric fixes
+    std::set<std::string> keyed;                               // glyphs whose key to apply
+    std::size_t n = 0;
+    model::CheckId first = model::CheckId::Direction;
+    for (const auto& x : findings) {
+        if (!x.fixable || !f.glyph(x.glyph)) continue;
+        if (n == 0) first = x.check;
+        if (x.check == model::CheckId::Keys) keyed.insert(x.glyph);
+        else geo[x.glyph].push_back(x);
+        ++n;
+    }
+    if (fixed) *fixed = n;
+    if (n == 0) return false;
+    std::vector<std::string> ids;
+    for (const auto& [g, _] : geo) ids.push_back(g);
+    for (const auto& g : keyed) if (!geo.count(g)) ids.push_back(g);
+    const std::string label = n == 1 ? std::string("Fix: ") + model::check_info(first).name
+                                     : "Fix " + std::to_string(n) + " findings";
+    return j.run(label, ids, [&] {
+        for (const auto& [name, xs] : geo)
+            if (auto g = model::fix_glyph(f, name, xs)) f.put(name, Record{*g});
+        for (const auto& name : model::key_order(f))   // referenced glyphs first
+            if (keyed.count(name))
+                if (auto g = model::apply_key(f, name)) f.put(name, Record{*g});
+    });
+}
+
+bool skip_findings(FontJournal& j, Font& f, const std::vector<model::Finding>& findings, bool skip) {
+    model::CheckSkips sk = f.skips();
+    std::size_t n = 0;
+    for (const auto& x : findings) {
+        const auto k = x.key();
+        if (skip ? sk.keys.insert(k).second : sk.keys.erase(k) > 0) ++n;
+    }
+    if (n == 0) return false;
+    const std::string what = n == 1 ? "1 finding" : std::to_string(n) + " findings";
+    return j.run((skip ? "Skip " : "Unskip ") + what, {Font::kSkips}, [&] { f.put(Font::kSkips, Record{sk}); });
 }
 
 // ── the verb table ─────────────────────────────────────────────────────────
@@ -915,8 +976,16 @@ const std::vector<Verb>& verbs() {
              kern_pair(j, f, "n", "o", -3);
              kern_pair(j, f, "n", "o", -8);
              drag_end(j, f); }},
+        {"kern_to_gap",  [](FontJournal& j, Font& f) { kern_to_gap(j, f, "n", "o"); }},
         {"kern_pair_exception", [](FontJournal& j, Font& f) { kern_pair(j, f, "O", "H", -5, true); }},
         {"set_metrics_key", [](FontJournal& j, Font& f) { set_metrics_key(j, f, "n", {"60", "60", ""}); }},
+        {"fix_findings", [](FontJournal& j, Font& f) {
+             std::vector<model::Finding> all;
+             for (const auto& n : f.glyph_order())
+                 for (auto& x : model::check_glyph(f, n)) all.push_back(x);
+             fix_findings(j, f, all); }},
+        {"skip_findings", [](FontJournal& j, Font& f) {
+             skip_findings(j, f, model::check_glyph(f, "O"), true); }},
         {"apply_metrics_keys", [](FontJournal& j, Font& f) {
              // The fixture carries keys (o = |n ...) -- see make_fixture.
              apply_metrics_keys(j, f, {}); }},

@@ -206,6 +206,7 @@ void Shell::repaint_changed() {  // helper
     m_dirty.clear();
     m_navigator.update(dirty);
     m_overview.update(dirty);
+    m_report.update(dirty);
     m_inspector.refresh();
     // Left in on purpose: a step that takes long enough to feel is worth a line.
     const auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
@@ -223,6 +224,7 @@ void Shell::repaint() {  // helper
     m_dirty.clear();   // a full repaint covers everything
     m_navigator.refresh();
     m_overview.refresh();
+    m_report.refresh();
     m_inspector.refresh();
 }
 

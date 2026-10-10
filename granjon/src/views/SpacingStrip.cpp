@@ -2,6 +2,7 @@
 
 #include "command/Verbs.hpp"
 #include "model/Bounds.hpp"
+#include "model/Profiles.hpp"
 #include "model/Spacing.hpp"
 #include "views/GlyphPaint.hpp"
 
@@ -26,6 +27,7 @@ constexpr double ACC[3] = {0.20, 0.50, 1.00};   // the pick (Curvz's selected bl
 constexpr double NEG[3] = {0.25, 0.55, 1.00};   // a negative kern
 constexpr double POS[3] = {0.95, 0.55, 0.15};   // a positive kern
 constexpr double OFF[3] = {0.92, 0.28, 0.22};   // a metrics key out of step
+constexpr double FLAG[3] = {0.95, 0.60, 0.10};  // the pair readouts disagree
 
 std::string num(double v) {
     const double r = std::round(v);
@@ -382,6 +384,51 @@ void SpacingStrip::on_draw(const Cairo::RefPtr<Cairo::Context>& cr, int w, int h
             text_at(c.kern > 0 ? "+" + std::to_string(c.kern) : std::to_string(c.kern), join, top - kKernRow, 0);
         }
     }
+    draw_pair_readout(cr);
+}
+
+// ── the picked pair's readouts (M8) ───────────────────────────────────────
+// The optical area shaded between the clamped edges in the band; the contact
+// gap as a line between the touching points, labelled. Amber when the two
+// readouts disagree (an open shape: contact alone would misjudge it).
+void SpacingStrip::draw_pair_readout(const Cairo::RefPtr<Cairo::Context>& cr) {
+    if (m_pair <= 0 || m_pair >= static_cast<int>(m_cells.size())) return;
+    const Cell& a = m_cells[m_pair - 1];
+    const auto r = model::read_pair(m_ctx.doc.font, a.name, m_cells[m_pair].name);
+    if (!r.ok) return;
+    const double s = scale();
+    auto X = [&](double fx) { return a.x + fx * s; };
+    auto Y = [&](double fy) { return a.base - fy * s; };
+    const double* col = r.disagree ? FLAG : ACC;
+    if (r.ys.size() >= 2) {
+        cr->begin_new_path();
+        for (std::size_t i = 0; i < r.ys.size(); ++i) {
+            if (i == 0) cr->move_to(X(r.lx[i]), Y(r.ys[i]));
+            else        cr->line_to(X(r.lx[i]), Y(r.ys[i]));
+        }
+        for (std::size_t i = r.ys.size(); i-- > 0;) cr->line_to(X(r.rx[i]), Y(r.ys[i]));
+        cr->close_path();
+        cr->set_source_rgba(col[0], col[1], col[2], 0.13);
+        cr->fill();
+    }
+    cr->begin_new_path();
+    cr->set_source_rgba(col[0], col[1], col[2], 0.95);
+    cr->set_line_width(1.5);
+    cr->move_to(X(r.contact_lx), Y(r.contact_ly));
+    cr->line_to(X(r.contact_rx), Y(r.contact_ry));
+    cr->stroke();
+    for (auto [px, py] : {std::pair{r.contact_lx, r.contact_ly}, {r.contact_rx, r.contact_ry}}) {
+        cr->arc(X(px), Y(py), 2.5, 0, 2 * M_PI);
+        cr->fill();
+    }
+    auto layout = m_area.create_pango_layout(std::to_string(static_cast<long>(std::lround(r.contact))));
+    Pango::FontDescription small = m_area.get_pango_context()->get_font_description();
+    small.set_size(static_cast<int>(small.get_size() * 0.8));
+    layout->set_font_description(small);
+    int lw = 0, lh = 0;
+    layout->get_pixel_size(lw, lh);
+    cr->move_to((X(r.contact_lx) + X(r.contact_rx)) / 2 - lw / 2.0, std::min(Y(r.contact_ly), Y(r.contact_ry)) - lh - 2);
+    layout->show_in_cairo_context(cr);
 }
 
 // ── gestures ──────────────────────────────────────────────────────────────
@@ -565,8 +612,12 @@ void SpacingStrip::say_pair() {
     const auto hit = model::kern_lookup(k, l, r);
     const auto key = model::kern_target(k, l, r, false);
     std::string s = "Pair " + l + " " + r + "   kern " + std::to_string(hit.value) + "   (" +
-                    model::kern_kind(key) + (hit.found ? "" : ", none yet") +
-                    ")   Left / Right: kern, Shift x10, Alt: an exception";
+                    model::kern_kind(key) + (hit.found ? "" : ", none yet") + ")";
+    if (const auto rd = model::read_pair(m_ctx.doc.font, l, r); rd.ok) {
+        s += "   contact " + std::to_string(std::lround(rd.contact)) + "   optical " + std::to_string(std::lround(rd.optical));
+        if (rd.proposed && *rd.proposed != hit.value) s += "   to gap: " + std::to_string(*rd.proposed);
+        if (rd.disagree) s += "   -- the readouts disagree";
+    }
     m_ctx.say(s, false);
 }
 

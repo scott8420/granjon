@@ -1,5 +1,6 @@
 #include "views/Inspector.hpp"
 
+#include "model/Profiles.hpp"
 #include "model/Spacing.hpp"
 
 #include "command/Verbs.hpp"
@@ -128,6 +129,11 @@ Inspector::Inspector(ViewContext& ctx)
       m_kern_value("inspector.kern_value"),
       m_kern_exception("inspector.kern_exception"),
       m_kern_remove("inspector.kern_remove"),
+      m_kern_contact("inspector.kern_contact"),
+      m_kern_optical("inspector.kern_optical"),
+      m_kern_control("inspector.kern_control"),
+      m_kern_flag("inspector.kern_flag"),
+      m_kern_to_gap("inspector.kern_to_gap"),
       m_unicodes("inspector.unicodes"),
       m_section("inspector.section"),
       m_uname("inspector.uname"),
@@ -770,6 +776,33 @@ void Inspector::build_kern_page() {
     row->append(m_kern_exception);
     row->append(m_kern_remove);
     pair.wide(*row);
+    // ── the readouts (M8) ────────────────────────────────────────────────────
+    Card gap(*page, "GAP");
+    for (auto* l : {&m_kern_contact, &m_kern_optical, &m_kern_control, &m_kern_flag}) {
+        l->set_xalign(0.0f);
+        l->set_wrap(true);
+    }
+    m_kern_contact.set_tooltip_text("The closest approach between the two outlines (the line in the strip)");
+    m_kern_optical.set_tooltip_text("The mean whitespace between the two profiles inside the band, deep overhangs "
+                                    "clamped (the shaded area in the strip)");
+    m_kern_control.set_tooltip_text("The optical gap of the band's control pair: n n for the x-height band, H H for the "
+                                    "cap band");
+    gap.field("Contact", m_kern_contact);
+    gap.field("Optical", m_kern_optical);
+    gap.field("Control", m_kern_control);
+    m_kern_flag.add_css_class("hint");
+    gap.wide(m_kern_flag);
+    m_kern_to_gap.set_halign(Gtk::Align::START);
+    m_kern_to_gap.set_tooltip_text("Kern the pair so its optical gap matches the control pair's -- one undo step");
+    m_kern_to_gap.signal_clicked().connect([this] {
+        if (!m_ctx.kern_pick) return;
+        int v = 0;
+        if (command::kern_to_gap(m_ctx.doc.journal, m_ctx.doc.font, m_ctx.kern_pick->left, m_ctx.kern_pick->right, &v) &&
+            m_ctx.say)
+            m_ctx.say("Kern to gap: " + std::to_string(v) + ".", false);
+    });
+    gap.wide(m_kern_to_gap);
+
     auto hint = Gtk::make_managed<Gtk::Label>("In the strip: Left / Right kern, Shift x10, Alt writes an exception. "
                                               "Escape drops the pair.");
     hint->set_xalign(0.0f);
@@ -804,6 +837,30 @@ void Inspector::refresh_kern() {
     if (!m_kern_value.has_focus() || std::lround(m_kern_value.get_value()) != hit.value) m_kern_value.set_value(hit.value);
     m_kern_exception.set_sensitive(!(hit.found && hit.key == model::KernKey{l, r}) && (!g1.empty() || !g2.empty()));
     m_kern_remove.set_sensitive(hit.found);
+    {
+        const auto rd = model::read_pair(m_ctx.doc.font, l, r);
+        auto n = [](double v) { return std::to_string(std::lround(v)); };
+        if (!rd.ok) {
+            m_kern_contact.set_text("\u2014");
+            m_kern_optical.set_text("\u2014");
+            m_kern_control.set_text("\u2014");
+            m_kern_flag.set_text("One of the two has no outline.");
+            m_kern_to_gap.set_label("Kern to gap");
+            m_kern_to_gap.set_sensitive(false);
+        } else {
+            m_kern_contact.set_text(rd.contact < 0 ? n(rd.contact) + "  (they collide)" : n(rd.contact));
+            m_kern_optical.set_text(n(rd.optical) + (rd.band == 'x' ? "  (x-height band)" : "  (cap band)"));
+            m_kern_control.set_text(rd.control.empty() ? std::string("none -- the font has no ") + (rd.band == 'x' ? "n" : "H")
+                                                       : rd.control + ":  " + n(rd.control_optical));
+            m_kern_flag.set_text(rd.disagree ? "The readouts disagree: an open shape, where the contact gap alone "
+                                               "would kern too tight (To, LT). Trust the optical gap, then your eye."
+                                             : "");
+            m_kern_flag.set_visible(rd.disagree);
+            const bool can = rd.proposed && *rd.proposed != hit.value;
+            m_kern_to_gap.set_label(rd.proposed ? "Kern to gap: " + std::to_string(*rd.proposed) : std::string("Kern to gap"));
+            m_kern_to_gap.set_sensitive(can);
+        }
+    }
     m_kern_preview.queue_draw();
     m_painting = was;
 }

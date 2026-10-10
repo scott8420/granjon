@@ -12,6 +12,7 @@
 // gap the gate cannot see -- add it here in the same change that adds the
 // button. (CANON: "Undo is foundation, not a feature".)
 #include "geom/Edit.hpp"
+#include "model/Checks.hpp"
 #include "model/Coverage.hpp"
 #include "model/Font.hpp"
 
@@ -143,6 +144,10 @@ bool set_kern(FontJournal& j, Font& f, const std::string& left, const std::strin
 // entry. Merges per entry (arrow presses, a drag). See model::kern_target.
 bool kern_pair(FontJournal& j, Font& f, const std::string& left, const std::string& right, int value,
                bool exception = false);
+// Kern-to-gap (M8): kern the pair so its optical gap matches the band's
+// control pair (n n / H H). ONE step; false when it already does or there is
+// no reading. `proposed` returns the value (written or not).
+bool kern_to_gap(FontJournal& j, Font& f, const std::string& left, const std::string& right, int* proposed = nullptr);
 // A kern drag: kern_drag_begin, kern_pair per move, drag_end (or
 // drag_cancel) = ONE step.
 void kern_drag_begin(FontJournal& j, Font& f, const std::string& left, const std::string& right);
@@ -152,6 +157,13 @@ bool set_metrics_key(FontJournal& j, Font& f, const std::string& glyph, const mo
 // glyphs first so chains resolve. ONE step; false when nothing was off.
 bool apply_metrics_keys(FontJournal& j, Font& f, const std::vector<std::string>& glyphs,
                         std::size_t* changed = nullptr);
+
+// ── checks (M7) ────────────────────────────────────────────────────────────
+// Fix every fixable finding given (any glyphs, any checks) -- ONE step.
+// `fixed` counts the findings acted on.
+bool fix_findings(FontJournal& j, Font& f, const std::vector<model::Finding>& findings, std::size_t* fixed = nullptr);
+// Skip (or unskip) findings: their keys go into the font's CheckSkips. ONE step.
+bool skip_findings(FontJournal& j, Font& f, const std::vector<model::Finding>& findings, bool skip = true);
 
 // ── the verb table ─────────────────────────────────────────────────────────
 // Each entry runs its verb once on the selftest fixture (make_fixture).

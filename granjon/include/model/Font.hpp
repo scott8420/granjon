@@ -27,7 +27,7 @@
 
 namespace granjon::model {
 
-using Record = std::variant<FontInfo, Metrics, Kerning, MetricsKeys, Features, Glyph>;
+using Record = std::variant<FontInfo, Metrics, Kerning, MetricsKeys, Features, CheckSkips, Glyph>;
 
 class Font {
 public:
@@ -39,6 +39,7 @@ public:
     static constexpr const char* kKerning     = "@kerning";
     static constexpr const char* kMetricsKeys = "@metricskeys";
     static constexpr const char* kFeatures    = "@features";
+    static constexpr const char* kSkips       = "@skips";
 
     // ── the journal's contract ──────────────────────────────────────────────
     std::optional<Record> get(const Id& id) const;
@@ -50,6 +51,7 @@ public:
     const Kerning&     kerning()      const { return m_kerning; }
     const MetricsKeys& metrics_keys() const { return m_keys; }
     const Features&    features()     const { return m_features; }
+    const CheckSkips&  skips()        const { return m_skips; }
     const Glyph*       glyph(const std::string& name) const;
     std::size_t        glyph_count() const { return m_glyphs.size(); }
     std::vector<std::string> glyph_order() const;          // by Glyph::order
@@ -80,6 +82,7 @@ private:
     Kerning                      m_kerning;
     MetricsKeys                  m_keys;
     Features                     m_features;
+    CheckSkips                   m_skips;
     std::map<std::string, Glyph> m_glyphs;
     int                          m_strays  = 0;
     int                          m_loading = 0;

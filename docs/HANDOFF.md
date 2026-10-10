@@ -1,19 +1,21 @@
 # Granjon handoff — s04 -> s05
 
-# s05_checks_report
+# s05_export_otf
 
 ## Files to upload
-- `s05_checks_report.zip` (made by `scripts/granjon_backup.sh -o s05_checks_report`)
+- `s05_export_otf.zip` (made by `scripts/granjon_backup.sh -o s05_export_otf`)
 - `RULES.md`, `HANDOFF.md`, `ARCHITECTURE.md`, `ARC.md`, `CANON.md`
 - No Curvz source needed (its geometry is in `geom/`; `BooleanOpsClipper` returns at M10).
-- Test fonts live in the project's `fonts/` folder (outside the repo): `My-Termes-Regular.granjon` (TeX Gyre Termes, 1090 glyphs). Upload it if the session should look at checks or spacing on a real font.
+- Test fonts live in the project's `fonts/` folder (outside the repo): `My-Termes-Regular.granjon` (TeX Gyre Termes, 1090 glyphs). Upload it: export wants a real font to compile, and the M7 / M8 readouts on Termes are still unseen.
 
 ---
 
 ## Status — s04 (written as we go)
 - **M5e node navigation: crc.**
-- **M6 spacing: built, shipped (`s04_m6_spacing.zip`), awaiting Scott's crc.** If the run report brings fixes, they come first in s05.
-- Selftest 619 / 0. Built against Ubuntu 24.04, g++ 13.3, gtkmm 4.10 / GTK 4.14, RelWithDebInfo; the same 2 GCC 13 false-positive warnings from system headers as s03. **No new package** (HarfBuzz waits for M9).
+- **M6 spacing: crc.**
+- **M7 checks + report: crc.**
+- **M8 profiles: built, shipped (`s04_m8_profiles.zip`), awaiting Scott's crc.** If the run report brings fixes, they come first in s05.
+- Selftest 658 / 0. Built against Ubuntu 24.04, g++ 13.3, gtkmm 4.10 / GTK 4.14, RelWithDebInfo; the same 2 GCC 13 false-positive warnings from system headers as s03. **No new package** (HarfBuzz waits for M9).
 - New this session: headless screenshots under Xvfb (`xvfb-run` + `xdotool` + `import`, with `GRANJON_SAMPLE=1`) as a smoke check of drawing and gestures. It catches gross faults; it is not the visual channel -- that stays Scott's.
 
 What to look at in M6 (Ctrl+3):
@@ -24,12 +26,26 @@ What to look at in M6 (Ctrl+3):
 - **Metrics keys:** inspector METRICS card, "Key": `L=R=60`, `=n`, `L=n R=|o`, `W=500`, `=n+10`, `n.L`. The state line says in step / off by how much. **Apply key** (one step); ☰ **Apply metrics keys in every glyph** (one step; chains resolve; circular keys named). In the strip a glyph off its key gets a red triangle and red numbers; keyed and in step, a faint dot.
 - The sample font's `n` carries a key (60 / 60) and is drawn 70 / 70, so it shows red until applied.
 
+What to look at in M7 (Ctrl+5):
+- **The report:** one card per check with its why-note, a count, **Fix all N** and **Skip all**; rows with Fix and Skip. Top bar: summary, **Show skipped** (greyed rows with Unskip), **Re-check**, **Fix all** (every check). Each click is one undo step.
+- **Checks:** contour direction; open contours; **near the metric lines** (a flat top / bottom 1-3 units off a line -> snap); **overshoot** (a round top / bottom with none, or not the font's overshoot -> move it there); **origin and grid** (off-grid coordinates -> round; drawn with no width; drawing outside its width); **metrics keys** off.
+- **Click a finding:** the glyph opens in the editor with the spot picked (the node, or the whole contour).
+- **Skips are saved with the font** (lib `granjon.checkSkips`) and undoable.
+- On Termes: how many findings, how noisy the overshoot check is (it flags every round off the font's overshoot -- O vs o differences included), and whether "report: full check N ms" shows in the log.
+
+What to look at in M8 (Ctrl+3, pick a pair):
+- **In the strip:** the optical area shaded between the two glyphs inside the band, and the contact line (closest approach) with its value. Amber instead of blue when the two readouts disagree.
+- **KERN page, GAP card:** Contact, Optical (x-height or cap band), Control (n n or H H), a note when they disagree, and **Kern to gap: N** -- one step, writes the entry in effect or the groups' pair.
+- On Termes: try To, LT, AV, ro, nn -- whether the proposed kerns are in the right direction and size, and whether the disagreement note lands on the open shapes.
+
 ## Decisions made in s04
 - M5e: handles-included walk on ` / Shift+` (Alt+Tab is the desktop's); Make first on F; the pick follows the node to index 0; Tab from a handle goes to the node on that side.
 - M6 kern target: an edit writes the entry **in effect** (so an existing exception keeps answering), else the groups' pair (a side without a group kerns as itself); Alt writes glyph / glyph. Refines the s03 decision ("kerning a pair writes group kerning") for pairs that already have an exception.
 - M6 sidebearing drags live in the band under the line, not on the glyph edges: the edge between two glyphs is also the pair's join, so the two gestures would overlap.
 - Metrics keys are one rule line per glyph (stored per side in `granjon.metricsKeys`, as before). References resolve against the font as it is now; font-wide apply goes referenced-first. Keys only change things when applied -- no live propagation on every edit (that would turn one edit into many glyphs' steps behind Scott's back). Surface if Scott wants auto-propagation.
 - The pair belongs to the Spacing view: leaving it drops the pair.
+- M8: contact is the 2D closest approach (sees T's bar over the o); optical is the band's mean gap with a 20 % clamp; the target comes from the font's own control pair (n n / H H), not a setting -- kern-to-gap matches the spacing the designer already chose. Profiles are computed on demand (sub-millisecond for a pair); a cache comes with font-wide readouts.
+- M7: skips are font data (a `@skips` record, undoable, saved), not view state -- "every user choice is an undoable event". Zones only look at flat nodes, overshoot only at round extremes, so no node is reported twice. Overshoot is strict (any round off the font's overshoot); if Termes shows that as noise, a per-glyph tolerance or "round tops may vary by N" preference is the next step. Origin's no-width and outside-the-box findings are report-only (no safe mechanical fix).
 
 ## Decisions made in s03
 - Context glyphs fixed (H / n), a preference since M4b.
@@ -43,16 +59,19 @@ What to look at in M6 (Ctrl+3):
 - A drawn glyph with no Granjon status loads Drafted; Granjon writes Empty explicitly on a drawn glyph so it round-trips.
 - Delete takes anchors and components only until the pen tool (nodes).
 
-## s05 goal — Milestone M7: Checks
-(ARCHITECTURE §6 and the milestone list.) Report framework plus the first checks: origin, zones, overshoot, direction. Each finding says why it matters and offers fix / skip / fix-all through the journal (one step each). The Report view (Ctrl+5, a stub today) lists them with click-to-navigate (select the glyph, open the editor, pick the spot). Direction can reuse M5d's `geom::wrong_way` / `correct_directions`; metrics keys off (M6 `check_key`) is a natural fifth check. Settle the forks inside the milestone; surface what changes the workflow.
-**Stop at M7** for a compile / run report.
+## s05 goal — Milestone M9: Export OTF
+(ARCHITECTURE milestone list.) An sfnt writer + CFF: head, hhea, maxp, OS/2, name, cmap, post, CFF (charstrings from the cubic outlines, components decomposed), hmtx; kerning as a GPOS pair table (class kerning -> class pairs, exceptions as glyph pairs) -- the first feature output. Validate by reloading with FreeType (and shaping a proof with HarfBuzz -- the moment HarfBuzz earns its place). **Packages** (Fedora: `harfbuzz-devel freetype-devel`; brotli waits for WOFF2): announce, check with Scott before relying on them. A Preview view (Ctrl+4, still a stub) showing the compiled font is the natural visual check. Settle forks inside; surface what changes the workflow.
+**Stop at M9** for a compile / run report.
 
 ## Still open
-- Packages, Fedora (confirm): `harfbuzz-devel` now at M9 (export), with `freetype-devel brotli-devel`; Clipper2 via FetchContent.
+- Packages, Fedora (confirm before M9 relies on them): `harfbuzz-devel freetype-devel` for M9, `brotli-devel` with WOFF2; Clipper2 via FetchContent (M10).
 - granjon-cli scope (ARC backlog).
 - Editor follow-ons (pen, insert / delete node, node type change, Shift-constrained drags), composite follow-ons (Greek tonos, stacking, ogonek anchor, rebuild), overview follow-ons -- all in the ARC backlog.
-- Spacing follow-ons: kerning groups editor (create / assign public.kern1 / kern2 from the UI), contact gap / optical area readouts (M8), a strip text history / presets.
+- Profiles follow-ons: a profile cache + font-wide kern-to-gap over a pair list, per-class targets, collision check on proof strings.
+- Spacing follow-ons: kerning groups editor (create / assign public.kern1 / kern2 from the UI), a strip text history / presets.
+- Checks follow-ons (ARCHITECTURE §6): missing extreme points, overlaps, sidebearing consistency, stem drift, kerning class audit and outliers, collisions.
 - The inspector panel is narrower than some of its rows in a 1280 px window (the OUTLINE card's "Reverse picked", the KERN hint): clipped, not wrapped. Seen in the headless shots; check on Scott's screen.
+- selftest.cpp's main() wants splitting per milestone (GCC 16's var-tracking note is silenced by a per-file flag for now).
 - `GRANJON_SAMPLE` env still there.
 
 ---

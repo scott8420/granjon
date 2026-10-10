@@ -57,6 +57,7 @@ private:
     void select_cell(int cell);
     void kern_by(int delta, bool exception);
     void say_pair();
+    void draw_pair_readout(const Cairo::RefPtr<Cairo::Context>& cr);   // M8
     void set_size(int px);
     double scale() const;
 

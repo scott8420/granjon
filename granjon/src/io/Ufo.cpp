@@ -165,6 +165,11 @@ bool save_ufo(const Font& f, const std::string& path_str, std::string* err) {
         }
         lib.set("granjon.metricsKeys", std::move(mk));
     }
+    if (!f.skips().keys.empty()) {
+        PValue sk = PValue::array();
+        for (const auto& k : f.skips().keys) sk.arr.push_back(PValue::str(k));
+        lib.set("granjon.checkSkips", std::move(sk));
+    }
     if (!write_file(tmp / "lib.plist", write_plist(lib), err)) return false;
 
     // layers
@@ -270,6 +275,7 @@ bool load_ufo(const std::string& path_str, Font& into, std::string* err) {
     if (auto fea = read_file(path / "features.fea")) features.text = *fea;
 
     model::MetricsKeys keys;
+    model::CheckSkips skips;
     std::vector<std::string> order;
     if (fs::exists(path / "lib.plist")) {
         auto lib = read_plist_file((path / "lib.plist").string(), &e);
@@ -281,6 +287,8 @@ bool load_ufo(const std::string& path_str, Font& into, std::string* err) {
             for (const auto& [glyph, v] : mk->dict)
                 keys.keys[glyph] = {v.get_string("left").value_or(""), v.get_string("right").value_or(""),
                                     v.get_string("width").value_or("")};
+        if (const PValue* sk = lib->get("granjon.checkSkips"))
+            for (const auto& v : sk->arr) skips.keys.insert(v.s);
     }
 
     // The default layer's folder: layercontents (UFO 3), else "glyphs".
@@ -326,6 +334,7 @@ bool load_ufo(const std::string& path_str, Font& into, std::string* err) {
     into.put(Font::kMetrics, Record{metrics});
     into.put(Font::kKerning, Record{kerning});
     into.put(Font::kMetricsKeys, Record{keys});
+    into.put(Font::kSkips, Record{skips});
     into.put(Font::kFeatures, Record{features});
     for (auto& [name, g] : glyphs) into.put(name, Record{g});
     return true;

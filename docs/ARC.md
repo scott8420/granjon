@@ -187,3 +187,28 @@ Newest session at the bottom.
   - Fixed on the way: a stored "=60" displayed as "L=R==60" (expressions are now normalised on store and show).
   - Headless (Xvfb) screenshots on the sample font: strip, pair pick + arrows (-15 -> -28, Alt+Right -27, every occurrence), band RSB drag + undo, KERN page, Apply key, a typed key going red. Visual channel is still Scott's.
   - Selftest 619 / 0. No new package (HarfBuzz waits for M9).
+- M6: crc.
+- M7 checks + report.
+  - `model/Checks` (GTK-free): six checks on one glyph -- Direction (M5d's rule), Open contours, Zones (a FLAT node 0 < d <= 3 units off baseline / x-height / cap / ascender / descender, scaled by UPM/1000 -> snap), Overshoot (a ROUND extreme -- handles level, both neighbours on one side -- near a line on its side: no overshoot, or not the font's overshoot -> move the node to line +/- overshoot), Origin and grid (off-grid coordinates -> round; drawn with no width and not a mark; drawing outside its own width -- those two report-only), Keys (M6's check_key -> apply). Flat vs round partitions Zones and Overshoot so a node is never in both.
+  - Finding: check, glyph, message, spot (contour / node), fixable, target, key ("check|glyph|detail"). `fix_glyph` applies one glyph's fixes in a safe order: node moves, rounding, closing, reversing (indices stay valid until the reversal).
+  - Skips are FONT data: a new record `@skips` (`CheckSkips`), undoable, saved in lib.plist as `granjon.checkSkips`; rename carries them.
+  - Verbs (in the table): `fix_findings` (any number, any glyphs -- one step; keys applied after geometry, in key order), `skip_findings` (skip / unskip, one step).
+  - Report view (`views/ReportList`, Ctrl+5): summary, Show skipped, Re-check, Fix all; one card per check with its why-note, Fix all N / Skip all, rows (glyph, message, Fix, Skip / Unskip; up to 200 a card, Fix all covers the rest; cards over 50 start folded). Click a row: select, pick the spot (the node, or the contour's nodes), editor forward.
+  - Speed: hidden -> a step only marks the report stale; shown -> re-check only the touched glyphs (plus keyed glyphs that refer to them); metrics / info / keys -> everything. A full check over 50 ms logs "report: full check N ms".
+  - Fixed on the way (M5e): the start node's amber ring drew a stray line from the canvas note -- an arc joins the current point; `begin_new_path` first.
+  - Headless shots: report on the sample (O's counter, n's key), Fix n, Skip O, Show skipped, click -> editor with the counter picked.
+  - Selftest 646 / 0. No new package.
+- M7: crc.
+- M8 profiles.
+  - `model/Profiles` (GTK-free): `edge_profile` -- leftmost / rightmost ink per row on the FONT's grid (descender..ascender/cap plus two overshoots, UPM/100 steps, rows mid-step), components resolved, so every glyph's rows line up. `read_pair` / `read_pair_at`:
+    - contact gap: the 2D closest approach between the left glyph's right edge and the right glyph's left edge (the tangent -- it sees T's bar reach over the o); a row where they cross reads as a negative gap (collision). Ties (straight stems) take the middle row so the line sits mid-height.
+    - optical gap: the mean gap between the profiles inside the pair's band -- x-height band when the shorter glyph's top is near the x-height, else the cap band -- with each side's edge clamped to at most 20 % of the band height in from its extreme in the band (deep overhangs, open counters).
+    - control: the band's control pair (n n / H H) read the same way; proposed kern = current + (control optical - optical) -- kern-to-gap.
+    - disagree: contact under half the optical gap (To, LT).
+  - Verb `kern_to_gap` (in the table; uses kern_pair, so it writes the entry in effect / the groups' pair).
+  - Strip: for the picked pair, the optical area shaded between the clamped edges, the contact line with its two points and value; amber instead of blue when the readouts disagree. Status line adds contact / optical / to gap.
+  - Inspector: a GAP card on the KERN page -- Contact (collide noted), Optical (band), Control, the disagreement note, "Kern to gap: N" (one step; greyed when already there).
+  - Not cached: a reading is two profiles plus the control's (a hundred rows each), well under a millisecond. A cache keyed by glyph and cleared by the dirty set comes when readouts go font-wide (auto-kern a list).
+  - Headless shots: n o reads 120 / 120 vs n n 140, Kern to gap writes +20, every n o follows, the button greys.
+  - Selftest 658 / 0. No new package.
+  - Scott's GCC 16 build: a note, "variable tracking size limit exceeded with -fvar-tracking-assignments, retrying without", on selftest.cpp's main() (~1600 lines, -g). Harmless; silenced for that file with -fno-var-tracking-assignments (GCC only). Backlog: split selftest main() into one function per milestone.

@@ -3,6 +3,7 @@
 // model::FontRecords -- the font-level records that are not glyphs. Each is one
 // undo record (one id in the store), replaced whole on change.
 #include <map>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -50,6 +51,13 @@ struct MetricsKeys {
     struct Key { std::string left, right, width; bool operator==(const Key&) const = default; };
     std::map<std::string, Key> keys;   // glyph name -> rule
     bool operator==(const MetricsKeys&) const = default;
+};
+
+// Check findings Scott chose to skip (M7): "check|glyph|detail" keys. Font
+// data (saved in the lib, undoable), not view state.
+struct CheckSkips {
+    std::set<std::string> keys;
+    bool operator==(const CheckSkips&) const = default;
 };
 
 // OpenType feature source, verbatim. v2 compiles it.

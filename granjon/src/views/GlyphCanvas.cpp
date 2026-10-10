@@ -953,6 +953,7 @@ void GlyphCanvas::draw_overlay(const Cairo::RefPtr<Cairo::Context>& cr, const mo
         const double rr = (picked ? nr_sel : nr) * 1.3;
         cr->set_source_rgba(ST[0], ST[1], ST[2], 0.35);
         cr->set_line_width(1.0);
+        cr->begin_new_path();   // an arc joins any current point (the canvas note leaves one)
         cr->arc(p.x, p.y, rr * 2.4, 0, 2 * M_PI);
         cr->stroke();
         cr->set_source_rgba(NB[0], NB[1], NB[2], NB[3]);

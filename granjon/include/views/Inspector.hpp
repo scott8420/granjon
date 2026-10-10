@@ -78,6 +78,12 @@ private:
     widgets::SpinButton  m_kern_value;
     widgets::Button      m_kern_exception;
     widgets::Button      m_kern_remove;
+    // the pair's readouts (M8)
+    widgets::Label       m_kern_contact;
+    widgets::Label       m_kern_optical;
+    widgets::Label       m_kern_control;
+    widgets::Label       m_kern_flag;
+    widgets::Button      m_kern_to_gap;
     widgets::Entry       m_unicodes;
     widgets::Label       m_section;
     widgets::Label       m_uname;      // UCD name of the first code point

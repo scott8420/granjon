@@ -10,6 +10,7 @@ std::optional<Record> Font::get(const Id& id) const {
     if (id == kKerning)     return Record{m_kerning};
     if (id == kMetricsKeys) return Record{m_keys};
     if (id == kFeatures)    return Record{m_features};
+    if (id == kSkips)       return Record{m_skips};
     const auto it = m_glyphs.find(id);
     if (it == m_glyphs.end()) return std::nullopt;
     return Record{it->second};
@@ -25,6 +26,7 @@ void Font::put(const Id& id, const std::optional<Record>& v) {
     else if (id == kKerning)     m_kerning  = v ? std::get<Kerning>(*v)     : Kerning{};
     else if (id == kMetricsKeys) m_keys     = v ? std::get<MetricsKeys>(*v) : MetricsKeys{};
     else if (id == kFeatures)    m_features = v ? std::get<Features>(*v)    : Features{};
+    else if (id == kSkips)       m_skips    = v ? std::get<CheckSkips>(*v)  : CheckSkips{};
     else if (v)                  m_glyphs[id] = std::get<Glyph>(*v);
     else                         m_glyphs.erase(id);
     m_cmap_ok = false;
@@ -70,7 +72,7 @@ const Glyph* Font::glyph_for(char32_t cp) const {
 
 std::map<Font::Id, Record> Font::snapshot() const {
     std::map<Id, Record> s;
-    for (const char* id : {kInfo, kMetrics, kKerning, kMetricsKeys, kFeatures}) s.emplace(id, *get(id));
+    for (const char* id : {kInfo, kMetrics, kKerning, kMetricsKeys, kFeatures, kSkips}) s.emplace(id, *get(id));
     for (const auto& [n, g] : m_glyphs) s.emplace(n, Record{g});
     return s;
 }
@@ -84,6 +86,7 @@ void make_new_font(Font& f) {
     f.put(Font::kKerning, Record{Kerning{}});
     f.put(Font::kMetricsKeys, Record{MetricsKeys{}});
     f.put(Font::kFeatures, Record{Features{}});
+    f.put(Font::kSkips, Record{CheckSkips{}});
 
     // .notdef: the traditional hollow box, 500 wide. Outer counter-clockwise,
     // inner clockwise (y-up) -- the CFF direction.

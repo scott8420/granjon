@@ -71,6 +71,8 @@ add_library(granjon_core STATIC
     src/model/Coverage.cpp
     src/model/Composite.cpp
     src/model/Spacing.cpp
+    src/model/Checks.cpp
+    src/model/Profiles.cpp
     ${GRANJON_DATA_CPP}
     src/command/Verbs.cpp
     # UFO 3 source format: plist + GLIF via libxml2 (io/). M2.
@@ -92,6 +94,13 @@ target_include_directories(granjon_core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thir
 # it proves the journal mechanics; the app's store is model::Font.
 add_executable(granjon_selftest src/selftest.cpp src/core/Stones.cpp)
 target_link_libraries(granjon_selftest PRIVATE granjon_core)
+# selftest.cpp's main() is one long walk; GCC 16 with -g notes "variable
+# tracking size limit exceeded" and retries without. Skip the attempt for this
+# one file (debug info stays; only the location refinement goes). The real
+# fix -- main() split per milestone -- is in the ARC backlog.
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    set_source_files_properties(src/selftest.cpp PROPERTIES COMPILE_OPTIONS "-fno-var-tracking-assignments")
+endif()
 
 # ── App resources (gresource) -- the RESOURCE-PIPELINE paradigm ────────────────
 # glib-compile-resources embeds resources/granjon.gresource.xml into a C source;
@@ -142,6 +151,7 @@ add_executable(granjon
     src/views/OverviewGrid.cpp
     src/views/GlyphCanvas.cpp
     src/views/SpacingStrip.cpp
+    src/views/ReportList.cpp
     src/Shell.cpp
     src/Shell_zones.cpp
     src/Shell_bindings.cpp
