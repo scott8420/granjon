@@ -4,6 +4,7 @@
 #include "views/GlyphSearch.hpp"
 #include "views/Inspector.hpp"
 #include "views/Navigator.hpp"
+#include "views/GlyphCanvas.hpp"
 #include "views/OverviewGrid.hpp"
 #include "views/ViewContext.hpp"
 
@@ -135,6 +136,7 @@ private:
     widgets::Label        m_status;
     views::Navigator      m_navigator{m_ctx};
     views::OverviewGrid   m_overview{m_ctx};
+    views::GlyphCanvas    m_editor{m_ctx};
     views::Inspector      m_inspector{m_ctx};
 
     // Recents state (core data; UI holds it + resolves the path -- the seam).

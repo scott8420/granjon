@@ -1,0 +1,73 @@
+#pragma once
+// geom::Edit -- Curvz's BezierPath editing rules, lifted GTK-free and run
+// straight on model::Contour (the model already IS Curvz's node shape, so no
+// conversion layer): segments, node / handle moves under the node-type
+// constraints, and hit-testing a glyph's own drawing.
+//
+// Node types (Curvz's semantics, kept verbatim):
+//   Corner     handles free
+//   Smooth     dragging one handle keeps the other collinear, its length kept
+//   Symmetric  dragging one handle mirrors the other
+//   Cusp       handles locked to the arriving tangent; a handle drag changes
+//              length only, and moving neighbours re-aims them
+//
+// All coordinates are font units, y-up. Tolerances come in font units too --
+// the canvas divides its pixel tolerance by its scale.
+#include "geom/CubicSegment.hpp"
+#include "model/Glyph.hpp"
+
+#include <compare>
+#include <set>
+
+namespace granjon::geom {
+
+int          segment_count(const model::Contour& c);
+CubicSegment segment(const model::Contour& c, int i);   // i wraps on a closed contour
+
+void move_node(model::Contour& c, int idx, Vec2 pos);   // handles ride along; cusps re-aim
+void move_handle_in(model::Contour& c, int idx, Vec2 pos);
+void move_handle_out(model::Contour& c, int idx, Vec2 pos);
+void recompute_cusp_handles(model::Contour& c, int idx);
+
+// ── a point the designer can pick ──────────────────────────────────────────
+// A node's anchor, one of its handles, or one of the glyph's anchors (then
+// `contour` is -1 and `index` is the anchor's index).
+struct PointRef {
+    enum class Part { Node, In, Out, Anchor };
+    int  contour = -1;
+    int  index   = -1;
+    Part part    = Part::Node;
+    auto operator<=>(const PointRef&) const = default;
+    bool operator==(const PointRef&) const  = default;
+};
+using Points = std::set<PointRef>;
+
+Vec2 position(const model::Glyph& g, const PointRef& p);   // {0,0} if stale
+bool valid(const model::Glyph& g, const PointRef& p);
+
+// Move the picked points by d, starting from `at_press` (so a live drag is
+// always "press + d", never cumulative). Picked nodes carry their handles; a
+// picked handle whose node is not picked moves under its node's type rule;
+// cusps next to a moved node re-aim. Stale refs are skipped.
+void move_points(model::Glyph& g, const model::Glyph& at_press, const Points& pts, Vec2 d);
+
+// Shift everything that draws (contours, anchors, component offsets) by dx.
+void shift_x(model::Glyph& g, double dx);
+
+// ── hit testing ────────────────────────────────────────────────────────────
+struct Hit {
+    enum class Kind { None, Node, HandleIn, HandleOut, Anchor, Segment };
+    Kind   kind     = Kind::None;
+    int    contour  = -1;
+    int    index    = -1;    // node / anchor index; the segment's index for Segment
+    double t        = 0.0;   // on Segment
+    double distance = 1e18;
+};
+// Nearest within tol: nodes first, then (when show_handles) handles, then
+// anchors, then segments -- Curvz's priority.
+Hit hit_test(const model::Glyph& g, Vec2 pt, double tol, bool show_handles = true);
+
+// Picked points inside the box (anchors of nodes, and glyph anchors).
+Points points_in(const model::Glyph& g, Vec2 a, Vec2 b);
+
+}  // namespace granjon::geom

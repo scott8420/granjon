@@ -216,6 +216,46 @@ void drag_translate(FontJournal& j, Font& f, double dx, double dy) {
     });
 }
 
+void drag_points(FontJournal& j, Font& f, const geom::Points& pts, double dx, double dy) {
+    Drag& d = drag();
+    if (!j.in_gesture() || d.names.empty()) return;
+    j.run("Move", {d.names[0]}, [&] {
+        Glyph g = glyph_copy(f, d.names[0]);
+        geom::move_points(g, d.at_press[0], pts, {dx, dy});
+        f.put(d.names[0], Record{g});
+    });
+}
+
+void drag_sidebearing(FontJournal& j, Font& f, Side side, double dx, bool move_outline) {
+    Drag& d = drag();
+    if (!j.in_gesture() || d.names.empty()) return;
+    j.run("Sidebearing", {d.names[0]}, [&] {
+        Glyph g = d.at_press[0];
+        if (side == Side::Right) {
+            g.advance = std::max(0.0, g.advance + dx);
+        } else if (move_outline) {
+            geom::shift_x(g, dx);                        // drawing slides, advance fixed
+        } else {
+            const double shift = std::min(dx, g.advance);   // the origin can't pass the advance
+            geom::shift_x(g, -shift);                    // origin moves right by shift
+            g.advance -= shift;
+        }
+        f.put(d.names[0], Record{g});
+    });
+}
+
+bool nudge(FontJournal& j, Font& f, const std::string& glyph, const geom::Points& pts,
+           double dx, double dy) {
+    if (!f.glyph(glyph) || pts.empty() || (dx == 0 && dy == 0)) return false;
+    return j.run("Nudge", {glyph}, [&] {
+        const Glyph was = glyph_copy(f, glyph);
+        Glyph g = was;
+        geom::move_points(g, was, pts, {dx, dy});
+        g.snap();
+        f.put(glyph, Record{g});
+    }, "nudge:" + glyph);
+}
+
 bool drag_end(FontJournal& j, Font& f) {
     Drag& d = drag();
     if (!j.in_gesture()) return false;
@@ -342,6 +382,18 @@ const std::vector<Verb>& verbs() {
              drag_translate(j, f, 3.4, -1.2);
              drag_translate(j, f, 12.6, 4.4);
              drag_end(j, f); }},
+        {"drag_points",  [](FontJournal& j, Font& f) {
+             drag_begin(j, f, {"o"}, "Move points");
+             drag_points(j, f, {{0, 0, geom::PointRef::Part::Node}, {0, 1, geom::PointRef::Part::Out}}, 4.6, -2.2);
+             drag_points(j, f, {{0, 0, geom::PointRef::Part::Node}, {0, 1, geom::PointRef::Part::Out}}, 9.4, 3.1);
+             drag_end(j, f); }},
+        {"drag_sidebearing", [](FontJournal& j, Font& f) {
+             drag_begin(j, f, {"n"}, "Left sidebearing");
+             drag_sidebearing(j, f, Side::Left, 7.3, false);
+             drag_sidebearing(j, f, Side::Left, 12.6, false);
+             drag_end(j, f); }},
+        {"nudge",        [](FontJournal& j, Font& f) {
+             nudge(j, f, "H", {{0, 0, geom::PointRef::Part::Node}}, 10, 0); }},
         {"set_family",   [](FontJournal& j, Font& f) { set_family(j, f, "Garamond Nova"); }},
         {"set_style",    [](FontJournal& j, Font& f) { set_style(j, f, "Italic"); }},
         {"set_units_per_em", [](FontJournal& j, Font& f) { set_units_per_em(j, f, 2048); }},

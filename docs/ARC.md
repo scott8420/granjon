@@ -11,6 +11,8 @@ Newest session at the bottom.
 
 - **granjon-cli** (Scott, s01): a command-line tool for external processing on fonts. Links `granjon_core` (GTK-free), so it shares the model, verbs, checks and exporters. Open question: batch processing of font files, driving outside tools (ttfautohint, fontmake), or both.
 
+- **Editor follow-ons** (s03, mine -- not acted on): pen tool, insert / delete node, change node type, move / decompose components, add / rename anchors; per-glyph remembered zoom; context string you can type (beyond the fixed H / n); a coordinates card in the inspector for the picked point; hover highlight on nodes; Shift-constrained drags (horizontal / vertical / 45 degrees).
+
 - **Overview follow-ons** (s02, mine -- not acted on): remember the coverage set and cell size (per font in lib.plist, or app settings); user char sets from `~/.config/granjon/charsets/*.txt` (same file shape as the bundled ones); scroll the overview to a glyph picked elsewhere; file suffixed glyphs (a.sc) beside their base instead of under Unencoded; GF Latin Core's unencoded members (.notdef, periodcentered.loclCAT ...) as a name checklist; group by script (needs Scripts.txt in the trim).
 
 ---
@@ -76,3 +78,15 @@ Newest session at the bottom.
 - Case navigation: `model::other_case_glyph` (code point, or the AGL reading for unencoded names: a.sc -> A.sc), Alt+C (`win.other-case`, in the shortcuts registry) and a button on the inspector's Unicode card, which also shows Name and Category now.
 - Looked at under Xvfb with the CSS flattened (sandbox GTK 4.14 has no `var()`): sections, gap cells and toolbar render; Latin-1 on the sample font reads 186 missing.
 - Selftest 301 / 0.
+
+## s03 — editor canvas (M4)
+
+- M2 + M3 confirmed by Scott at session open (compile + run on Fedora).
+- Forks settled before code (Scott): context glyphs are FIXED (H beside capitals / figures, n beside the rest), not glyph-order neighbours; dragging the left sidebearing moves the ORIGIN with the drawing fixed on screen, a modifier (Alt) slides the drawing instead; a toolbar toggle for shading.
+- `geom/` (GTK-free, in `granjon_core`): Curvz's `Vec2`, `CubicSegment` (at / tangent / nearest_t / split / bbox) and BezierPath's editing rules lifted straight onto `model::Contour` -- `move_node`, `move_handle_in/out` (Smooth keeps the other handle collinear, Symmetric mirrors, Cusp is length-only), `recompute_cusp_handles`, hit-test (nodes > handles > anchors > segments, Curvz's priority), marquee, `move_points` (always press + delta), `shift_x`.
+- Verbs: `drag_points`, `drag_sidebearing` (Right = width; Left = origin moves, RSB holds; Left + modifier = drawing slides in a fixed width), `nudge` (merges per glyph). All three in the verb table, so the gate walks them. `drag_translate` stays (the selftest's whole-glyph drag).
+- `views/GlyphCanvas` replaces the Editor stub: guides with overshoot zones and labels, sidebearing lines with LSB / width / RSB, context glyphs ghosted, components dashed and tinted (read-only), outline shaded or not, nodes and handles in Curvz's shapes and palette (corner square, smooth hollow circle, symmetric filled circle, cusp triangle, first node a diamond), anchors as red diamonds with names, marquee. y-up flip only in the canvas transform.
+- Input: click / Shift+click pick, segment click picks its ends, marquee, drag = one step snapped on release, Escape cancels mid-drag, arrows nudge 1 / 10, Ctrl+A, Ctrl+0 fit, Ctrl+= / Ctrl+-, Ctrl+scroll zooms to the pointer, scroll / middle-drag / Space+drag pan. The status line reads the pick (type + coordinates). Editor shortcuts listed in the shortcuts registry (doc-only rows).
+- Shell: mid-drag only the canvas repaints; the overview (which rebuilds every cell) and the panels catch up on the repaint after release.
+- Looked at under Xvfb (CSS flattened; sandbox GTK 4.14): the fixture's boxes and a hand-made curved UFO (o with counter + anchor, a two-component glyph) draw right; scripted drags checked -- corner node drag, left-sidebearing drag (origin moved, drawing stayed, width 760 -> 674), Shift+arrow nudge, smooth out-handle drag (in-handle stays collinear), Ctrl+Z / Ctrl+Shift+Z.
+- Selftest 350 / 0.

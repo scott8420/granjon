@@ -80,7 +80,7 @@ Node      { x, y, in-handle, out-handle, type: smooth | cusp | symmetric | corne
 - GLIF's on/off-curve point list exists only at the I/O boundary (GlifReader/GlifWriter), as quadratics do only in TTF export.
 - Curvz is y-down doc space; Granjon is y-up font units. The flip lives in the canvas view transform, and the `signed_area()` sign convention flips with it.
 - Coordinates are double while editing and snapped to integer font units at gesture commit, so the stored model is always integral.
-- Curvz pulls in `SceneNode.hpp` and cairomm from `BezierPath.hpp`; the port lifts `BezierNode`, `BezierPath`, `CubicSegment`, `Vec2` into a GTK-free `geom/`, with the cairo drawing staying in the view.
+- Curvz pulls in `SceneNode.hpp` and cairomm from `BezierPath.hpp`; the port (s03) lifted `Vec2`, `CubicSegment` and BezierPath's editing rules into a GTK-free `geom/` that works on `model::Contour` directly (no BezierPath type -- the model already is its node list); the cairo drawing lives in `views/GlyphCanvas`.
 - Curvz `BooleanOpsClipper` (Clipper2 1.5.4, FetchContent fallback) is the overlap-removal starting point.
 - To add: components, anchors, and sidebearings as canvas objects; contour-direction check.
 
@@ -187,7 +187,7 @@ Window layout (M1b, Mac/web roots -- the Curvz house look):
 
 Views:
 1. **Overview (M3):** glyph cards (drawing, name, codepoint), status-tinted, grouped by Unicode block under section headers (code point order within a block; Unencoded last). Toolbar: **Coverage** menu (the char sets as a checklist: have / total, missing count, tick on the chosen one), **Create N missing** (`add_glyphs`, ONE undo step), cell-size slider (40-200 px; captions hide below 56). The chosen set's gaps are dashed cells showing the character; click says what it is, double-click creates it. Gaps hide while the search narrows. Click selects; double-click opens the editor.
-2. **Editor:** Curvz canvas plus metric guides, draggable sidebearings, ghosted neighbor glyphs, components, and anchors. (M4)
+2. **Editor (M4):** `views/GlyphCanvas`. Metric guides with overshoot zones; sidebearing lines (drag the right one for width; the left one moves the origin with the drawing fixed, Alt slides the drawing in a fixed width); fixed context glyphs ghosted (H beside capitals / figures, n beside the rest); components dashed, read-only; outline shaded or not (Fill toggle); Curvz node shapes; anchors named. Pick / marquee / drag (one step, snapped on release) / nudge; Ctrl+scroll zoom, scroll / middle / Space pan. Editing geometry is GTK-free in `geom/` (Curvz's Vec2, CubicSegment, BezierPath rules on `model::Contour`).
 3. **Spacing / kerning:** a live HarfBuzz-shaped text strip. Click a pair and drag to kern; profile readouts are shown. (M6, M8)
 4. **Preview:** waterfall sizes, sample text, light/dark. (M6)
 5. **Report:** results from all checks, with click-to-navigate. (M7)
@@ -264,9 +264,9 @@ model/      Find [M1c], Bounds [M1b], Font (= undo store), Glyph, Outline (Node,
 command/    Document (font + journal), Verbs + verb table   [M1: built]
 io/         Plist, Glif, Ufo (save_ufo / load_ufo)   [M2: built]
 unicode/    Embedded, UcdTable, Blocks, Agl, CharSet   [M3: built]  (model/Coverage)
-views/      ViewContext, Navigator, Inspector, OverviewGrid, GlyphPaint, GlyphSearch   [M1b/c: built]; GlyphCanvas, SpacingStrip, PreviewPane, ReportList to come
+geom/       Vec2, CubicSegment, Edit (Curvz node rules, hit-test)   [M4: built]; Profile, BooleanOps, CubicToQuad, Direction to come
+views/      ViewContext, Navigator, Inspector, OverviewGrid, GlyphPaint, GlyphSearch [M1b/c], GlyphCanvas [M4]; SpacingStrip, PreviewPane, ReportList to come
 check/      Check, Report, concrete checks
-geom/       Profile, BooleanOps, CubicToQuad, Direction
 export/     SfntWriter, tables/*, OtfExporter, TtfExporter, Woff2Exporter
 import/     FtImporter, SvgImporter
 ```
@@ -281,8 +281,8 @@ Work stops at each milestone for a compile/run report before continuing.
 1c. **M1c Find glyph:** header search, filter, create-missing.
 1b. **M1b UI shell:** three-pane layout, segmented view switcher, navigator, inspector cards, overview cards, house CSS.
 2. **M2 Persist:** UFO read/write round-trip (save, reload, byte-compare).   [s01: done]
-3. **M3 Overview:** glyph grid, Unicode data, char-set coverage.   [s02: built, awaiting run report]
-4. **M4 Editor:** Curvz canvas port with metric guides and sidebearings.
+3. **M3 Overview:** glyph grid, Unicode data, char-set coverage.   [s02: done]
+4. **M4 Editor:** Curvz canvas port with metric guides and sidebearings.   [s03: built, awaiting run report]
 5. **M5 Components & anchors:** auto-build composites from decomposition.
 6. **M6 Spacing:** HarfBuzz strip, metrics keys, class kerning.
 7. **M7 Checks:** report framework plus first checks (origin, zones, overshoot, direction).

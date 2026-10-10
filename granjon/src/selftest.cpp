@@ -18,6 +18,7 @@
 #include "core/TextMap.hpp"
 #include "command/Document.hpp"
 #include "command/Verbs.hpp"
+#include "geom/Edit.hpp"
 #include "model/Bounds.hpp"
 #include "io/Glif.hpp"
 #include "io/Plist.hpp"
@@ -40,6 +41,7 @@
 #include <vector>
 
 namespace core = granjon::core;
+namespace geom = granjon::geom;
 
 namespace {
 int g_pass = 0, g_fail = 0;
@@ -695,6 +697,137 @@ int main() {
             cmd::drag_translate(x.j, x.f, 50, 50);
             cmd::drag_cancel(x.j);
             check("drag: Escape puts it back, keeps nothing", x.j.size() == 1 && x.f.glyph("o")->contours[0].nodes[0].x == 64);
+        }
+
+        // ── M4: the editor's geometry and drags ─────────────────────────────
+        {   // Curvz's segment maths, lifted.
+            model::Contour c;
+            c.nodes = {model::Node::corner(0, 0), model::Node::corner(100, 0), model::Node::corner(100, 100)};
+            c.closed = true;
+            check("geom: a closed 3-node contour has 3 segments", geom::segment_count(c) == 3);
+            c.closed = false;
+            check("geom: an open one has 2", geom::segment_count(c) == 2);
+            const auto seg = geom::segment(c, 0);
+            check("geom: a line segment's midpoint", seg.at(0.5) == geom::Vec2(50, 0));
+            check("geom: nearest point on a line", seg.at(seg.nearest_t({30, 40})).dist({30, 0}) < 1e-4);
+            const auto halves = seg.split(0.25);
+            check("geom: split meets at t", halves.first.p3 == seg.at(0.25) && halves.second.p0 == seg.at(0.25));
+        }
+        {   // Node-type rules on a handle drag.
+            using T = model::Node::Type;
+            auto make = [](T t) {
+                model::Contour c;
+                c.closed = false;
+                c.nodes = {model::Node::corner(0, 0), {100, 0, 70, 0, 130, 0, t}, model::Node::corner(200, 0)};
+                return c;
+            };
+            auto smooth = make(T::Smooth);
+            geom::move_handle_out(smooth, 1, {100 + 30, 40});
+            const auto& s1 = smooth.nodes[1];
+            const double in_len = std::hypot(s1.cx1 - 100, s1.cy1);
+            check("smooth: the other handle stays collinear",
+                  std::abs((s1.cx1 - 100) * 40 - s1.cy1 * 30) < 1e-6 && s1.cy1 < 0);
+            check("smooth: ... and keeps its length", std::abs(in_len - 30) < 1e-6);
+            auto sym = make(T::Symmetric);
+            geom::move_handle_in(sym, 1, {80, 20});
+            check("symmetric: the other handle mirrors", sym.nodes[1].cx2 == 120 && sym.nodes[1].cy2 == -20);
+            auto cusp = make(T::Cusp);
+            geom::move_handle_out(cusp, 1, {160, 25});
+            check("cusp: a handle drag changes length only",
+                  cusp.nodes[1].cy2 == 0 && cusp.nodes[1].cx2 == 160 && cusp.nodes[1].cx1 == 70);
+            auto corner = make(T::Corner);
+            geom::move_handle_out(corner, 1, {150, 50});
+            check("corner: the other handle stays put", corner.nodes[1].cx1 == 70 && corner.nodes[1].cy1 == 0);
+        }
+        {   // Picking: nodes first, then handles, anchors, segments; the marquee.
+            model::Glyph g;
+            model::Contour c;
+            c.nodes = {model::Node::corner(0, 0), {100, 0, 100, 0, 100, 40, model::Node::Type::Corner},
+                       model::Node::corner(100, 100), model::Node::corner(0, 100)};
+            g.contours = {c};
+            g.anchors = {{"top", 50, 120}};
+            check("hit: a node", geom::hit_test(g, {101, 1}, 5).kind == geom::Hit::Kind::Node);
+            check("hit: a handle", geom::hit_test(g, {102, 40}, 5).kind == geom::Hit::Kind::HandleOut);
+            check("hit: no handles when hidden", geom::hit_test(g, {102, 40}, 5, false).kind == geom::Hit::Kind::Segment);
+            check("hit: an anchor", geom::hit_test(g, {50, 118}, 5).kind == geom::Hit::Kind::Anchor);
+            const auto seg = geom::hit_test(g, {50, 2}, 5);
+            check("hit: a segment, and which", seg.kind == geom::Hit::Kind::Segment && seg.index == 0);
+            check("hit: nothing far away", geom::hit_test(g, {50, 50}, 5).kind == geom::Hit::Kind::None);
+            const auto box = geom::points_in(g, {-5, -5}, {105, 50});
+            check("marquee: two nodes", box.size() == 2 && box.count({0, 0, geom::PointRef::Part::Node}));
+            const auto all = geom::points_in(g, {-5, -5}, {105, 130});
+            check("marquee: nodes and the anchor", all.size() == 5);
+            model::Glyph moved = g;
+            geom::move_points(moved, g, {{0, 1, geom::PointRef::Part::Node}, {-1, 0, geom::PointRef::Part::Anchor}}, {10, 5});
+            const auto& n1 = moved.contours[0].nodes[1];
+            check("move: a picked node carries its handle", n1.x == 110 && n1.y == 5 && n1.cx2 == 110 && n1.cy2 == 45);
+            check("move: the anchor too", moved.anchors[0].x == 60 && moved.anchors[0].y == 125);
+            check("move: the rest stays", moved.contours[0].nodes[0] == g.contours[0].nodes[0]);
+        }
+        {   // A point drag is one step on whole units.
+            Fix x;
+            const geom::Points pts{{0, 0, geom::PointRef::Part::Node}};
+            const auto n0 = x.f.glyph("o")->contours[0].nodes[0];
+            cmd::drag_begin(x.j, x.f, {"o"}, "Move points");
+            for (int i = 1; i <= 6; ++i) cmd::drag_points(x.j, x.f, pts, i * 2.3, i * -1.1);
+            check("drag_points: fractional mid-drag", !x.f.glyph("o")->is_integral());
+            cmd::drag_end(x.j, x.f);
+            const auto& m0 = x.f.glyph("o")->contours[0].nodes[0];
+            check("drag_points: one step, snapped", x.j.size() == 1 && x.f.glyph("o")->is_integral());
+            check("drag_points: moved from the press, not cumulatively",
+                  m0.x == n0.x + 14 && m0.y == n0.y - 7, std::to_string(m0.x) + "," + std::to_string(m0.y));
+            check("drag_points: only the picked node moved",
+                  x.f.glyph("o")->contours[0].nodes[1] == x.f.glyph("o")->contours[0].nodes[1]);
+            x.j.undo();
+            check("drag_points: undone", x.f.glyph("o")->contours[0].nodes[0] == n0);
+        }
+        {   // Sidebearings: the left edge moves the origin under a fixed drawing.
+            const auto lsb = [](const model::Glyph& g) {
+                double m = 1e9;
+                for (const auto& c : g.contours) for (const auto& n : c.nodes) m = std::min(m, n.x);
+                return m;
+            };
+            const auto rsb = [&](const model::Glyph& g) {
+                double m = -1e9;
+                for (const auto& c : g.contours) for (const auto& n : c.nodes) m = std::max(m, n.x);
+                return g.advance - m;
+            };
+            Fix x;
+            const double l0 = lsb(*x.f.glyph("n")), r0 = rsb(*x.f.glyph("n")), a0 = x.f.glyph("n")->advance;
+            cmd::drag_begin(x.j, x.f, {"n"}, "Left sidebearing");
+            cmd::drag_sidebearing(x.j, x.f, cmd::Side::Left, 12.6, false);
+            cmd::drag_end(x.j, x.f);
+            const auto& n = *x.f.glyph("n");
+            check("lsb: the origin moved right -- the LSB shrank by the rounded drag", lsb(n) == l0 - 13,
+                  std::to_string(lsb(n)));
+            check("lsb: the RSB holds", rsb(n) == r0, std::to_string(rsb(n)));
+            check("lsb: the advance took up the difference", n.advance == a0 - 13);
+            cmd::drag_begin(x.j, x.f, {"n"}, "Left sidebearing");
+            cmd::drag_sidebearing(x.j, x.f, cmd::Side::Left, 20, true);
+            cmd::drag_end(x.j, x.f);
+            check("lsb+modifier: the drawing slides inside a fixed advance",
+                  lsb(*x.f.glyph("n")) == l0 - 13 + 20 && x.f.glyph("n")->advance == a0 - 13);
+            cmd::drag_begin(x.j, x.f, {"n"}, "Width");
+            cmd::drag_sidebearing(x.j, x.f, cmd::Side::Right, -30.4, false);
+            cmd::drag_end(x.j, x.f);
+            check("rsb: the advance follows", x.f.glyph("n")->advance == a0 - 13 - 30);
+            check("sidebearings: three drags, three steps", x.j.size() == 3);
+            x.j.undo(); x.j.undo(); x.j.undo();
+            check("sidebearings: all undone", lsb(*x.f.glyph("n")) == l0 && x.f.glyph("n")->advance == a0);
+        }
+        {   // Arrow nudges in a row merge.
+            Fix x;
+            const geom::Points pts{{0, 0, geom::PointRef::Part::Node}, {0, 1, geom::PointRef::Part::Node}};
+            const auto n0 = x.f.glyph("H")->contours[0].nodes[0];
+            cmd::nudge(x.j, x.f, "H", pts, 1, 0);
+            cmd::nudge(x.j, x.f, "H", pts, 1, 0);
+            cmd::nudge(x.j, x.f, "H", pts, 0, 10);
+            check("nudge: three presses, one step", x.j.size() == 1, std::to_string(x.j.size()));
+            const auto& m0 = x.f.glyph("H")->contours[0].nodes[0];
+            check("nudge: moved 2, 10", m0.x == n0.x + 2 && m0.y == n0.y + 10);
+            check("nudge: nothing picked, nothing kept", !cmd::nudge(x.j, x.f, "H", {}, 1, 0));
+            x.j.undo();
+            check("nudge: one undo", x.f.glyph("H")->contours[0].nodes[0] == n0);
         }
 
         {   // Field edits merge inside the window; a different field does not.

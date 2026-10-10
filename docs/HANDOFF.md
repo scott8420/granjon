@@ -1,47 +1,52 @@
-# Granjon handoff — s02 -> s03
+# Granjon handoff — s03 -> s04
 
-# s03_editor_canvas
+# s04_components_anchors
 
 ## Files to upload
-- `s02_overview_unicode.zip` (made by `scripts/granjon_backup.sh -o s02_overview_unicode`)
+- `s04_components_anchors.zip` (made by `scripts/granjon_backup.sh -o s04_components_anchors`)
 - `RULES.md`, `HANDOFF.md`, `ARCHITECTURE.md`, `ARC.md`, `CANON.md`
-- Curvz `include/math/` + `include/SceneNode.hpp` (M4 is the canvas port), plus whatever Curvz canvas source you want carried over
+- No Curvz source needed: the geometry M4 used is ported into `geom/`. (Curvz `BooleanOpsClipper` comes back at M10 overlap removal.)
 
 ---
 
-## Status — s02 ends at M3 (awaiting Scott's compile/run report)
-M2's run report was never received -- if M2 had problems, they come first.
+## Status — s03 ends at M4 (awaiting Scott's compile/run report)
+M2 + M3 confirmed at session open.
 
-M3 built here against Ubuntu 24.04, g++ 13.3, gtkmm 4.10 / GTK 4.14, libxml2 2.9.14, spdlog 1.12. Clean, no warnings. Selftest 301 / 0. **No new package dependency.** The build now compiles a small host tool first (`tools/embed.cpp`) and a ~1.6 MB generated data source -- the first build takes a little longer.
+M4 built here against Ubuntu 24.04, g++ 13.3, gtkmm 4.10 / GTK 4.14, libxml2 2.9.14, spdlog 1.12. Clean, no warnings. Selftest 350 / 0. **No new package dependency.**
 
-What to look at (`GRANJON_SAMPLE=1 ./build/granjon` is handy, or open a real UFO):
-- Overview: glyphs under block headers (BASIC LATIN, LATIN-1 SUPPLEMENT ...), counts on each.
-- Toolbar **Coverage** menu: pick Latin-1 / GF Latin Core / Adobe Latin 2 / 3 / WGL4. Each row shows have / total and a missing count. The grid grows dashed cells for the gaps, showing the missing character; click one (status line names it), double-click creates it.
-- **Create N missing**: all of them in one step; Ctrl+Z takes them all back.
-- Cell-size slider (right of the toolbar): captions hide when small.
-- Header search: `cedilla`, `cyrillic zhe`, `eacute`, `é` -- glyphs found by Unicode name / AGL name; "Create ... as eacute" rows for what the font lacks.
-- Alt+C on a glyph: the other case (A <-> a). Inspector's Unicode card: Name, Category, a Case button.
-- Fonts with hundreds of glyphs: tell me if the overview feels slow to rebuild after an edit (it rebuilds every cell on each change, as before -- now with more cells when a set's gaps show).
+What to look at (open a real UFO, or `GRANJON_SAMPLE=1 ./build/granjon`; double-click a glyph or Ctrl+2):
+- Guides: ascender, cap height, x-height, baseline, descender, labelled, with overshoot zones tinted.
+- Context glyphs ghosted either side (H beside capitals and figures, n beside the rest); **Context** toggle in the editor toolbar. **Fill** toggles shading.
+- Nodes in Curvz's shapes: corner square, smooth hollow circle, symmetric filled circle, cusp triangle; a contour's first node is a diamond. Handles blue.
+- Click a node / handle / anchor; Shift+click adds or removes; click a segment picks its ends; drag empty canvas for a marquee. Drag moves the pick -- one Ctrl+Z, whole units on release; Escape mid-drag puts it back.
+- Smooth node: drag one handle, the other stays in line. Symmetric mirrors. Cusp changes length only.
+- Sidebearings: drag the **right** line for width. Drag the **left** line: the origin moves and the drawing stays put on screen (RSB holds). **Alt**+drag the left line: the drawing slides inside the width. *If your desktop uses Alt+drag to move windows, that modifier won't reach the canvas -- tell me which key you want.*
+- Arrows nudge 1, Shift+arrows 10 (one undo step while pressed in a row). Ctrl+A picks all. Ctrl+0 fit, Ctrl+= / Ctrl+-, Ctrl+scroll zooms at the pointer; scroll, middle-drag or Space+drag pans.
+- Anchors: red diamonds with names, draggable. Components: dashed, tinted, read-only for now.
+- The status line reads the pick: "Node (smooth)   280, 512".
+- Feel: drag smoothness on a big font. Mid-drag only the canvas repaints; the overview and panels catch up after release.
 
-## Decisions made in s02
-- Unicode data is ours, compiled into the core (UCD 17.0 + AGL + char sets), category and case included -- not GLib. ARCHITECTURE §5.
-- New glyph names: AGLFN first (eacute), else uniXXXX / uXXXXX. Production names stay an export decision.
-- Char sets are code point lists; WGL4 drops its two Private Use points.
-- Case navigation key: Alt+C (my pick -- easy to change in `core/Shortcuts.cpp`).
-- Overview sections sort in code point order; gaps hide while searching.
+## Decisions made in s03
+- Context glyphs fixed (Scott), not glyph-order neighbours.
+- Left-sidebearing drag moves the origin, drawing fixed; modifier slides the drawing (Scott). Alt is my pick of modifier.
+- Shading is a toggle (Scott), on by default.
+- `geom/` works on `model::Contour` directly -- no BezierPath type; Curvz's node rules kept verbatim, including its Cusp meaning (handles locked to the arriving tangent).
+- Clicking a segment picks its two end nodes (my call; no curve-bending drag yet).
+- Overlay drawn in screen space (crisp at any zoom); paths built under the y-up matrix.
 
-## s03 goal — Milestone M4: Editor
-- Port the Curvz canvas: draw the glyph's contours with on-curve / off-curve points, select / drag nodes and handles through a gesture (`drag_begin .. drag_end` shape already in the verbs), snapped on release.
-- Metric guides (baseline, x-height, cap height, ascender, descender, overshoot zones), draggable sidebearings (set_advance / LSB through verbs).
-- Ghosted neighbour glyphs; components drawn; anchors shown.
-- Zoom / pan; Ctrl+2 / double-click from the overview opens it on the selected glyph.
+## s04 goal — Milestone M5: Components & anchors
+- Components as canvas objects: pick, move (a verb), decompose; add a component by name.
+- Anchors: add / rename / delete (verbs); mark-to-base preview (a "_top" mark sits on "top").
+- Auto-build composites from the UCD decomposition (é = e + acutecomb on anchors); "Create N missing" can build composites instead of empty glyphs where the parts exist.
+- Inspector: a card for the picked point / component / anchor (coordinates you can type).
 
-**Stop at M4** for a compile/run report.
+**Stop at M5** for a compile/run report.
 
 ## Still open
 - Packages, Fedora (confirm): later `freetype-devel harfbuzz-devel brotli-devel`; Clipper2 via FetchContent.
 - granjon-cli scope (ARC backlog).
-- Overview follow-ons in the ARC backlog (persist coverage set / cell size, user char sets, scroll-to-selection, a.sc beside a).
+- Editor follow-ons in the ARC backlog (pen, insert / delete node, node type change, typed context string, Shift-constrained drags).
+- Overview follow-ons in the ARC backlog.
 - `GRANJON_SAMPLE` env still there.
 
 ---

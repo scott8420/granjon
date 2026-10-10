@@ -121,9 +121,7 @@ void Shell::build_views() {  // zone: the view stack
     m_stack.set_transition_type(Gtk::StackTransitionType::CROSSFADE);
     m_stack.set_transition_duration(120);
     m_stack.add(m_overview, "overview", "Overview");
-    add_stub_view("editor", "Editor",
-        "The Curvz canvas, ported: metric guides, draggable sidebearings, ghosted "
-        "neighbours, components and anchors as canvas objects.");
+    m_stack.add(m_editor, "editor", "Editor");
     add_stub_view("spacing", "Spacing",
         "A live HarfBuzz-shaped strip. Click a pair and drag to kern; metrics keys "
         "propagate; contact gap and optical area read out per pair.");

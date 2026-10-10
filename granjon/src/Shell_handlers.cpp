@@ -142,6 +142,7 @@ void Shell::on_view(const Glib::ustring& id) {  // handler: the view switcher
     if (!m_stack.get_child_by_name(id)) return;
     m_stack.set_visible_child(id);
     m_act_view->change_state(Glib::Variant<Glib::ustring>::create(id));
+    if (id == "editor") m_editor.focus_canvas();   // arrows and Escape go to the canvas
 }
 
 void Shell::on_toggle_navigator() {  // handler: F9

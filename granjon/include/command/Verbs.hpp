@@ -11,6 +11,7 @@
 // restores, redo re-applies. A verb the UI offers and the table lacks is the
 // gap the gate cannot see -- add it here in the same change that adds the
 // button. (CANON: "Undo is foundation, not a feature".)
+#include "geom/Edit.hpp"
 #include "model/Coverage.hpp"
 #include "model/Font.hpp"
 
@@ -46,10 +47,26 @@ bool set_advance(FontJournal& j, Font& f, const std::string& name, double advanc
 void drag_begin(FontJournal& j, Font& f, const std::vector<std::string>& glyphs,
                 const std::string& label = "Move");
 // Translate whole outlines by (dx, dy) from where they were at the press.
-// (M4 replaces this with node / handle drags; the gesture shape stays.)
 void drag_translate(FontJournal& j, Font& f, double dx, double dy);
+// The editor's drags (M4), inside the same gesture -- each move is "press +
+// delta", never cumulative. Each applies to the FIRST glyph drag_begin took.
+//   drag_points       picked nodes / handles / anchors (geom::move_points)
+//   drag_sidebearing  Right: the advance follows. Left, move_outline false:
+//                     the ORIGIN moves under a fixed drawing -- the outline
+//                     shifts the other way in font units and the advance
+//                     takes up the difference, so the RSB holds. Left,
+//                     move_outline true (a modifier): the drawing slides
+//                     inside a fixed advance.
+enum class Side { Left, Right };
+void drag_points(FontJournal& j, Font& f, const geom::Points& pts, double dx, double dy);
+void drag_sidebearing(FontJournal& j, Font& f, Side side, double dx, bool move_outline);
 bool drag_end(FontJournal& j, Font& f);    // snaps to integer units, then commits
 void drag_cancel(FontJournal& j);
+
+// Arrow keys: move the picked points by (dx, dy) font units. Presses in a row
+// on one glyph merge into one step (the 1500 ms window).
+bool nudge(FontJournal& j, Font& f, const std::string& glyph, const geom::Points& pts,
+           double dx, double dy);
 
 // ── font records ───────────────────────────────────────────────────────────
 bool set_family(FontJournal& j, Font& f, const std::string& family);

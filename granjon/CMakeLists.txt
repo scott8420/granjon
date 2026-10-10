@@ -55,6 +55,8 @@ add_library(granjon_core STATIC
     # The undo journal itself is header-only (core/Undo.hpp). Granjon's store
     # is the font: model/ is the data, command/ the verbs + the verb table the
     # selftest gate walks. All GTK-free. docs/undo.md, ARCHITECTURE §2-3.
+    src/geom/CubicSegment.cpp
+    src/geom/Edit.cpp
     src/model/Glyph.cpp
     src/model/FontRecords.cpp
     src/model/Font.cpp
@@ -135,6 +137,7 @@ add_executable(granjon
     src/views/GlyphSearch.cpp
     src/views/Inspector.cpp
     src/views/OverviewGrid.cpp
+    src/views/GlyphCanvas.cpp
     src/Shell.cpp
     src/Shell_zones.cpp
     src/Shell_bindings.cpp

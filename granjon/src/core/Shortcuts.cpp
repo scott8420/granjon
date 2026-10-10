@@ -117,6 +117,23 @@ const std::vector<ShortcutSpec>& shortcut_registry() {
         {"Edit", "", {}, "Ctrl+Z", "Undo -- anywhere but a text box (which keeps its own)"},
         {"Edit", "", {}, "Ctrl+Shift+Z  /  Ctrl+Y", "Redo"},
 
+        // ── Editor ────────────────────────────────────────────────────────────
+        // Doc-only: the canvas handles these itself while it has the keyboard.
+        {"Editor", "", {}, "Click / Shift+click", "Pick a node, handle or anchor / add or remove it"},
+        {"Editor", "", {}, "Click a segment", "Pick its two end nodes"},
+        {"Editor", "", {}, "Drag empty canvas", "Marquee (Shift adds)"},
+        {"Editor", "", {}, "Drag the pick", "Move it -- one undo step, whole units on release"},
+        {"Editor", "", {}, "Drag the left line", "Move the origin; the drawing stays put"},
+        {"Editor", "", {}, "Alt+drag the left line", "Slide the drawing inside the width"},
+        {"Editor", "", {}, "Drag the right line", "Change the width"},
+        {"Editor", "", {}, "Arrows / Shift+arrows", "Nudge 1 / 10 units"},
+        {"Editor", "", {}, "Ctrl+A", "Pick every node and anchor"},
+        {"Editor", "", {}, "Escape", "Cancel the drag, else drop the pick"},
+        {"Editor", "", {}, "Ctrl+0", "Fit the glyph"},
+        {"Editor", "", {}, "Ctrl+=  /  Ctrl+-", "Zoom in / out"},
+        {"Editor", "", {}, "Ctrl+scroll", "Zoom toward the pointer"},
+        {"Editor", "", {}, "Scroll, middle-drag, Space+drag", "Pan"},
+
         // ── General ───────────────────────────────────────────────────────────
         {"General", "win.new",           {"<Ctrl>n"}, "", "New font"},
         {"General", "win.open",          {"<Ctrl>o"}, "", "Open a font (.granjon / .ufo folder)"},

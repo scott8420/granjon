@@ -325,3 +325,9 @@ popover.checklist-popover .badge { margin-left: 4px; }
     font-size: 0.85em;
 }
 .statusbar.warn { color: var(--warn-fg); }
+
+/* Editor (M4): the canvas sits on the base colour; the toolbar is the
+   overview's strip. The canvas draws in its own `color`. */
+.editor { background-color: var(--bg-base); }
+.glyph-canvas { background-color: var(--bg-base); color: var(--fg-primary); }
+.glyph-canvas:focus-visible { outline: none; }

@@ -178,6 +178,10 @@ void Shell::repaint() {  // helper
     // to the font before any view reads the selection.
     if (!m_ctx.selected.empty() && !m_doc.font.glyph(m_ctx.selected)) m_ctx.select({});
     update_title();
+    m_editor.refresh();
+    // Mid-drag only the canvas follows the pointer: the overview rebuilds every
+    // cell, so it (and the panels) catch up on the repaint after the release.
+    if (m_doc.journal.in_gesture()) return;
     m_navigator.refresh();
     m_overview.refresh();
     m_inspector.refresh();
