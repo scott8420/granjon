@@ -1,0 +1,145 @@
+# Granjon Primer (M12) -- short notes on drawing type, shown in the Primer
+# window (F1). Compiled into the app (tools/embed.cpp); edit here, rebuild.
+#
+#   [id]                 one note; the window lists them in this order
+#   title: ...           the note's heading
+#   figure: file.svg     an illustration in resources/primer/ (1040 x 520, on white)
+#   link: Label | target a button that does it in the main window. Targets:
+#       tool:measure[:glyph]   the editor on that glyph, the Measure tool
+#       tool:pen[:glyph]       the editor, the Pen
+#       glyph:NAME[,NAME...]   the editor on those glyphs (tabs), the first in front
+#       view:ID                overview / editor / spacing / preview / report
+#       report:CHECK           the Report, that check's section open
+#                              (direction, open, zones, overshoot, origin, keys)
+#       spacing:TEXT           the Spacing view with TEXT in the strip
+#       font:metrics           the inspector's font page (metrics, the preset)
+#       action:NAME            a window action (font-metrics-keys, ...)
+#   Any other line is body text; a blank line starts a new paragraph.
+#   *word* is bold.
+
+[overshoot]
+title: Overshoot -- why round letters are bigger
+figure: overshoot.svg
+link: Measure o against the x-height | tool:measure:o
+link: Checks: Overshoot | report:overshoot
+link: The font's overshoot | font:metrics
+A circle and a square of the same height do not look the same height. The square
+meets the lines along its whole edge; the circle touches them at one point and
+curves away, so it looks *smaller*.
+
+So round letters reach a little past the baseline and the x-height (or cap
+height): o, O, c, e, s, the bowls of b d p q. That is the overshoot -- about 1 to
+1.5 % of the em in a text face, 10 to 15 units at 1000. Pointed shapes overshoot
+too, often more: the apex of A, the foot of a pointed v or w.
+
+Too little and o looks small beside n; too much and the rounds bounce at large
+sizes. Keep it the same everywhere: the eye compares every round with every other.
+
+In Granjon: the font's overshoot is in Vertical Metrics, the editor shades the
+zones, and the Checks report finds rounds that miss them by a unit or two. The
+presets' o and O already overshoot.
+
+[stems]
+title: Stem weight and contrast -- horizontals are thinner
+figure: stems.svg
+link: Measure n's stem (click inside it) | tool:measure:n
+link: Measure o's sides and top | tool:measure:o
+link: This font's stems | font:metrics
+Draw a vertical and a horizontal bar of exactly the same thickness and the
+horizontal looks *heavier*. So even a sans that looks even all over draws its
+horizontal strokes thinner than its vertical stems: the Sans preset uses 88 for
+n's stem and 78 across the top of its arch.
+
+The ratio between thick and thin is the *contrast*. A book serif thins its
+horizontals to a third or so (the Serif preset: 82 and 30); a display face may go
+further. The contrast is a decision about the whole design -- pick it once and
+hold it.
+
+Rounds need a touch more weight than straight stems: a curve is at its thickest
+only for an instant, so the sides of o are drawn a little heavier than n's stem
+(6 % in the presets). Capitals are a little heavier than lowercase, or they look
+light beside it.
+
+Measure, don't guess: hold M (or the Measure tool) and click inside a stem; the
+readout gives its width. Write the numbers down and keep to them.
+
+[spacing]
+title: Round and straight -- spacing n and o
+figure: spacing.svg
+link: Spacing: nnonoo nnoonn | spacing:nnnn nnonoo nnoonn
+link: Spacing: HHOHOO HHOOHH | spacing:HHHH HHOHOO HHOOHH
+link: Apply spacing keys to every glyph | action:font-metrics-keys
+Spacing is half of a typeface. Start with the control letters: n for straight
+sides, o for round ones (H and O for capitals).
+
+Two straight stems facing each other need the most room. A round side needs
+less, because the white curving away above and below it counts as space too. The
+aim is the same *area* of white between every pair, not the same distance --
+that is why o's sidebearings are smaller than n's.
+
+A working method (Walter Tracy's): set n's sides so "nnnn" has an even rhythm,
+about half the width of its counter between stems. Then set o so that "nnonoo"
+and "nnoonn" look even. Then H and O, the same way.
+
+Everything else follows from these four: a straight side like n, a round side
+like o. The presets wrote those rules as spacing keys -- b takes n's left and o's
+right, d the other way round, u is n turned over -- so when n and o change, one
+click passes it on.
+
+[joins]
+title: Joins and ink traps
+figure: joins.svg
+link: Look at n's joins | glyph:n
+link: Look at p's joins | glyph:p
+link: Look at v | glyph:v
+Where two strokes meet, the ink piles up: n's arch leaving its stem, the bowl of
+p meeting its stem, the bottom of v. Drawn at full weight, a join looks like a
+dark knot.
+
+So a stroke *thins* as it enters a join. n's arch leaves the stem thinner than it
+is across the top, and the inside curve cuts in deeper than the outside one --
+look at the presets' n and p, where the counter bites into the stem.
+
+At small sizes and in heavy weights, go further: cut a notch into the inside
+corner -- an *ink trap* -- so it does not fill in when printed small or rendered
+on screen. The heavier the weight, the deeper the cut. At display sizes the
+trap shows; some designers keep it as part of the look.
+
+[optical]
+title: Optical centre -- a little above the middle
+figure: optical.svg
+link: H and its crossbar guide | glyph:H
+link: The font's guides and metrics | font:metrics
+The eye puts the middle of a shape a little *above* its true middle. A crossbar
+at exactly half the cap height looks low. So the bars of H, E, F, A and the
+middle of B, P, R sit slightly higher -- the presets put H's bar at 52 % of the
+cap height, and left a "crossbar" guide there so every bar can line up with it.
+
+The same illusion makes letters with two stacked parts look top-heavy when the
+parts are equal: draw the top of B, S, 8, 3, X a little smaller (narrower, and
+shorter) than the bottom, and the letter stands.
+
+A shape centred by numbers is not centred to the eye. Trust the eye, then make
+it consistent with a guide.
+
+[order]
+title: Drawing order -- where to start
+figure: order.svg
+link: Open the six control glyphs | glyph:n,o,H,O,p,v
+link: Spacing: nnonoo HHOHOO | spacing:nnonoo HHOHOO
+link: The Overview | view:overview
+Don't start at A. Draw the *control characters* first, and space them with each
+other before anything else:
+
+n and o set the lowercase: stem, arch, round, weight, contrast, spacing. Then H
+and O for the capitals, p for the descender, v for the diagonals.
+
+Then grow families from them. n gives h m u r; o gives c e; n and o together give
+b d p q; v gives w y x; H gives E F I L T; O gives C G Q D. The rest are cousins
+of those.
+
+Test in words early -- the Spacing strip, the Preview -- not glyph by glyph. A
+letter is only right next to other letters.
+
+Accented letters come free: the presets added them as components (base + mark),
+so they fill in as you draw the base letters and the marks.

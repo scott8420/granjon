@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Granjon Primer figure: stem weight and contrast. Font units come from the presets' own glyphs
+     (Sans unless noted). Edit freely: plain SVG, 1040 x 520, drawn on white. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="520" viewBox="0 0 1040 520">
+<rect width="1040" height="520" rx="18" fill="#ffffff"/>
+<clipPath id='c'><rect x='20' y='60' width='600' height='360'/></clipPath>
+<rect x='112.0' y='90' width='56' height='300' fill='#1d1d1f'/><rect x='20' y='212.0' width='240' height='56' fill='#1d1d1f'/>
+<rect x='422.0' y='90' width='56' height='300' fill='#1d1d1f'/><rect x='330' y='217.6' width='240' height='44.800000000000004' fill='#1d1d1f'/>
+<text x='140' y='450' font-size='26' text-anchor='middle' fill='#5e5e66' font-weight='normal' font-family='Cantarell, Inter, Noto Sans, sans-serif'>equal thickness</text>
+<text x='140' y='482' font-size='22' text-anchor='middle' fill='#5e5e66' font-weight='normal' font-family='Cantarell, Inter, Noto Sans, sans-serif'>the bar looks heavier</text>
+<text x='450' y='450' font-size='26' text-anchor='middle' fill='#1d1d1f' font-weight='bold' font-family='Cantarell, Inter, Noto Sans, sans-serif'>bar 20 % thinner</text>
+<text x='450' y='482' font-size='22' text-anchor='middle' fill='#5e5e66' font-weight='normal' font-family='Cantarell, Inter, Noto Sans, sans-serif'>looks even</text>
+<path d='M295 772C436 772 546 652 546 500C546 348 436 228 295 228C154 228 44 348 44 500C44 652 154 772 295 772ZM295 694C207 694 137 609 137 500C137 391 207 306 295 306C383 306 453 391 453 500C453 609 383 694 295 694Z' transform='translate(690.0 40.0) scale(0.5)' fill='#1d1d1f' />
+<line x1='712.0' y1='290.0' x2='758.5' y2='290.0' stroke='#c01c28' stroke-width='3'/>
+<text x='735.0' y='278.0' font-size='24' text-anchor='middle' fill='#c01c28' font-weight='bold' font-family='Cantarell, Inter, Noto Sans, sans-serif'>93</text>
+<line x1='837.5' y1='154.0' x2='837.5' y2='193.0' stroke='#c01c28' stroke-width='3'/>
+<text x='871.5' y='181.5' font-size='24' text-anchor='middle' fill='#c01c28' font-weight='bold' font-family='Cantarell, Inter, Noto Sans, sans-serif'>78</text>
+<text x='837.5' y='482' font-size='22' text-anchor='middle' fill='#5e5e66' font-weight='normal' font-family='Cantarell, Inter, Noto Sans, sans-serif'>Sans o: sides thick, top thin</text>
+<text x='837.5' y='506' font-size='20' text-anchor='middle' fill='#5e5e66' font-weight='normal' font-family='Cantarell, Inter, Noto Sans, sans-serif'>(and 6 % heavier than n’s stem)</text>
+</svg>

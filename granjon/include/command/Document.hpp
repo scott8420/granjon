@@ -6,6 +6,7 @@
 #include "io/Ufo.hpp"
 #include "import/FontReader.hpp"
 #include "model/Font.hpp"
+#include "model/Presets.hpp"
 
 #include <string>
 
@@ -35,6 +36,13 @@ public:
     // A fresh untitled font. History goes: a new document has none.
     void new_font() {
         model::make_new_font(font);
+        path.clear();
+        journal.clear();
+        m_saved = journal.stamp();
+    }
+    // M12: a fresh untitled font from a preset (blank when the id is "").
+    void new_font(const model::NewFontOptions& o, model::NewFontReport* rep) {
+        model::make_preset_font(font, o, rep);
         path.clear();
         journal.clear();
         m_saved = journal.stamp();

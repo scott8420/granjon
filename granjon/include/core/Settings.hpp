@@ -55,6 +55,10 @@ struct Settings {
     int         overview_cell    = 84;     // px, kOverviewCellMin..Max
     std::string overview_charset;          // "" = no coverage set
 
+    // ── New font (M12) ────────────────────────────────────────────────────
+    std::string new_preset = "sans";       // the chooser's last pick ("" = blank)
+    bool        new_create_set = true;     // add the set's glyphs
+
     bool operator==(const Settings&) const = default;
 };
 

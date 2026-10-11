@@ -57,7 +57,10 @@ set(GRANJON_DATA_DIR "${CMAKE_CURRENT_SOURCE_DIR}/resources")
 set(GRANJON_DATA_KEYS
     ucd/ucd.txt ucd/blocks.txt ucd/glyphlist.txt ucd/aglfn.txt
     charsets/latin-1.txt charsets/gf-latin-core.txt charsets/adobe-latin-2.txt
-    charsets/adobe-latin-3.txt charsets/wgl4.txt)
+    charsets/adobe-latin-3.txt charsets/wgl4.txt
+    presets/presets.txt
+    primer/notes.txt primer/overshoot.svg primer/stems.svg primer/spacing.svg primer/joins.svg
+    primer/optical.svg primer/order.svg)
 set(GRANJON_DATA_ARGS "")
 set(GRANJON_DATA_FILES "")
 foreach(k ${GRANJON_DATA_KEYS})
@@ -80,6 +83,7 @@ add_library(granjon_core STATIC
     src/core/Recents.cpp
     src/core/Settings.cpp
     src/core/TextMap.cpp
+    src/core/Primer.cpp     # M12: the Primer's notes (data: resources/primer/)
     # The SHORTCUT-REGISTRY paradigm: one list, two consumers (App wires accels
     # from it, ShortcutsDialog renders from it) so a key and its advertised row
     # can't drift. GTK-free, so it lives in core and the selftest guards it
@@ -107,6 +111,7 @@ add_library(granjon_core STATIC
     src/model/Spacing.cpp
     src/model/Checks.cpp
     src/model/Profiles.cpp
+    src/model/Presets.cpp   # M12: new font from a preset (data: resources/presets/)
     ${GRANJON_DATA_CPP}
     src/command/Verbs.cpp
     # UFO 3 source format: plist + GLIF via libxml2 (io/). M2.
@@ -148,7 +153,7 @@ target_include_directories(granjon_core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thir
 # ── Headless selftest -- exercises the core with no display ────────────────────
 # Cairn's Stones (the journal's own fixture) compiles into the selftest only:
 # it proves the journal mechanics; the app's store is model::Font.
-add_executable(granjon_selftest src/selftest.cpp src/selftest_export.cpp src/selftest_edit.cpp src/selftest_import.cpp src/core/Stones.cpp)
+add_executable(granjon_selftest src/selftest.cpp src/selftest_export.cpp src/selftest_edit.cpp src/selftest_import.cpp src/selftest_presets.cpp src/core/Stones.cpp)
 target_link_libraries(granjon_selftest PRIVATE granjon_core ${BROTLIDEC_LIBRARIES})
 target_include_directories(granjon_selftest PRIVATE ${BROTLIDEC_INCLUDE_DIRS})
 # selftest.cpp's main() is one long walk; GCC 16 with -g notes "variable
@@ -218,6 +223,8 @@ add_executable(granjon
     src/AboutWindow.cpp
     src/ShortcutsDialog.cpp
     src/PreferencesWindow.cpp
+    src/NewFontDialog.cpp   # M12: the preset chooser on New
+    src/PrimerWindow.cpp    # M12: the Primer (notes from core::Primer)
     src/Registry.cpp
     src/Log.cpp
 )

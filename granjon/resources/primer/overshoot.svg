@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Granjon Primer figure: overshoot. Font units come from the presets' own glyphs
+     (Sans unless noted). Edit freely: plain SVG, 1040 x 520, drawn on white. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="520" viewBox="0 0 1040 520">
+<rect width="1040" height="520" rx="18" fill="#ffffff"/>
+<rect x='30' y='104' width='980' height='16' fill='rgba(53,132,228,0.16)'/>
+<rect x='30' y='400' width='980' height='16' fill='rgba(53,132,228,0.16)'/>
+<line x1='30' y1='120' x2='1010' y2='120' stroke='#3584e4' stroke-width='2'/>
+<line x1='30' y1='400' x2='1010' y2='400' stroke='#3584e4' stroke-width='2'/>
+<text x='36' y='94' font-size='22' text-anchor='start' fill='#3584e4' font-weight='normal' font-family='Cantarell, Inter, Noto Sans, sans-serif'>x-height</text>
+<text x='36' y='442' font-size='22' text-anchor='start' fill='#3584e4' font-weight='normal' font-family='Cantarell, Inter, Noto Sans, sans-serif'>baseline</text>
+<rect x='80' y='120' width='280' height='280' fill='#1d1d1f'/>
+<circle cx='530' cy='260.0' r='140.0' fill='#1d1d1f'/>
+<circle cx='870' cy='260.0' r='156.0' fill='#1d1d1f'/>
+<text x='220' y='476' font-size='26' text-anchor='middle' fill='#5e5e66' font-weight='normal' font-family='Cantarell, Inter, Noto Sans, sans-serif'>square</text>
+<text x='530' y='476' font-size='26' text-anchor='middle' fill='#5e5e66' font-weight='normal' font-family='Cantarell, Inter, Noto Sans, sans-serif'>circle, same height</text>
+<text x='870' y='476' font-size='26' text-anchor='middle' fill='#1d1d1f' font-weight='bold' font-family='Cantarell, Inter, Noto Sans, sans-serif'>circle with overshoot</text>
+<text x='530' y='506' font-size='22' text-anchor='middle' fill='#5e5e66' font-weight='normal' font-family='Cantarell, Inter, Noto Sans, sans-serif'>looks smaller</text>
+<text x='870' y='506' font-size='22' text-anchor='middle' fill='#5e5e66' font-weight='normal' font-family='Cantarell, Inter, Noto Sans, sans-serif'>looks the same size</text>
+<text x='1004' y='40' font-size='18' text-anchor='end' fill='#5e5e66' font-weight='normal' font-family='Cantarell, Inter, Noto Sans, sans-serif'>overshoot drawn larger than life</text>
+</svg>

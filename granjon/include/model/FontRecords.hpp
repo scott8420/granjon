@@ -20,6 +20,15 @@ struct FontInfo {
     std::string vendor;            // OS/2 achVendID, 4 chars
     int         units_per_em = 1000;
     std::vector<Guide> guides;     // font-wide guidelines (fontinfo.plist "guidelines")
+    // M12: the preset the font was started from ("" = blank / imported) and
+    // the stems it set out with -- lib "granjon.preset". A record of intent;
+    // nothing enforces them.
+    struct Origin {
+        std::string preset;
+        int stem_v = 0, stem_h = 0, cap_stem_v = 0, cap_stem_h = 0;
+        bool operator==(const Origin&) const = default;
+    };
+    Origin origin;
     bool operator==(const FontInfo&) const = default;
 };
 

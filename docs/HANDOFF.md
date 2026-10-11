@@ -1,16 +1,72 @@
-# Granjon handoff — s05 -> s06
+# Granjon handoff — s06 -> s07
 
-# s06_presets_primer
+# s07_background_layer
 
 ## Files to upload
-- `s06_presets_primer.zip` (made by `scripts/granjon_backup.sh -o s06_presets_primer`)
+- `s06_m12_presets_primer_r2.zip` (the last s06 ship; or a fresh `scripts/granjon_backup.sh -o s07_background_layer`)
 - `RULES.md`, `HANDOFF.md`, `ARCHITECTURE.md`, `ARC.md`, `CANON.md`
-- `My-Termes-Regular.granjon` from the project's `fonts/` folder (not in the s05 upload; s05 rebuilt Termes in the sandbox from TeX Gyre the same way, but the M7 / M8 readouts on your copy are still unseen).
-- Curvz's pen code, only if M5g's conventions should be brought in line with Curvz's (the geometry upload of s05 had the booleans, not the pen).
+- A scan or sketch image (PNG / JPEG) of a few letters, for M13's background layer to trace.
+- `My-Termes-Regular.granjon` from `fonts/` (the M7 / M8 readouts on it are still unseen), only if those get looked at.
 
 ---
 
-## Status — s05 (written as we go)
+## Status — s06
+- **M12 presets + primer: crc** (Scott, on `s06_m12_presets_primer_r2.zip` -- the one zip to install; the two `_wip` zips were checkpoints). Selftest 878 / 0 (81 new). Built against Ubuntu 24.04, g++ 13.3, gtkmm 4.10 / GTK 4.14, RelWithDebInfo; no warnings in the new files. **No new package.** (Sandbox only: GitHub's archive URL was refused, so Clipper2 came from a git clone via FETCHCONTENT_SOURCE_DIR_CLIPPER2 -- nothing changes on Scott's machine.)
+- **M12a preset core: sandbox green** (`s06_m12a_presets_wip.zip`, checkpoint). Not crc -- no UI yet.
+- `model/Presets` (GTK-free): `resources/presets/presets.txt` (compiled in, like the char sets) holds Sans / Serif / Display / Mono -- UPM, metrics, overshoot, stems (lowercase / caps, vertical / horizontal), serif length + thickness, mono width, space, char set, font guides, and per control glyph its width and sidebearings; a shared `[keys]` table (b L=n R=o, u L=|n R=|n, D L=H R=O ...).
+- `make_preset_font`: metrics, guides, `FontInfo::origin` (lib `granjon.preset`: id + the four stems), the control glyphs n o H O p v DRAWN, the set's glyphs (empty; accented letters as components -- 145 in GF Latin Core -- that fill in as the bases are drawn), keys (mono: W=600 on everything), glyph order = the set's order.
+- The starter glyphs are built from parts -- stems, a crossbar at 0.52 cap height (optical centre), an arch contour tucked into the stem, ellipse rings with the round sides 6 % heavier, a counter ellipse cut into p's stem, serif slabs and head-serif wedges -- and merged by M10c's remove_overlaps (crossings -> corners, curves kept). Parts never share an edge (the rebuild's weak spot).
+- Selftest 872 / 0 (75 new in `src/selftest_presets.cpp`): every preset parses, builds, the WHOLE Checks report is empty on the result, overshoot and descender exact, keys hold, mono centred, origin / guides / keys survive save + load, the parser refuses bad lines by number.
+- **M12b chooser: sandbox green** (`s06_m12b_chooser_wip.zip`, checkpoint). ☰ **New…** / **Ctrl+N** -> (unsaved changes asked first) the **New Font** window: cards Blank / Sans / Serif / Display / Mono, each painting the glyphs that preset actually draws; the preset's blurb and numbers; Family; Character set (the preset's default; "Control glyphs only"); "Add the set's glyphs now". Create -> the font, the six control glyphs open as editor tabs with n in front, the Overview's coverage set follows the choice, the last pick is remembered (`new_font.preset`, `new_font.create_set` in settings.json). Inspector font page: a **STARTED FROM** card (preset + its stems) on a preset font. Enter creates from anywhere in the window, Escape cancels.
+
+- **r2** (`s06_m12_presets_primer_r2.zip`): Presets.cpp `meet()` returns a plain struct, not std::pair -- silences the GCC aarch64 -Wpsabi note Scott saw (same fix as Overlap.cpp in s05).
+- **M12c Primer: sandbox green.** ☰ **Primer: drawing type** / **F1** -> its own window beside the main one: six notes (Overshoot, Stem weight and contrast, Round and straight spacing, Joins and ink traps, Optical centre, Drawing order), each a title, an SVG figure drawn with the presets' own outlines, short text, and **TRY IT** links done in the main window: Measure on o / n (editor + Measure tool), Checks: Overshoot (Report, section unfolded), the Spacing strip set to "nnnn nnonoo nnoonn" / "HHHH HHOHOO HHOOHH", Apply spacing keys, the six control glyphs as tabs, the font page. Previous / Next walk the notes.
+- Notes are data: `resources/primer/notes.txt` (format in its header: `[id]`, `title:`, `figure:`, `link: Label | target`, paragraphs, `*bold*`) and `resources/primer/*.svg` (1040 x 520, on white -- open them in Inkscape and redraw as you like). Compiled into the core; `core/Primer` parses; the selftest fails on a note without a title / body / figure, or a link the app can't follow.
+- **F1 moved** from About to the Primer (GNOME's F1 = help). About is still the logo button and ☰ About.
+
+## What to look at in M12
+- **Ctrl+N** (or ☰ New…): the five cards -- do the previews read as Sans / Serif / Display / Mono? Pick one, name it, Create. The editor opens on **n** with o H O p v as tabs; the guides (crossbar, x-bar, serif) show; the inspector's Key says "in step". Overview: the set's glyphs, accented letters already built (empty until bases are drawn), coverage pointed at the set.
+- The shapes: n's crotches, p's bowl into the stem, v's thin right arm (Serif), the Serif's slabs and head serif, Display's contrast. They are deliberately plain -- say what to change in the recipe (it's numbers in `resources/presets/presets.txt` plus the part rules in `src/model/Presets.cpp`).
+- **Report (Ctrl+5)** on a fresh preset font: should say every check passes. **Spacing**: "nnonoo HHOHOO" -- the starting rhythm.
+- Inspector, font page (click the font in the navigator): **STARTED FROM** -- the preset and its stems.
+- **F1**: read a note, click its links; the Primer should stay open beside the window. On the light and dark desktop (the figures sit on white either way).
+- Ctrl+N again: the chooser remembers the last pick and the set check. Blank = the old empty New.
+
+## Decisions made in s06
+- Presets and notes are DATA in resources/ (compiled into the GTK-free core like the char sets), so the selftest can build every preset and check every note, and Scott can edit both without touching code.
+- Starter glyphs are built from simple parts and merged by M10c's overlap removal (the same engine as export), so they are ordinary editable outlines -- not components, not locked. Parts never share an edge.
+- A preset font gets the whole set at once by default (empty glyphs, accented letters as components) with spacing keys from a shared table, and the glyph order of the set. Unchecking it keeps only the control glyphs; the Overview still shows the set's gaps.
+- The preset is recorded as intent (FontInfo::origin -> lib `granjon.preset`: id + four stems); nothing enforces it. Shown in the inspector; a future stem-drift check (ARCHITECTURE §6) can read it.
+- New Font is a modal window (New replaces the document); the Primer is non-modal (read beside the work).
+- The Primer is its own window, not an inspector card (figures need width) and not a view (it would cover the canvas you're applying it to).
+- F1 = Primer (help), not About.
+
+## s07 goal — Milestone M13: background layer
+A placed image behind a glyph to trace: a scan or a sketch (PNG / JPEG; SVG later), per glyph (UFO 3 `image` in the GLIF, the file in the font's `images/` folder -- what UFO tools already read). Place / replace / remove from the editor (drop a file on the canvas, or a button), move and scale it with handles or numbers, opacity, lock, show / hide; one undo step each (Undo from the first write). Never exported. Check whether a font-wide image (one sheet sliced per glyph) is wanted before building it. **Stop at M13.**
+
+Then, agreed order: M14 drawing kit (primitives -- rectangle, ellipse, line as a filled bar of a set width -- boolean ops on picked contours, the parts library: navigator section, `public.skipExportGlyphs`, placed as linked component or editable contours); M15 transform panel + corner tools + extreme points + offset stroke; M16 mark positioning, features editor, italic angle / font info. Later: print proof, ttfautohint, weight masters (v3).
+
+## Still open
+- Packages: approved in s05. brotli-devel in use (M10b); Clipper2 1.5.4 fetched by CMake (M10c); harfbuzz-devel when the strip shapes. (FreeType is no longer needed for import.)
+- A RULES.md addition proposed in s05, answer pending: "One zip to install" (the final message names the single zip to install; checkpoint zips carry `_wip`). s06 followed it: two `_wip` checkpoints, one final zip.
+- M10 remainder: ttfautohint hook (optional external tool). WOFF2 glyf transform, CFF subroutinization (follow-ons).
+- Overlap follow-ons: the self-overlay fallbacks (estimated, leaf, permyriad, Lslash at shifts like (1, 0), (0.5, 0.5), (150, 0) -- area 0.3-0.6 % off, returned as drawn); an overlaps finding in the Checks report; remove overlaps on a picked set of contours; the Z-tag rebuild back-ported to Curvz.
+- granjon-cli scope (ARC backlog). `export_otf` is its first ready-made command.
+- Editor follow-ons (now behind M12-M16): Shift-constrained point drags (the pen has 45 degrees; picking-mode drags don't yet), node type by key, a delete-without-refit modifier, pen snapping to metrics / nodes, composite follow-ons (Greek tonos, stacking, ogonek anchor, rebuild), overview follow-ons -- all in the ARC backlog.
+- Profiles follow-ons: a profile cache + font-wide kern-to-gap over a pair list, per-class targets, collision check on proof strings.
+- Spacing follow-ons: kerning groups editor (create / assign public.kern1 / kern2 from the UI), a strip text history / presets.
+- Checks follow-ons (ARCHITECTURE §6): missing extreme points, overlaps, sidebearing consistency, stem drift, kerning class audit and outliers, collisions.
+- Import follow-ons: WOFF / WOFF2 in (zlib / brotli), font collections, GSUB -> features.fea, glyph/group kerning kept as exceptions (now expanded to glyph pairs), seac accents, variable fonts (v3).
+- Export follow-ons: italic angle / caret slope (no field in FontInfo yet), panose / family class, CFF subroutinization (size), PostScript blue zones from the metrics.
+- M12 follow-ons: more presets (a slab, a humanist sans, an italic -- once italic angle exists, M16); preset numbers editable before Create (an 'Advanced' fold); starter glyphs for figures (zero, one) and a starter mark (acutecomb) so composites show something at once; isFixedPitch / panose for Mono on export; notes on more topics (diagonals and v/w apex overshoot, S-curves, figure heights, accents) -- they are just text + SVG in resources/primer/.
+- The New Font window's Enter / Escape were tested by reading only (no window manager in the sandbox, so no keyboard focus there); the mouse path was shot.
+- The inspector panel is narrower than some of its rows in a 1280 px window (the OUTLINE card's "Reverse picked", the KERN hint): clipped, not wrapped. Check on Scott's screen.
+- selftest.cpp's main() wants splitting per milestone (M9's part is its own file now; the rest still one function).
+- `GRANJON_SAMPLE` env still there.
+
+---
+
+## Status — s05 (for reference)
 - **M10c overlap removal: crc** (Scott, on `s05_m10c_overlaps_r2.zip`, the last s05 ship; r2 silences a GCC aarch64 -Wpsabi note in Overlap.cpp).
 - **Gap review (end of s05):** Scott raised primitives (square, oval, straight line), a parts library, presets and a primer; I added the rest. New milestones M12-M16 in ARCHITECTURE; order agreed ("okay"). Scott uploaded Curvz's code for it.
 - M10c: **Remove overlaps** -- the union of a glyph's contours, nonzero (what the renderer fills), the CURVES KEPT: Clipper2 (built with its Z channel) works out the topology on a tagged flattening (Curvz's flatten), and the result is rebuilt from the original cubics cut exactly at the crossings -- original nodes keep their place, handles and type; crossings become corners. Not refit, not polygons. A safety net returns a glyph as drawn if its rebuild doesn't check out (area), with the reason.
@@ -112,33 +168,6 @@ What to look at in M9:
 - Kerning: PairPos format 1 first (every glyph pair an entry with a glyph side reaches, at `kern_lookup`'s value -- the strip's own lookup -- minus pairs the classes answer the same; a 0 exception stays), then format 2 for group / group. Subtables split under 64 KB; Extension lookup only when needed. DFLT + latn.
 - No CFF hints, no BlueValues (none in the model; M10's ttfautohint covers TTF).
 - head.created / modified honour SOURCE_DATE_EPOCH (reproducible builds); the selftest fixes the time.
-
-## s06 goal — Milestone M12: presets + primer
-**New font from a preset**: Sans / Serif / Display / Mono -- UPM, vertical metrics, overshoot, a char set, font guides, spacing keys, and starter control glyphs (n o H O p v) as simple, editable shapes to build from. A chooser on New (and ☰), the preset recorded in the font's lib. **Primer**: a Help panel (the inspector or its own page -- settle and surface) of short illustrated notes: overshoot (why rounds are larger), stem weight and contrast (horizontals thinner than verticals), round vs straight spacing (n / o), joins and ink traps, optical centre, drawing order; each note links to the tool or check that applies it (Measure, Checks overshoot, Profiles). Notes are data (resources/), not code. **Stop at M12.**
-
-Then, agreed order: M13 background image layer; M14 drawing kit (primitives -- rectangle, ellipse, line as a filled bar of a set width -- boolean ops on picked contours, the parts library: navigator section, `public.skipExportGlyphs`, placed as linked component or editable contours); M15 transform panel + corner tools + extreme points + offset stroke; M16 mark positioning, features editor, italic angle / font info. Later: print proof, ttfautohint, weight masters (v3).
-
-## s05 goal (done) — Milestone M9: Export OTF
-(ARCHITECTURE milestone list.) An sfnt writer + CFF: head, hhea, maxp, OS/2, name, cmap, post, CFF (charstrings from the cubic outlines, components decomposed), hmtx; kerning as a GPOS pair table (class kerning -> class pairs, exceptions as glyph pairs) -- the first feature output. Validate by reloading with FreeType (and shaping a proof with HarfBuzz -- the moment HarfBuzz earns its place). **Packages** (Fedora: `harfbuzz-devel freetype-devel`; brotli waits for WOFF2): announce, check with Scott before relying on them. A Preview view (Ctrl+4, still a stub) showing the compiled font is the natural visual check. Settle forks inside; surface what changes the workflow.
-**Stop at M9** for a compile / run report.
-
-## Still open
-- Packages: approved in s05. brotli-devel in use (M10b); Clipper2 1.5.4 fetched by CMake (M10c); harfbuzz-devel when the strip shapes. (FreeType is no longer needed for import.)
-- A RULES.md addition proposed in s05, answer pending: "One zip to install" (the final message names the single zip to install; checkpoint zips carry `_wip`).
-- M10 remainder: ttfautohint hook (optional external tool). WOFF2 glyf transform, CFF subroutinization (follow-ons).
-- Overlap follow-ons: the self-overlay fallbacks (estimated, leaf, permyriad, Lslash at shifts like (1, 0), (0.5, 0.5), (150, 0) -- area 0.3-0.6 % off, returned as drawn); an overlaps finding in the Checks report; remove overlaps on a picked set of contours; the Z-tag rebuild back-ported to Curvz.
-- granjon-cli scope (ARC backlog). `export_otf` is its first ready-made command.
-- Editor follow-ons (now behind M12-M16): Shift-constrained point drags (the pen has 45 degrees; picking-mode drags don't yet), node type by key, a delete-without-refit modifier, pen snapping to metrics / nodes, composite follow-ons (Greek tonos, stacking, ogonek anchor, rebuild), overview follow-ons -- all in the ARC backlog.
-- Profiles follow-ons: a profile cache + font-wide kern-to-gap over a pair list, per-class targets, collision check on proof strings.
-- Spacing follow-ons: kerning groups editor (create / assign public.kern1 / kern2 from the UI), a strip text history / presets.
-- Checks follow-ons (ARCHITECTURE §6): missing extreme points, overlaps, sidebearing consistency, stem drift, kerning class audit and outliers, collisions.
-- Import follow-ons: WOFF / WOFF2 in (zlib / brotli), font collections, GSUB -> features.fea, glyph/group kerning kept as exceptions (now expanded to glyph pairs), seac accents, variable fonts (v3).
-- Export follow-ons: italic angle / caret slope (no field in FontInfo yet), panose / family class, CFF subroutinization (size), PostScript blue zones from the metrics.
-- The inspector panel is narrower than some of its rows in a 1280 px window (the OUTLINE card's "Reverse picked", the KERN hint): clipped, not wrapped. Check on Scott's screen.
-- selftest.cpp's main() wants splitting per milestone (M9's part is its own file now; the rest still one function).
-- `GRANJON_SAMPLE` env still there.
-
----
 
 ## Working rules (carried verbatim from RULES.md -- DO NOT DELETE)
 

@@ -54,6 +54,9 @@ public:
     // front tab; a glyph selected elsewhere joins as a tab.
     void open_tabs(const std::vector<std::string>& names, const std::string& active);
     void clear_tabs();            // the editor came to the front: keys go to the canvas
+    // M12 (the Primer's links): pick a tool by name -- "pick", "pen",
+    // "measure", "hand". False for an unknown name.
+    bool use_tool(const std::string& name);
     bool shading() const { return m_fill.get_active(); }
 
 private:

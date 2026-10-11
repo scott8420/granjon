@@ -1,4 +1,5 @@
 #include "views/Inspector.hpp"
+#include "model/Presets.hpp"
 
 #include "model/Profiles.hpp"
 #include "model/Spacing.hpp"
@@ -222,6 +223,14 @@ void Inspector::build_font_page() {
     hint->set_wrap(true);
     hint->add_css_class("hint");
     vm.wide(*hint);
+
+    // M12: what the font was started from -- a record of intent (the stems
+    // it set out with), shown only for a preset font.
+    Card origin(*page, "STARTED FROM");
+    m_origin.set_xalign(0.0f);
+    m_origin.set_wrap(true);
+    origin.wide(m_origin);
+    m_origin_card = origin.box;
 
     m_pages.add(*page, "font");
 }
@@ -653,6 +662,14 @@ void Inspector::refresh() {
         m_upm.set_value(f.info().units_per_em);
         for (std::size_t i = 0; i < m_metric.size(); ++i)
             if (m_metric[i]) m_metric[i]->set_value(f.metrics().get(static_cast<model::Metrics::Field>(i)));
+        const auto& o = f.info().origin;
+        const model::Preset* p = model::preset(o.preset);
+        m_origin_card->set_visible(!o.preset.empty());
+        if (!o.preset.empty())
+            m_origin.set_text((p ? p->name : o.preset) + " preset.\nStems: lowercase " + std::to_string(o.stem_v) + " / " +
+                              std::to_string(o.stem_h) + ", capitals " + std::to_string(o.cap_stem_v) + " / " +
+                              std::to_string(o.cap_stem_h) + " (vertical / horizontal).\n"
+                              "Measure (M) a stem to compare; the Primer (F1) says why they differ.");
     } else {
         m_pages.set_visible_child("glyph");
         m_title.set_text(g->name);

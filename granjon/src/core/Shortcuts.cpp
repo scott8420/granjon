@@ -155,7 +155,7 @@ const std::vector<ShortcutSpec>& shortcut_registry() {
         {"Editor", "", {}, "Scroll, middle-drag, Space+drag", "Pan"},
 
         // ── General ───────────────────────────────────────────────────────────
-        {"General", "win.new",           {"<Ctrl>n"}, "", "New font"},
+        {"General", "win.new",           {"<Ctrl>n"}, "", "New font (choose a preset)"},
         {"General", "win.open",          {"<Ctrl>o"}, "", "Open a font (.granjon / .ufo folder)"},
         {"General", "win.import-font",   {"<Ctrl><Shift>o"}, "", "Import an OTF / TTF as a new font (Save keeps it as .granjon)"},
         {"General", "win.save",          {"<Ctrl>s"}, "", "Save"},
@@ -164,7 +164,8 @@ const std::vector<ShortcutSpec>& shortcut_registry() {
         {"General", "win.export-ttf",    {"<Ctrl><Shift>e"}, "", "Export TTF (quadratic outlines)"},
         {"General", "win.shortcuts",     {"<Ctrl>question", "<Ctrl>slash"}, "",
          "Keyboard shortcuts (this window)"},
-        {"General", "win.about",         {"F1"}, "", "About Granjon"},
+        {"General", "win.primer",        {"F1"}, "", "Primer: short notes on drawing type (overshoot, stems, spacing ...)"},
+        {"General", "win.about",         {}, "", "About Granjon (the logo, top left)"},
         {"General", "win.preferences",   {"<Ctrl>comma"}, "", "Preferences"},
         {"General", "win.quit",          {"<Ctrl>q"}, "", "Quit"},
 

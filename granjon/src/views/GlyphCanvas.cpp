@@ -1910,6 +1910,15 @@ GlyphCanvas::Tool GlyphCanvas::tool() const {
     return Tool::Pick;
 }
 
+bool GlyphCanvas::use_tool(const std::string& name) {
+    if (name == "pick")         set_tool(Tool::Pick);
+    else if (name == "pen")     set_tool(Tool::Pen);
+    else if (name == "measure") set_tool(Tool::Measure);
+    else if (name == "hand")    set_tool(Tool::Hand);
+    else return false;
+    return true;
+}
+
 void GlyphCanvas::set_tool(Tool t) {
     Gtk::ToggleButton& b = t == Tool::Pen ? static_cast<Gtk::ToggleButton&>(m_pen)
                          : t == Tool::Measure ? static_cast<Gtk::ToggleButton&>(m_tool_measure)

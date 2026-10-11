@@ -132,6 +132,23 @@ std::vector<model::Finding> ReportList::visible(model::CheckId id) const {
     return out;
 }
 
+int ReportList::open_check(const std::string& tag) {
+    for (const auto& info : model::checks()) {
+        if (tag != info.tag) continue;
+        recheck_all();
+        m_stale = false;
+        const auto xs = visible(info.id);
+        // Open = (few enough to open by default) XOR toggled: toggle when the
+        // default would fold it.
+        if (xs.size() > kOpenUpTo) m_toggled.insert(info.id); else m_toggled.erase(info.id);
+        rebuild();
+        int live = 0;
+        for (const auto& x : xs) if (!model::is_skipped(m_ctx.doc.font, x)) ++live;
+        return live;
+    }
+    return -1;
+}
+
 void ReportList::rebuild() {
     while (auto* c = m_list.get_first_child()) m_list.remove(*c);
     const auto& f = m_ctx.doc.font;

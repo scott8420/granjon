@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Granjon Primer figure: round and straight spacing (n / o). Font units come from the presets' own glyphs
+     (Sans unless noted). Edit freely: plain SVG, 1040 x 520, drawn on white. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="520" viewBox="0 0 1040 520">
+<rect width="1040" height="520" rx="18" fill="#ffffff"/>
+<rect x='217.88' y='213.6' width='39.04000000000002' height='166.4' fill='rgba(53,132,228,0.16)'/>
+<rect x='407.32' y='213.6' width='51.839999999999975' height='166.4' fill='rgba(53,132,228,0.16)'/>
+<rect x='581.4' y='213.6' width='66.56000000000017' height='166.4' fill='rgba(53,132,228,0.16)'/>
+<rect x='770.2' y='213.6' width='53.75999999999999' height='166.4' fill='rgba(53,132,228,0.16)'/>
+<path d='M64 760L152 760L152 384C187 336 239 306 299 306C381 306 446 380 446 474L446 760L534 760L534 474C534 336 433 228 303 228C242 228 188 248 152 279L152 240L64 240Z' transform='translate(47.0 136.8) scale(0.32)' fill='#1d1d1f' />
+<path d='M64 760L152 760L152 384C187 336 239 306 299 306C381 306 446 380 446 474L446 760L534 760L534 474C534 336 433 228 303 228C242 228 188 248 152 279L152 240L64 240Z' transform='translate(236.4 136.8) scale(0.32)' fill='#1d1d1f' />
+<path d='M295 772C436 772 546 652 546 500C546 348 436 228 295 228C154 228 44 348 44 500C44 652 154 772 295 772ZM295 694C207 694 137 609 137 500C137 391 207 306 295 306C383 306 453 391 453 500C453 609 383 694 295 694Z' transform='translate(425.9 136.8) scale(0.32)' fill='#1d1d1f' />
+<path d='M295 772C436 772 546 652 546 500C546 348 436 228 295 228C154 228 44 348 44 500C44 652 154 772 295 772ZM295 694C207 694 137 609 137 500C137 391 207 306 295 306C383 306 453 391 453 500C453 609 383 694 295 694Z' transform='translate(614.7 136.8) scale(0.32)' fill='#1d1d1f' />
+<path d='M64 760L152 760L152 384C187 336 239 306 299 306C381 306 446 380 446 474L446 760L534 760L534 474C534 336 433 228 303 228C242 228 188 248 152 279L152 240L64 240Z' transform='translate(803.5 136.8) scale(0.32)' fill='#1d1d1f' />
+<line x1='40' y1='380' x2='1000' y2='380' stroke='#3584e4' stroke-width='2'/>
+<line x1='40' y1='213.6' x2='1000' y2='213.6' stroke='#3584e4' stroke-width='2' stroke-dasharray='6 6'/>
+<text x='237.4' y='199.6' font-size='24' text-anchor='middle' fill='#c01c28' font-weight='bold' font-family='Cantarell, Inter, Noto Sans, sans-serif'>122</text>
+<text x='423.64' y='199.6' font-size='24' text-anchor='middle' fill='#c01c28' font-weight='bold' font-family='Cantarell, Inter, Noto Sans, sans-serif'>102</text>
+<text x='614.6800000000001' y='199.6' font-size='24' text-anchor='middle' fill='#c01c28' font-weight='bold' font-family='Cantarell, Inter, Noto Sans, sans-serif'>88</text>
+<text x='806.6800000000001' y='199.6' font-size='24' text-anchor='middle' fill='#c01c28' font-weight='bold' font-family='Cantarell, Inter, Noto Sans, sans-serif'>102</text>
+<text x='520' y='456' font-size='24' text-anchor='middle' fill='#5e5e66' font-weight='normal' font-family='Cantarell, Inter, Noto Sans, sans-serif'>Straight beside straight sits furthest apart; a round side sits closer,</text>
+<text x='520' y='486' font-size='24' text-anchor='middle' fill='#5e5e66' font-weight='normal' font-family='Cantarell, Inter, Noto Sans, sans-serif'>because the white curving away beside it counts too. Aim for even AREA.</text>
+</svg>

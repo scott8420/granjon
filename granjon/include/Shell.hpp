@@ -63,6 +63,8 @@ namespace granjon {
 class AboutWindow;
 class ShortcutsDialog;
 class PreferencesWindow;
+class NewFontDialog;
+class PrimerWindow;
 
 class Shell : public Gtk::ApplicationWindow {
 public:
@@ -83,7 +85,7 @@ private:
     void bind_actions();                         // category: bindings: actions, recents group, undo keys, motif
 
     // ── handlers ───────────────────────────────────────────────────────────
-    void on_new();                               // category: handler: a fresh untitled font (Ctrl+N)
+    void on_new();                               // category: handler: the preset chooser, then a fresh untitled font (Ctrl+N, M12)
     void on_open();                              // category: handler: choose a .granjon / .ufo folder (Ctrl+O)
     void on_save();                              // category: handler: save, or Save As when untitled (Ctrl+S)
     void on_save_as();                           // category: handler: choose where (Ctrl+Shift+S)
@@ -96,6 +98,8 @@ private:
     void on_recent_open(const std::string& p);   // category: handler: open a recent font (parameterised)
     void on_recent_clear();                      // category: handler: empty the recents list
     void on_dump_registry();                     // category: handler: print the live widget tree
+    void on_primer(const std::string& note);     // category: handler: open the Primer window (F1, M12)
+    void on_primer_link(const std::string& target);   // category: handler: a Primer "Try it" link, done in this window
     void on_about();                             // category: handler: open the About window (dialog-lifetime exemplar)
     void on_font_metrics_keys();                 // category: handler: apply metrics keys font-wide (one step, M6)
     void on_font_overlaps();                     // category: handler: remove overlaps font-wide (one step, M10c)
@@ -179,6 +183,8 @@ private:
     // The About window: a hide-on-close singleton, built lazily on first open.
     std::unique_ptr<AboutWindow>    m_about;
     std::unique_ptr<ShortcutsDialog> m_shortcuts;
+    std::unique_ptr<PrimerWindow>   m_primer;      // M12: the Primer (non-modal, same singleton shape)
+    std::unique_ptr<NewFontDialog>  m_newfont;     // M12: the preset chooser on New (same singleton shape)
     std::unique_ptr<PreferencesWindow> m_prefs;      // same hide-on-close singleton shape   // shortcut registry's GTK consumer (same lifetime stone)
 };
 

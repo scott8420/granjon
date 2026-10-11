@@ -25,6 +25,9 @@ public:
 
     void refresh();                                   // everything may have changed (open / new)
     void update(const std::set<std::string>& ids);    // a step touched these records
+    // M12 (the Primer's links): unfold one check's section ("overshoot", ...).
+    // Returns its live finding count (-1 for an unknown tag).
+    int open_check(const std::string& tag);
 
 private:
     void recheck_all();

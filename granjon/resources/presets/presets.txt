@@ -1,0 +1,163 @@
+# Granjon new-font presets (M12). Compiled into the core (tools/embed.cpp);
+# edit here, rebuild. One [section] per preset, in the chooser's order;
+# [keys] is shared by every proportional preset.
+#
+# Units are font units at the preset's upm. Per preset:
+#   name / blurb        what the chooser shows
+#   upm ascender descender x_height cap_height overshoot
+#   stem_v stem_h       lowercase stems: vertical (n's stem) and horizontal
+#                       (the thickness at the top of an arch or a bowl)
+#   cap_stem_v cap_stem_h   the same for capitals (a little heavier)
+#   serif serif_t       serif length past the stem, and its thickness (0 = sans)
+#   mono                every advance (0 = proportional)
+#   space               the space's advance
+#   charset             the coverage set (resources/charsets/<id>.txt)
+#   glyph: NAME width left right
+#                       a starter glyph: its drawn width (outside to outside)
+#                       and its sidebearings (mono: centred, left / right unused)
+#   guide: NAME y       a font-wide horizontal guide
+
+[sans]
+name: Sans
+blurb: A grotesque for text. Low contrast, even stems, open spacing.
+upm: 1000
+ascender: 760
+descender: -240
+x_height: 520
+cap_height: 700
+overshoot: 12
+stem_v: 88
+stem_h: 78
+cap_stem_v: 96
+cap_stem_h: 86
+serif: 0
+serif_t: 0
+mono: 0
+space: 240
+charset: gf-latin-core
+glyph: n 470 64 58
+glyph: o 502 44 44
+glyph: H 590 86 86
+glyph: O 680 50 50
+glyph: p 500 64 44
+glyph: v 480 16 16
+guide: crossbar 364
+guide: x-bar 270
+
+[serif]
+name: Serif
+blurb: A book face. Contrast between thick and thin, small serifs, a smaller x-height.
+upm: 1000
+ascender: 720
+descender: -260
+x_height: 450
+cap_height: 660
+overshoot: 12
+stem_v: 82
+stem_h: 30
+cap_stem_v: 90
+cap_stem_h: 36
+serif: 34
+serif_t: 24
+mono: 0
+space: 250
+charset: gf-latin-core
+glyph: n 460 34 30
+glyph: o 470 38 38
+glyph: H 620 40 40
+glyph: O 690 44 44
+glyph: p 470 34 38
+glyph: v 470 6 6
+guide: crossbar 346
+guide: x-bar 236
+guide: serif 24
+
+[display]
+name: Display
+blurb: For headlines. Heavy stems, thin hairlines, tight spacing.
+upm: 1000
+ascender: 760
+descender: -240
+x_height: 500
+cap_height: 700
+overshoot: 14
+stem_v: 150
+stem_h: 52
+cap_stem_v: 160
+cap_stem_h: 58
+serif: 0
+serif_t: 0
+mono: 0
+space: 200
+charset: gf-latin-core
+glyph: n 500 40 34
+glyph: o 520 28 28
+glyph: H 600 56 56
+glyph: O 700 32 32
+glyph: p 520 40 28
+glyph: v 500 6 6
+guide: crossbar 364
+guide: x-bar 260
+
+[mono]
+name: Mono
+blurb: Every glyph the same width, for code and tables. Narrow letters, wide counters.
+upm: 1000
+ascender: 760
+descender: -240
+x_height: 530
+cap_height: 700
+overshoot: 12
+stem_v: 84
+stem_h: 74
+cap_stem_v: 88
+cap_stem_h: 78
+serif: 0
+serif_t: 0
+mono: 600
+space: 600
+charset: latin-1
+glyph: n 440 0 0
+glyph: o 460 0 0
+glyph: H 460 0 0
+glyph: O 480 0 0
+glyph: p 460 0 0
+glyph: v 480 0 0
+guide: crossbar 364
+guide: x-bar 276
+
+# Spacing keys for the glyphs a set adds, from the control glyphs (n o H O v):
+# straight sides like n / H, round sides like o / O. "|n" = n's opposite side.
+# A key is only written when its glyph is in the font. Mono writes W=<mono>
+# for every glyph instead.
+[keys]
+key: b L=n R=o
+key: c L=o
+key: d L=o R=n
+key: e L=o
+key: h L=n R=n
+key: i L=n R=n
+key: j R=n
+key: k L=n
+key: l L=n R=n
+key: m L=n R=n
+key: q L=o R=n
+key: r L=n
+key: u L=|n R=|n
+key: w L=v R=v
+key: y L=v R=v
+key: B L=H
+key: C L=O
+key: D L=H R=O
+key: E L=H
+key: F L=H
+key: G L=O
+key: I L=H R=H
+key: K L=H
+key: L L=H
+key: M L=H R=H
+key: N L=H R=H
+key: P L=H
+key: Q L=O R=O
+key: R L=H
+key: U L=H R=H

@@ -154,6 +154,15 @@ bool save_ufo(const Font& f, const std::string& path_str, std::string* err) {
     for (const auto& n : glyph_order) order.arr.push_back(PValue::str(n));
     lib.set("public.glyphOrder", std::move(order));
     lib.set("granjon.overshoot", PValue::integer(m.overshoot));
+    if (const auto& o = f.info().origin; !o.preset.empty()) {
+        PValue pr = PValue::dictionary();
+        pr.set("id", PValue::str(o.preset));
+        pr.set("stemV", PValue::integer(o.stem_v));
+        pr.set("stemH", PValue::integer(o.stem_h));
+        pr.set("capStemV", PValue::integer(o.cap_stem_v));
+        pr.set("capStemH", PValue::integer(o.cap_stem_h));
+        lib.set("granjon.preset", std::move(pr));
+    }
     if (!f.metrics_keys().keys.empty()) {
         PValue mk = PValue::dictionary();
         for (const auto& [glyph, key] : f.metrics_keys().keys) {
@@ -283,6 +292,13 @@ bool load_ufo(const std::string& path_str, Font& into, std::string* err) {
         if (const PValue* go = lib->get("public.glyphOrder"))
             for (const auto& v : go->arr) order.push_back(v.s);
         if (auto os = lib->get_number("granjon.overshoot")) metrics.overshoot = static_cast<int>(*os);
+        if (const PValue* pr = lib->get("granjon.preset"); pr && pr->kind == PValue::Kind::Dict) {
+            info.origin.preset     = pr->get_string("id").value_or("");
+            info.origin.stem_v     = static_cast<int>(pr->get_number("stemV").value_or(0));
+            info.origin.stem_h     = static_cast<int>(pr->get_number("stemH").value_or(0));
+            info.origin.cap_stem_v = static_cast<int>(pr->get_number("capStemV").value_or(0));
+            info.origin.cap_stem_h = static_cast<int>(pr->get_number("capStemH").value_or(0));
+        }
         if (const PValue* mk = lib->get("granjon.metricsKeys"))
             for (const auto& [glyph, v] : mk->dict)
                 keys.keys[glyph] = {v.get_string("left").value_or(""), v.get_string("right").value_or(""),

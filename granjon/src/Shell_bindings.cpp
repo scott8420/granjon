@@ -31,6 +31,7 @@ void Shell::bind_actions() {  // bindings: actions + recents group
     signal_close_request().connect(sigc::mem_fun(*this, &Shell::on_close_request), false);
     add_action("dump-registry", sigc::mem_fun(*this, &Shell::on_dump_registry));
     add_action("about",         sigc::mem_fun(*this, &Shell::on_about));
+    add_action("primer",        [this] { on_primer(""); });
     add_action("shortcuts",     sigc::mem_fun(*this, &Shell::on_shortcuts));
     add_action("preferences",   sigc::mem_fun(*this, &Shell::on_preferences));
     add_action("font-anchors",  sigc::mem_fun(*this, &Shell::on_font_anchors));

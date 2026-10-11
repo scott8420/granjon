@@ -149,7 +149,7 @@ Glib::RefPtr<Gio::Menu> Shell::build_menu() {  // zone: hamburger model
     auto menu = Gio::Menu::create();
 
     auto file = Gio::Menu::create();
-    file->append("New", "win.new");
+    file->append("New…", "win.new");
     file->append("Open…", "win.open");
     m_recents_menu = Gio::Menu::create();
     file->append_submenu("Open recent", m_recents_menu);
@@ -187,6 +187,7 @@ Glib::RefPtr<Gio::Menu> Shell::build_menu() {  // zone: hamburger model
     menu->append_section(view);
 
     auto diag = Gio::Menu::create();
+    diag->append("Primer: drawing type", "win.primer");
     diag->append("Keyboard shortcuts", "win.shortcuts");
     diag->append("Dump registry", "win.dump-registry");
     menu->append_section(diag);

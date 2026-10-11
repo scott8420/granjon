@@ -5,6 +5,9 @@
 #include "unicode/Blocks.hpp"
 #include "unicode/UcdTable.hpp"
 #include "AboutWindow.hpp"
+#include "NewFontDialog.hpp"
+#include "PrimerWindow.hpp"
+#include "core/Primer.hpp"
 #include "ShortcutsDialog.hpp"
 #include "PreferencesWindow.hpp"
 #include "Log.hpp"
@@ -32,13 +35,38 @@ namespace granjon {
 // The file. A .granjon (or .ufo) font is a FOLDER, so Open chooses a folder.
 // Anything that would drop unsaved changes asks first (confirm_discard).
 // ─────────────────────────────────────────────────────────────────────────────
+// M12: New asks which preset to start from (the chooser), then replaces the
+// document. A preset font opens its six control glyphs in the editor, n in
+// front, and points the Overview's coverage at the set.
 void Shell::on_new() {  // handler: Ctrl+N
     confirm_discard([this] {
-        m_doc.new_font();
-        m_settings.last_font.clear();   // untitled: nothing to reopen
-        save_settings();
-        after_document_swap();
-        say("New font.", false);
+        if (!m_newfont) m_newfont = std::make_unique<NewFontDialog>();
+        m_newfont->show(*this, m_settings.new_preset, m_settings.new_create_set,
+                        [this](const model::NewFontOptions& o) {
+            model::NewFontReport rep;
+            m_doc.new_font(o, &rep);
+            m_settings.last_font.clear();   // untitled: nothing to reopen
+            m_settings.new_preset = o.preset;
+            const model::Preset* p = model::preset(o.preset);
+            if (p) {
+                m_settings.new_create_set = o.create_set;
+                m_settings.overview_charset = o.charset == "@none" ? std::string{} : o.charset;
+            }
+            save_settings();
+            m_ctx.settings_changed.emit();
+            after_document_swap();
+            if (!p) { say("New font.", false); return; }
+            if (auto lg = log::get(log::Area::Io)) for (const auto& n : rep.notes) lg->warn("new font: {}", n);
+            m_ctx.open_tabs(model::control_glyphs(), "n");
+            m_ctx.select("n");
+            m_ctx.show_view("editor");
+            std::string s = "New " + p->name + " font: n o H O p v drawn to start from";
+            if (rep.added > 0)
+                s += ", " + std::to_string(rep.added) + " more glyphs from the set (" +
+                     std::to_string(rep.composites) + " built from parts)";
+            s += ". Primer (F1) has the why.";
+            say(s, !rep.notes.empty());
+        });
     });
 }
 
@@ -360,6 +388,76 @@ void Shell::export_svg(bool strip) {  // helper
             (names.size() == 1 ? "" : "s") + " as outlines.", false);
         if (auto lg = log::get(log::Area::Io)) lg->info("export svg '{}': {} glyphs", p.string(), names.size());
     });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The Primer (M12). Its own window, beside this one; its "Try it" links are
+// done HERE, in the main window, so the note stays open while you try it.
+// ─────────────────────────────────────────────────────────────────────────────
+void Shell::on_primer(const std::string& note) {  // handler: F1
+    if (!m_primer)
+        m_primer = std::make_unique<PrimerWindow>([this](const std::string& t) { on_primer_link(t); });
+    m_primer->show(*this, note);
+}
+
+void Shell::on_primer_link(const std::string& target) {  // handler
+    const core::LinkTarget t = core::parse_link_target(target);
+    if (!t.valid) { say("The Primer link '" + target + "' isn't one Granjon knows.", true); return; }
+    const auto& f = m_doc.font;
+    // The editor on these glyphs (as tabs, the first in front); false when the
+    // font has none of them.
+    const auto edit = [&](const std::string& list) {
+        std::vector<std::string> names;
+        std::size_t a = 0;
+        while (a <= list.size()) {
+            const auto b = list.find(',', a);
+            const std::string n = list.substr(a, b == std::string::npos ? std::string::npos : b - a);
+            if (!n.empty() && f.glyph(n)) names.push_back(n);
+            if (b == std::string::npos) break;
+            a = b + 1;
+        }
+        if (names.empty()) return false;
+        m_ctx.select(names.front());
+        m_ctx.open_tabs(names, names.front());
+        return true;
+    };
+    if (t.kind == "tool") {
+        const auto c = t.arg.find(':');
+        const std::string tool = t.arg.substr(0, c);
+        const std::string glyph = c == std::string::npos ? std::string{} : t.arg.substr(c + 1);
+        if (!glyph.empty() && !edit(glyph)) {
+            say("This font has no '" + glyph + "' yet -- draw one (or start a font from a preset, Ctrl+N).", true);
+            return;
+        }
+        if (glyph.empty()) m_ctx.show_view("editor");
+        m_editor.use_tool(tool);
+        m_editor.focus_canvas();
+        if (tool == "measure")
+            say("Measure: click inside a stem for its width, or drag between two points. Escape returns to Pick.", false);
+        else if (tool == "pen")
+            say("Pen: click for corners, drag for curves, click the first node to close.", false);
+    } else if (t.kind == "glyph") {
+        if (!edit(t.arg)) say("This font has none of: " + t.arg + ". Start one from a preset (Ctrl+N).", true);
+    } else if (t.kind == "view") {
+        m_ctx.show_view(t.arg);
+    } else if (t.kind == "report") {
+        m_ctx.show_view("report");
+        const int n = m_report.open_check(t.arg);
+        if (n == 0) say("No " + t.arg + " findings: every glyph passes that check.", false);
+    } else if (t.kind == "spacing") {
+        m_settings.spacing_text = t.arg;
+        save_settings();
+        m_ctx.settings_changed.emit();
+        m_ctx.show_view("spacing");
+    } else if (t.kind == "font") {
+        m_ctx.set_kern_pick(std::nullopt);
+        m_ctx.select({});
+        if (!m_inspector.get_visible()) activate_action("win.show-inspector");
+        say("The inspector's font page: Vertical Metrics (overshoot), and Started From for a preset font.", false);
+    } else if (t.kind == "action") {
+        activate_action("win." + t.arg);
+    }
+    present();
 }
 
 }  // namespace granjon

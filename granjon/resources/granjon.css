@@ -404,3 +404,27 @@ popover.checklist-popover .badge { margin-left: 4px; }
     color: var(--accent-fg);
     box-shadow: none;
 }
+
+/* ── New font chooser (M12) ───────────────────────────────────────────── */
+button.preset-card {
+    padding: 8px 6px 6px 6px;
+    border-radius: 10px;
+    background-color: var(--bg-raised);
+    border: 1px solid var(--bg-edge);
+}
+button.preset-card:hover   { background-color: var(--hover-bg); }
+button.preset-card:checked {
+    background-color: var(--accent-bg);
+    border-color: var(--accent);
+    color: var(--fg-primary);
+}
+.preset-name { font-weight: bold; }
+
+/* ── Primer (M12) ─────────────────────────────────────────────────────── */
+.primer-list row { padding: 7px 8px; }
+.primer-page { background-color: var(--bg-base); }
+.primer-title { font-size: 1.5em; font-weight: bold; }
+.primer-text { font-size: 1.05em; line-height: 1.3; }
+.primer-figure { border-radius: 12px; }
+button.primer-link { padding: 3px 8px; color: var(--accent); }
+button.primer-link:hover { background-color: var(--hover-bg); }

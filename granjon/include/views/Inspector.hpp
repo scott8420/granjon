@@ -56,6 +56,8 @@ private:
     widgets::Entry      m_family;
     widgets::Entry      m_style;
     widgets::SpinButton m_upm;
+    widgets::Label      m_origin{"inspector.origin"};   // M12: the preset the font started from
+    Gtk::Box*           m_origin_card = nullptr;
     std::array<widgets::SpinButton*, 5> m_metric{};
 
     // glyph
