@@ -41,6 +41,7 @@ private:
     void on_unicodes();
     void on_note();
     void refresh_pick();               // the PICK card (one picked point)
+    void refresh_booleans();
     void refresh_parts(const model::Glyph& g);   // the COMPONENTS / ANCHORS lists
     void on_pick_xy();
     void on_handle_xy(bool out);       // the In / Out rows of a picked node
@@ -133,6 +134,16 @@ private:
     widgets::Box         m_comp_list;
     widgets::Entry       m_comp_add;
     widgets::Button      m_decompose;
+    // M14c: parts
+    widgets::CheckButton m_is_part;           // GLYPH card: "Part -- not exported"
+    widgets::DropDown    m_part_list;         // PARTS card: the font's parts
+    std::vector<std::string> m_part_names;    // ... their names, in the list's order
+    widgets::Button      m_place_linked;
+    widgets::Button      m_place_contours;
+    widgets::Entry       m_part_name;
+    widgets::Button      m_make_part;
+    void refresh_parts_card(const model::Glyph& g);
+    void place_selected_part(bool linked);
     widgets::Box         m_anchor_list;
     widgets::Entry       m_anchor_add;
     widgets::Button      m_default_anchors;
@@ -140,6 +151,9 @@ private:
     widgets::Label       m_outline_info;
     widgets::Button      m_correct;
     widgets::Button      m_overlaps;          // M10c
+    widgets::Button      m_union;             // M14b: the booleans on the picked contours
+    widgets::Button      m_subtract;
+    widgets::Button      m_intersect;
     widgets::Button      m_reverse;
     widgets::Button      m_make_first;   // M5e: the picked node leads its contour
     // image (M13): the background image -- place / replace, where, how strong, lock

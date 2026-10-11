@@ -1,5 +1,5 @@
 #pragma once
-// geom::Overlap (M10c) -- remove overlaps: the union of a glyph's closed
+// geom::Overlap (M10c; booleans M14b) -- remove overlaps: the union of a glyph's closed
 // contours (nonzero fill, as fonts render), rebuilt from the ORIGINAL cubics.
 //
 // Clipper2 (Angus Johnson; built with its Z channel) does the topology on a
@@ -31,5 +31,15 @@ struct OverlapResult {
 };
 
 OverlapResult remove_overlaps(const std::vector<model::Contour>& in);
+
+// M14b: the booleans on the same engine and rebuild. `subject` and `clip`
+// each fill nonzero; Union = either, Subtract = subject minus clip,
+// Intersect = both. The result is the rebuilt loops (curves kept, crossings
+// corners), outers counter-clockwise and holes clockwise; open contours in
+// either list come back as they were. `changed` with no closed contours =
+// nothing left (an intersection of shapes that don't meet). On `fallback` the input (subject then
+// clip) comes back with the reason, as remove_overlaps.
+enum class BoolOp { Union, Subtract, Intersect };
+OverlapResult boolean_op(const std::vector<model::Contour>& subject, const std::vector<model::Contour>& clip, BoolOp op);
 
 }  // namespace granjon::geom

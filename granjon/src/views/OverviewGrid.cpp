@@ -368,7 +368,7 @@ void OverviewGrid::refresh() {
         const auto& name = order[i];
         if (!m_ctx.shows(name) || !m_ctx.in_scope(name)) continue;
         const model::Glyph* g = font.glyph(name);
-        const std::string sec = unicode::section_of(g->unicodes);
+        const std::string sec = g->skip_export ? std::string("Parts") : unicode::section_of(g->unicodes);   // M14c
         sections[{unicode::section_rank(sec), sec}].push_back(
             {g->unicodes.empty() ? char32_t(0) : g->unicodes.front(), i, name});
     }

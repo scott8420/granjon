@@ -11,6 +11,7 @@
 // restores, redo re-applies. A verb the UI offers and the table lacks is the
 // gap the gate cannot see -- add it here in the same change that adds the
 // button. (CANON: "Undo is foundation, not a feature".)
+#include "geom/Overlap.hpp"
 #include "geom/Edit.hpp"
 #include "model/Checks.hpp"
 #include "model/Coverage.hpp"
@@ -137,6 +138,44 @@ bool correct_directions(FontJournal& j, Font& f, const std::vector<std::string>&
 bool remove_overlaps(FontJournal& j, Font& f, const std::vector<std::string>& glyphs,
                      std::size_t* changed = nullptr, std::size_t* fell_back = nullptr,
                      std::size_t* wrong_way = nullptr);
+// M14b: the booleans, on a glyph's contours, on the M10c engine (curves kept
+// exact, crossings corners, snapped). `picked` = the contours with a picked
+// node or handle (as Reverse picked).
+//   Union      the picked contours become one outline (two or more picked).
+//   Subtract   the picked contours CUT the rest: every unpicked contour whose
+//              box meets theirs loses what they cover; the cutters go.
+//   Intersect  the unpicked contours whose box meets the picked ones keep
+//              only what the picked ones cover; the picked ones go.
+// Contours not involved stay as they are, in their order; the result takes
+// the place of the first contour involved. ONE step, named for the op.
+// Refused (no step, `why` says): too few picked, nothing to cut, a contour
+// running the wrong way among either set (nonzero would fill a counter), a
+// result that would be empty, a rebuild that didn't check out. `result`
+// gets the new contours' indices (the canvas picks them).
+bool boolean_contours(FontJournal& j, Font& f, const std::string& glyph, const std::vector<int>& picked,
+                      geom::BoolOp op, std::vector<int>* result = nullptr, std::string* why = nullptr);
+// ── parts (M14c): glyphs left out of the compile (public.skipExportGlyphs) ──
+// A free part name from a stem: "_part.serif", then "_part.serif.1", ...
+std::string free_part_name(const Font& f, const std::string& stem);
+// A new part `name` holding copies of `contours` of `glyph` (where they are --
+// a part keeps its place relative to the baseline / origin), the glyph's
+// width. ONE step ("Make part"); the source is untouched. Refused on a bad /
+// taken name or no closed contour picked.
+bool make_part(FontJournal& j, Font& f, const std::string& glyph, const std::vector<int>& contours,
+               const std::string& name, std::string* why = nullptr);
+// Mark / unmark glyphs as parts. ONE step; false when none would change.
+bool set_part(FontJournal& j, Font& f, const std::vector<std::string>& glyphs, bool part);
+// Place a part into `glyph` at (dx, dy): as a LINKED component (edit the part
+// and every glyph using it follows; decomposed on export), or as plain
+// editable contours (its own and its components', resolved). ONE step
+// ("Place part"). Refused when `part` is not a part, is the glyph itself,
+// would make a cycle, or draws nothing. `contours` gets the new contours'
+// indices / `component` the new component's index.
+bool place_part(FontJournal& j, Font& f, const std::string& glyph, const std::string& part, bool as_component,
+                double dx = 0, double dy = 0, std::vector<int>* contours = nullptr, int* component = nullptr,
+                std::string* why = nullptr);
+// The font's parts, in glyph order.
+std::vector<std::string> parts(const Font& f);
 // M5f: a node on segment `segment` of `contour` at t, the shape unchanged.
 // ONE step; `index` gets the new node's index.
 bool insert_node(FontJournal& j, Font& f, const std::string& glyph, int contour, int segment, double t,
@@ -159,6 +198,13 @@ struct PenAt { int contour = -1; int node = -1; bool closed = false; };
 PenAt pen_press(FontJournal& j, Font& f, const std::string& glyph, int contour, geom::Vec2 p, bool close = false,
                 bool from_start = false);
 void  pen_drag(FontJournal& j, Font& f, const std::string& glyph, const PenAt& at, geom::Vec2 d, bool cusp);
+// M14a: a primitive (rectangle / ellipse / line -- geom::Shapes) drawn into
+// the glyph as a new closed contour. ONE step, labelled `label`; snapped to
+// units and turned counter-clockwise (an outer contour). Refused when the
+// contour has fewer than three nodes or no area after snapping. `index` gets
+// the new contour's index.
+bool add_shape(FontJournal& j, Font& f, const std::string& glyph, const model::Contour& c, const std::string& label,
+               int* index = nullptr, std::string* why = nullptr);
 // Make this node its contour's start (M5e). ONE step. Refused on an open
 // contour, on the start itself, on a bad index; `why` says which.
 bool make_first(FontJournal& j, Font& f, const std::string& glyph, int contour, int index,

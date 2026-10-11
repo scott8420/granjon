@@ -24,6 +24,10 @@
 //               pick (or cancels a drag); Ctrl+0 fits; Ctrl+= / Ctrl+- zoom.
 //   view        Ctrl+scroll zooms toward the pointer, scroll pans; middle-
 //               drag or Space+drag pans.
+//   shapes      (M14a) Rectangle (R), Ellipse (E), Line (\\): drag to draw a
+//               closed contour -- Shift square / circle / 45 degrees, Alt from
+//               the centre; the line is a bar of the bar's Stroke width. ONE
+//               step each (command::add_shape); the new contour is picked.
 //   image       (M13) the glyph's background image, behind everything. Drop
 //               a PNG / JPEG on the canvas to place one. Unlocked: click it
 //               to pick it, drag to move, drag a corner to scale (Shift: from
@@ -79,7 +83,7 @@ private:
     std::string context_glyph(const model::Glyph& g) const;   // "H" / "n" or "" if the font lacks it
 
     // ── input ──────────────────────────────────────────────────────────────
-    enum class Mode { None, Points, Sidebearing, Marquee, Pan, Guide, Measure, Pen, Image };
+    enum class Mode { None, Points, Sidebearing, Marquee, Pan, Guide, Measure, Pen, Image, Shape };
     int  sidebearing_at(double sx, double sy) const;   // -1 none, 0 left, 1 right
     void on_press(double x, double y);
     void on_drag(double dx, double dy);
@@ -113,12 +117,18 @@ private:
     widgets::ToggleButton m_pen;            // M5g: the pen tool (P)
     // M5h: the tool panel down the canvas's left edge -- tools (one at a time)
     // above, the view toggles below.
-    widgets::ToggleButton m_tool_pick;      // V
+    widgets::ToggleButton m_tool_select;    // s08: the solid arrow -- whole paths (V)
+    widgets::ToggleButton m_tool_pick;      // the hollow arrow -- nodes and handles (A)
     widgets::ToggleButton m_tool_measure;   // (hold M still works)
     widgets::ToggleButton m_tool_hand;      // (hold Space still works)
+    widgets::ToggleButton m_tool_rect;      // M14a: R
+    widgets::ToggleButton m_tool_ellipse;   // M14a: E
+    widgets::ToggleButton m_tool_line;      // M14a: backslash
+    widgets::Label        m_stroke_label;   // M14a: "Stroke", shown with the Line tool
+    widgets::SpinButton   m_stroke;         // the line's width, font units (a preference)
     widgets::Box          m_tools;
     widgets::Box          m_work;           // the panel | the canvas
-    enum class Tool { Pick, Pen, Measure, Hand };
+    enum class Tool { Select, Pick, Pen, Rect, Ellipse, Line, Measure, Hand };
     Tool tool() const;
     void set_tool(Tool t);
     void on_tool_changed();
@@ -146,6 +156,7 @@ private:
     geom::Points m_press_pick;              // for Shift+marquee
     model::Glyph m_press_glyph;             // the glyph at the press (snapping reads it)
     geom::PointRef m_lead;
+    std::optional<int> m_unpick_contour;      // Select: Shift-pressed on a picked path -- drop it if no drag
     std::optional<geom::PointRef> m_unpick;   // Shift-pressed on a picked point: drop it if no drag follows                  // the point under the pointer at the press -- the one that snaps
     std::optional<double> m_snap_x, m_snap_y;   // what the lead snapped to (drawn while dragging)
     void draw_grid(const Cairo::RefPtr<Cairo::Context>& cr, int w, int h);
@@ -178,6 +189,13 @@ private:
     void end_path(bool say_it = true);
     bool pen_path_live() const;             // a path is being drawn in the glyph shown
     void draw_pen(const Cairo::RefPtr<Cairo::Context>& cr, const model::Glyph& g);
+    // the primitives (M14a)
+    geom::Vec2  m_shape_a, m_shape_b;       // press and pointer, font units, snapped
+    bool        m_shape_shift = false, m_shape_alt = false;   // the drag's last modifiers
+    double      stroke_width() const;       // the setting, or the font's stem (0 = auto)
+    model::Contour shape_now() const;       // what a release would add (empty: nothing)
+    geom::Vec2  snap_free(geom::Vec2 p, bool on);   // snap a free point (sets m_snap_x / y)
+    void draw_shape(const Cairo::RefPtr<Cairo::Context>& cr);
     // the background image (M13)
     bool m_image_picked = false;            // its frame and corner handles show; Delete removes it
     int  m_image_handle = -1;               // the drag: -1 moves, 0..3 scales from that corner

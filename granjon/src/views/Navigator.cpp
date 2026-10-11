@@ -134,7 +134,8 @@ void Navigator::refresh() {
     for (const auto& name : font.glyph_order()) {
         const model::Glyph* g = font.glyph(name);
         if (!m_ctx.shows(name)) continue;
-        const std::string sec = unicode::section_of(g->unicodes);
+        // M14c: parts have their own section, whatever their code points.
+        const std::string sec = g->skip_export ? std::string("Parts") : unicode::section_of(g->unicodes);
         groups[{unicode::section_rank(sec), sec}].push_back(g);
     }
 

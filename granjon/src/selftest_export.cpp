@@ -341,7 +341,8 @@ void selftest_export(const Check& check_) {
 
     const auto maxp = otf::table(font, "maxp");
     const auto order = f.glyph_order();
-    check("otf: maxp counts every glyph, .notdef first", rd16(maxp, 4) == f.glyph_count() && rep.glyphs == static_cast<int>(f.glyph_count()),
+    const std::size_t exported = f.glyph_count() - granjon::command::parts(f).size();   // M14c: parts stay out
+    check("otf: maxp counts every glyph but the parts, .notdef first", rd16(maxp, 4) == exported && rep.glyphs == static_cast<int>(exported),
           std::to_string(rd16(maxp, 4)));
     check("otf: head unitsPerEm and magic", rd16(otf::table(font, "head"), 18) == 1000 && rd32(otf::table(font, "head"), 12) == 0x5F0F3CF5);
 
@@ -559,7 +560,8 @@ void selftest_export(const Check& check_) {
         const auto glyf = otf::table(ttf, "glyf"), loca = otf::table(ttf, "loca");
         const unsigned n = rd16(maxp, 4);
         const int fmt = rds16(head, 50);
-        check("ttf: maxp 1.0, 32 bytes, every glyph", rd32(maxp, 0) == 0x00010000 && maxp.size() == 32 && n == f.glyph_count());
+        check("ttf: maxp 1.0, 32 bytes, every glyph but the parts", rd32(maxp, 0) == 0x00010000 && maxp.size() == 32 &&
+                                                                     n == f.glyph_count() - granjon::command::parts(f).size());
         check("ttf: loca has glyphs + 1 offsets in its format", loca.size() == (n + 1) * (fmt == 0 ? 2u : 4u), "format " + std::to_string(fmt));
         otf::OtfReport r3;
         otf::Prepared pp = otf::prepare(f, opt, r3);

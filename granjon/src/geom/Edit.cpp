@@ -457,6 +457,28 @@ std::vector<int> wrong_way(const std::vector<Contour>& cs) {
 
 // ── hit testing ────────────────────────────────────────────────────────────
 
+Points whole_contours(const model::Glyph& g, const Points& pts) {
+    Points out;
+    for (const auto& p : pts) {
+        if (p.contour < 0 || p.contour >= static_cast<int>(g.contours.size())) { out.insert(p); continue; }
+        const int n = static_cast<int>(g.contours[static_cast<std::size_t>(p.contour)].nodes.size());
+        for (int i = 0; i < n; ++i) out.insert({p.contour, i, PointRef::Part::Node});
+    }
+    return out;
+}
+
+int contour_at(const model::Glyph& g, Vec2 pt) {
+    int best = -1;
+    double best_a = 0;
+    for (int i = 0; i < static_cast<int>(g.contours.size()); ++i) {
+        const auto& c = g.contours[static_cast<std::size_t>(i)];
+        if (!c.closed || c.nodes.size() < 2 || !inside({c}, pt)) continue;
+        const double a = std::abs(signed_area(c));
+        if (best < 0 || a < best_a) { best = i; best_a = a; }
+    }
+    return best;
+}
+
 Hit hit_test(const model::Glyph& g, Vec2 pt, double tol, bool show_handles) {
     Hit best;
     auto take = [&](Hit::Kind k, int c, int i, double dist, double t = 0) {

@@ -114,9 +114,13 @@ double polygon_area(const PathD& p) {
     return a / 2;
 }
 
-}  // namespace
-
-OverlapResult remove_overlaps(const std::vector<Contour>& in) {
+// The one engine (M10c; M14b added the roles): `in` holds every contour,
+// `clip_from` splits it -- [0, clip_from) are Clipper2's subject, the rest
+// its clip. Remove overlaps is a union of subjects alone, with the shortcut
+// "nothing crossed, every contour back whole -> the input untouched"; the
+// booleans never take the shortcut (a hole punched without a crossing still
+// changes direction, and the cutter goes).
+OverlapResult run(const std::vector<Contour>& in, std::size_t clip_from, Clipper2Lib::ClipType op, bool shortcut) {
     OverlapResult res;
     res.contours = in;
     std::vector<int> closed_ix;
@@ -127,7 +131,7 @@ OverlapResult remove_overlaps(const std::vector<Contour>& in) {
     // ── flatten, tagged ──
     std::vector<Tag> tags;
     std::vector<int> nseg(in.size(), 0);
-    PathsD subject;
+    PathsD subject, clipping;
     for (int ci : closed_ix) {
         const Contour& c = in[static_cast<std::size_t>(ci)];
         const int n = segment_count(c);
@@ -146,7 +150,7 @@ OverlapResult remove_overlaps(const std::vector<Contour>& in) {
                 path.push_back(PointD(p.x, p.y, static_cast<std::int64_t>(tags.size())));
             }
         }
-        subject.push_back(std::move(path));
+        (static_cast<std::size_t>(ci) < clip_from ? subject : clipping).push_back(std::move(path));
     }
 
     // ── union, nonzero, crossings tagged ──
@@ -157,16 +161,17 @@ OverlapResult remove_overlaps(const std::vector<Contour>& in) {
         crosses.push_back({{e1b.z, e1t.z, e2b.z, e2t.z}, pt});
         pt.z = -static_cast<std::int64_t>(crosses.size());
     });
-    clip.AddSubject(subject);
+    if (!subject.empty()) clip.AddSubject(subject);
+    if (!clipping.empty()) clip.AddClip(clipping);
     PathsD out;
-    if (!clip.Execute(Clipper2Lib::ClipType::Union, Clipper2Lib::FillRule::NonZero, out)) return res;
+    if (!clip.Execute(op, Clipper2Lib::FillRule::NonZero, out)) return res;
 
     double clip_area = 0;
     for (const auto& p : out) clip_area += polygon_area(p);
 
     // ── untouched? (no crossing, every contour back whole) ──
     {
-        bool whole = crosses.empty() && out.size() == closed_ix.size();
+        bool whole = shortcut && crosses.empty() && out.size() == closed_ix.size();
         if (whole) {
             std::set<int> seen;
             for (const auto& p : out) {
@@ -357,6 +362,26 @@ OverlapResult remove_overlaps(const std::vector<Contour>& in) {
     res.contours = std::move(rebuilt);
     res.changed = true;
     return res;
+}
+
+}  // namespace
+
+OverlapResult remove_overlaps(const std::vector<Contour>& in) {
+    return run(in, in.size(), Clipper2Lib::ClipType::Union, true);
+}
+
+OverlapResult boolean_op(const std::vector<Contour>& subject, const std::vector<Contour>& clip, BoolOp op) {
+    std::vector<Contour> in = subject;
+    in.insert(in.end(), clip.begin(), clip.end());
+    const auto type = op == BoolOp::Union ? Clipper2Lib::ClipType::Union
+                    : op == BoolOp::Subtract ? Clipper2Lib::ClipType::Difference
+                                             : Clipper2Lib::ClipType::Intersection;
+    OverlapResult r = run(in, subject.size(), type, false);
+    // Not run at all (no closed contour, or Clipper2 refused): the input back,
+    // as a fallback. (Nothing LEFT -- an intersection of strangers -- is a
+    // change: `changed` with no closed contours.)
+    if (!r.changed && !r.fallback) { r.fallback = true; r.why = "no closed contours to work on"; }
+    return r;
 }
 
 }  // namespace granjon::geom

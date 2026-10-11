@@ -37,6 +37,7 @@ struct Settings {
     std::string image_tint      = "#e0703c";   // M13: the ink colour a background image is drawn in (#rrggbb),
                                                // unless the image carries its own (UFO color)
     int         image_opacity   = 30;      // M13: the opacity a newly placed image gets, percent (5..100)
+    int         line_width      = 0;       // M14a: the Line tool's stroke, font units (0 = the font's stem)
     bool        handles_relative = true;   // the inspector shows handles relative to their node
 
     // ── Navigator ─────────────────────────────────────────────────────────

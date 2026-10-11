@@ -9,6 +9,7 @@
 #include <gtkmm/searchentry.h>
 #include <gtkmm/togglebutton.h>
 #include <gtkmm/button.h>
+#include <gtkmm/checkbutton.h>
 #include <gtkmm/entry.h>
 #include <gtkmm/image.h>
 #include <gtkmm/label.h>
@@ -33,6 +34,7 @@ using Paned          = Named<Gtk::Paned>;
 using SearchEntry    = Named<Gtk::SearchEntry>;
 using ToggleButton   = Named<Gtk::ToggleButton>;
 using Button         = Named<Gtk::Button>;
+using CheckButton    = Named<Gtk::CheckButton>;
 using Entry          = Named<Gtk::Entry>;
 using Image          = Named<Gtk::Image>;
 using Label          = Named<Gtk::Label>;

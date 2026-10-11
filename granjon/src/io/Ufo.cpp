@@ -153,6 +153,12 @@ bool save_ufo(const Font& f, const std::string& path_str, std::string* err) {
     const auto glyph_order = f.glyph_order();
     for (const auto& n : glyph_order) order.arr.push_back(PValue::str(n));
     lib.set("public.glyphOrder", std::move(order));
+    {   // M14c: the parts -- glyphs left out of the compile
+        PValue skip = PValue::array();
+        for (const auto& n : glyph_order)
+            if (const auto* g = f.glyph(n); g && g->skip_export) skip.arr.push_back(PValue::str(n));
+        if (!skip.arr.empty()) lib.set("public.skipExportGlyphs", std::move(skip));
+    }
     lib.set("granjon.overshoot", PValue::integer(m.overshoot));
     if (const auto& o = f.info().origin; !o.preset.empty()) {
         PValue pr = PValue::dictionary();
@@ -303,11 +309,14 @@ bool load_ufo(const std::string& path_str, Font& into, std::string* err) {
     model::MetricsKeys keys;
     model::CheckSkips skips;
     std::vector<std::string> order;
+    std::set<std::string> skip_export;   // M14c: public.skipExportGlyphs
     if (fs::exists(path / "lib.plist")) {
         auto lib = read_plist_file((path / "lib.plist").string(), &e);
         if (!lib) return fail(e);
         if (const PValue* go = lib->get("public.glyphOrder"))
             for (const auto& v : go->arr) order.push_back(v.s);
+        if (const PValue* se = lib->get("public.skipExportGlyphs"))
+            for (const auto& v : se->arr) skip_export.insert(v.s);
         if (auto os = lib->get_number("granjon.overshoot")) metrics.overshoot = static_cast<int>(*os);
         if (const PValue* pr = lib->get("granjon.preset"); pr && pr->kind == PValue::Kind::Dict) {
             info.origin.preset     = pr->get_string("id").value_or("");
@@ -345,6 +354,7 @@ bool load_ufo(const std::string& path_str, Font& into, std::string* err) {
         if (g->name != name)
             return fail(gp.string() + ": the file says its glyph is \"" + g->name + "\" but contents.plist says \"" +
                         name + "\".");
+        g->skip_export = skip_export.count(name) > 0;
         glyphs[name] = std::move(*g);
     }
 

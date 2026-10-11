@@ -71,6 +71,10 @@ void selftest_import(const std::function<void(const std::string&, bool, const st
         std::string bad;
         for (const auto& n : src.glyph_order()) {
             const model::Glyph* g = src.glyph(n);
+            if (g->skip_export) {   // M14c: a part never reaches the file
+                if (back.glyph(n)) { same = false; bad = n + " (a part) exported"; break; }
+                continue;
+            }
             const model::Glyph* h = back.glyph(n);
             if (!h) { same = false; bad = n + " missing"; break; }
             const auto want = granjon::geom::all_contours(src, *g);   // components flattened

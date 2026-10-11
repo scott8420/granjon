@@ -164,12 +164,21 @@ Inspector::Inspector(ViewContext& ctx)
       m_comp_list("inspector.components", Gtk::Orientation::VERTICAL, 2),
       m_comp_add("inspector.component_add"),
       m_decompose("inspector.decompose"),
+      m_is_part("inspector.is_part"),
+      m_part_list("inspector.part_list"),
+      m_place_linked("inspector.place_part_linked"),
+      m_place_contours("inspector.place_part_contours"),
+      m_part_name("inspector.part_name"),
+      m_make_part("inspector.make_part"),
       m_anchor_list("inspector.anchors", Gtk::Orientation::VERTICAL, 2),
       m_anchor_add("inspector.anchor_add"),
       m_default_anchors("inspector.default_anchors"),
       m_outline_info("inspector.outline_info"),
       m_correct("inspector.correct_directions"),
       m_overlaps("inspector.remove_overlaps"),
+      m_union("inspector.union"),
+      m_subtract("inspector.subtract"),
+      m_intersect("inspector.intersect"),
       m_reverse("inspector.reverse_contours"),
       m_make_first("inspector.make_first"),
       m_code_fmt("inspector.code_format"),
@@ -189,7 +198,7 @@ Inspector::Inspector(ViewContext& ctx)
     set_child(m_pages);
     m_ctx.kern_pick_changed.connect([this] { refresh(); });
     m_ctx.selection_changed.connect([this] { refresh(); });
-    m_ctx.pick_changed.connect([this] { refresh_pick(); refresh_guide(); });
+    m_ctx.pick_changed.connect([this] { refresh_pick(); refresh_guide(); refresh_booleans(); });
 }
 
 void Inspector::build_font_page() {
@@ -277,6 +286,14 @@ void Inspector::build_glyph_page() {
     m_status.set_model(list);
     m_status.property_selected().signal_changed().connect([this] { on_status(); });
     glyph.field("Status", m_status);
+    m_is_part.set_label("Part -- not exported");
+    m_is_part.set_tooltip_text("A piece to build glyphs from (a serif, a bowl, a stem): left out of the OTF / TTF / WOFF2 "
+                               "(UFO public.skipExportGlyphs) and listed under Parts in the navigator -- one undo step");
+    m_is_part.signal_toggled().connect([this] {
+        if (m_painting || m_ctx.selected.empty()) return;
+        command::set_part(m_ctx.doc.journal, m_ctx.doc.font, {m_ctx.selected}, m_is_part.get_active());
+    });
+    glyph.wide(m_is_part);
 
     Card metrics(*page, "METRICS");
     spin_setup(m_width, 0, 32767);
@@ -463,6 +480,38 @@ void Inspector::build_glyph_page() {
         else
             m_ctx.say("No overlaps to remove.", false);
     });
+    // M14b: the booleans on the picked contours (a node or segment of each).
+    auto boolean = [this](geom::BoolOp op) {
+        std::set<int> cs;
+        for (const auto& p : m_ctx.pick)
+            if (p.contour >= 0) cs.insert(p.contour);
+        std::vector<int> at;
+        std::string why;
+        if (command::boolean_contours(m_ctx.doc.journal, m_ctx.doc.font, m_ctx.selected, {cs.begin(), cs.end()}, op, &at, &why)) {
+            // The result is picked, so the next drag / op acts on it.
+            m_ctx.pick.clear();
+            if (const model::Glyph* g = m_ctx.doc.font.glyph(m_ctx.selected))
+                for (int ci : at)
+                    for (int i = 0; i < static_cast<int>(g->contours[static_cast<std::size_t>(ci)].nodes.size()); ++i)
+                        m_ctx.pick.insert({ci, i, geom::PointRef::Part::Node});
+            m_ctx.pick_changed.emit();
+            m_ctx.say(m_ctx.doc.journal.undo_label() + ": " + std::to_string(at.size()) +
+                          (at.size() == 1 ? " contour." : " contours."), false);
+        } else {
+            m_ctx.say(why, true);
+        }
+    };
+    m_union.set_label("Union");
+    m_union.set_tooltip_text("The picked contours become one outline (pick a node or segment of each) -- one undo step");
+    m_union.signal_clicked().connect([boolean] { boolean(geom::BoolOp::Union); });
+    m_subtract.set_label("Subtract");
+    m_subtract.set_tooltip_text("The picked contours cut the rest of the glyph, then go: draw a shape (it comes picked), "
+                                "Subtract -- one undo step");
+    m_subtract.signal_clicked().connect([boolean] { boolean(geom::BoolOp::Subtract); });
+    m_intersect.set_label("Intersect");
+    m_intersect.set_tooltip_text("The rest of the glyph keeps only what the picked contours cover; the picked ones go -- "
+                                 "one undo step");
+    m_intersect.signal_clicked().connect([boolean] { boolean(geom::BoolOp::Intersect); });
     {
         auto row = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::HORIZONTAL, 6);
         row->append(m_correct);
@@ -471,6 +520,12 @@ void Inspector::build_glyph_page() {
         auto row2 = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::HORIZONTAL, 6);
         row2->append(m_overlaps);
         outline.wide(*row2);
+        auto row3 = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::HORIZONTAL, 6);
+        row3->set_homogeneous(true);
+        row3->append(m_union);
+        row3->append(m_subtract);
+        row3->append(m_intersect);
+        outline.wide(*row3);
     }
 
     // ── IMAGE: the background image (M13) ───────────────────────────────────
@@ -647,6 +702,61 @@ void Inspector::build_glyph_page() {
     });
     comps.wide(m_decompose);
 
+    // ── PARTS (M14c) ────────────────────────────────────────────────────────
+    Card partc(*page, "PARTS");
+    {
+        auto hint = Gtk::make_managed<Gtk::Label>(
+            "Pieces to build from -- left out of the compile. Linked: edit the part and every glyph using it follows.");
+        hint->set_xalign(0.0f);
+        hint->set_wrap(true);
+        hint->add_css_class("hint");
+        partc.wide(*hint);
+    }
+    m_part_list.set_tooltip_text("The font's parts (the navigator's Parts section)");
+    partc.wide(m_part_list);
+    m_place_linked.set_label("Place linked");
+    m_place_linked.set_tooltip_text("Add the part as a component -- edits to the part show here; decomposed on export. "
+                                    "One undo step; it comes picked, drag it into place.");
+    m_place_linked.signal_clicked().connect([this] { place_selected_part(true); });
+    m_place_contours.set_label("Place as contours");
+    m_place_contours.set_tooltip_text("Copy the part in as plain contours to edit freely. One undo step; they come picked.");
+    m_place_contours.signal_clicked().connect([this] { place_selected_part(false); });
+    {
+        auto row = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::HORIZONTAL, 6);
+        row->set_homogeneous(true);
+        row->append(m_place_linked);
+        row->append(m_place_contours);
+        partc.wide(*row);
+    }
+    m_part_name.set_tooltip_text("The new part's name (a glyph name; parts start with an underscore by convention)");
+    m_make_part.set_label("Make part");
+    m_make_part.set_tooltip_text("Copy the picked contours into a new part (where they sit) -- this glyph is unchanged. "
+                                 "One undo step.");
+    auto make = [this] {
+        std::set<int> cs;
+        for (const auto& p : m_ctx.pick)
+            if (p.contour >= 0) cs.insert(p.contour);
+        std::string name = m_part_name.get_text();
+        if (name.empty()) name = m_part_name.get_placeholder_text();
+        std::string why;
+        if (command::make_part(m_ctx.doc.journal, m_ctx.doc.font, m_ctx.selected, {cs.begin(), cs.end()}, name, &why)) {
+            m_part_name.set_text("");
+            m_ctx.say(m_ctx.doc.journal.undo_label() + " -- under Parts in the navigator.", false);
+        } else {
+            m_ctx.say(why, true);
+        }
+    };
+    m_make_part.signal_clicked().connect(make);
+    // Enter only -- not on_commit's focus-leave: clicking away must not make a part.
+    m_part_name.signal_activate().connect(make);
+    {
+        auto row = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::HORIZONTAL, 6);
+        m_part_name.set_hexpand(true);
+        row->append(m_part_name);
+        row->append(m_make_part);
+        partc.wide(*row);
+    }
+
     // ── ANCHORS ─────────────────────────────────────────────────────────────
     Card anchors(*page, "ANCHORS");
     anchors.wide(m_anchor_list);
@@ -790,6 +900,12 @@ void Inspector::refresh() {
         m_title.set_text(g->name);
         if (!m_name.has_focus()) m_name.set_text(g->name);
         for (unsigned i = 0; i < 4; ++i) if (kStatuses[i] == g->status) m_status.set_selected(i);
+        {
+            const bool was = m_painting;
+            m_painting = true;
+            m_is_part.set_active(g->skip_export);
+            m_painting = was;
+        }
         m_width.set_value(g->advance);
         if (const auto sb = model::sidebearings(f, *g)) {
             m_lsb.set_text(fmt_units(sb->left));
@@ -862,6 +978,68 @@ Gtk::Button* part_row(const std::string& text, std::function<void()> pick) {
 }
 }  // namespace
 
+// M14c: the PARTS card -- the list (without this glyph), the place buttons,
+// a free name for Make part, which wants a picked contour.
+void Inspector::refresh_parts_card(const model::Glyph& g) {
+    const auto& f = m_ctx.doc.font;
+    std::vector<std::string> names;
+    for (const auto& n : command::parts(f))
+        if (n != g.name) names.push_back(n);
+    if (names != m_part_names) {
+        const std::string keep = m_part_list.get_selected() < m_part_names.size() ? m_part_names[m_part_list.get_selected()] : "";
+        m_part_names = names;
+        std::vector<Glib::ustring> labels(names.begin(), names.end());
+        if (labels.empty()) labels.push_back("No parts yet -- pick contours, Make part");
+        m_part_list.set_model(Gtk::StringList::create(labels));
+        for (unsigned i = 0; i < names.size(); ++i)
+            if (names[i] == keep) m_part_list.set_selected(i);
+    }
+    m_part_list.set_sensitive(!m_part_names.empty());
+    m_place_linked.set_sensitive(!m_part_names.empty());
+    m_place_contours.set_sensitive(!m_part_names.empty());
+    m_part_name.set_placeholder_text(command::free_part_name(f, g.name));
+    bool picked = false;
+    for (const auto& p : m_ctx.pick) picked = picked || p.contour >= 0;
+    m_make_part.set_sensitive(picked);
+}
+
+void Inspector::place_selected_part(bool linked) {
+    const unsigned i = m_part_list.get_selected();
+    if (i >= m_part_names.size() || m_ctx.selected.empty()) return;
+    std::vector<int> at;
+    int k = -1;
+    std::string why;
+    if (!command::place_part(m_ctx.doc.journal, m_ctx.doc.font, m_ctx.selected, m_part_names[i], linked, 0, 0, &at, &k, &why)) {
+        m_ctx.say(why, true);
+        return;
+    }
+    // What was placed comes picked: a drag or the arrows put it in place.
+    m_ctx.pick.clear();
+    if (linked) {
+        m_ctx.pick.insert({-1, k, geom::PointRef::Part::Component});
+    } else if (const model::Glyph* g = m_ctx.doc.font.glyph(m_ctx.selected)) {
+        for (int ci : at)
+            for (int n = 0; n < static_cast<int>(g->contours[static_cast<std::size_t>(ci)].nodes.size()); ++n)
+                m_ctx.pick.insert({ci, n, geom::PointRef::Part::Node});
+    }
+    m_ctx.pick_changed.emit();
+    m_ctx.say(m_ctx.doc.journal.undo_label() + (linked ? " (linked) -- drag it into place." : " -- drag it into place."), false);
+}
+
+// M14b: the boolean buttons follow the pick (contours with a picked point).
+void Inspector::refresh_booleans() {
+    const model::Glyph* g = m_ctx.doc.font.glyph(m_ctx.selected);
+    std::set<int> picked;
+    if (g)
+        for (const auto& p : m_ctx.pick)
+            if (p.contour >= 0 && p.contour < static_cast<int>(g->contours.size())) picked.insert(p.contour);
+    m_union.set_sensitive(picked.size() >= 2);
+    const bool cut = g && !picked.empty() && picked.size() < g->contours.size();
+    m_subtract.set_sensitive(cut);
+    m_intersect.set_sensitive(cut);
+    if (g) refresh_parts_card(*g);
+}
+
 void Inspector::refresh_parts(const model::Glyph& g) {
     {   // OUTLINE
         const auto wrong = geom::wrong_way(g.contours);
@@ -872,6 +1050,7 @@ void Inspector::refresh_parts(const model::Glyph& g) {
         m_outline_info.set_text(t);
         m_correct.set_sensitive(!wrong.empty());
         m_overlaps.set_sensitive(g.contours.size() > 0);
+        refresh_booleans();
     }
     using Part = geom::PointRef::Part;
     auto pick = [this](geom::PointRef r) {

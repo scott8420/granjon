@@ -135,5 +135,11 @@ Hit hit_test(const model::Glyph& g, Vec2 pt, double tol, bool show_handles = tru
 
 // Picked points inside the box (anchors of nodes, and glyph anchors).
 Points points_in(const model::Glyph& g, Vec2 a, Vec2 b);
+// The Select tool (s08, the solid arrow): whole paths. Every node or handle
+// ref grows to all the nodes of its contour; anchors and components stay.
+Points whole_contours(const model::Glyph& g, const Points& pts);
+// The contour whose own inside holds pt -- the smallest by area when several
+// do (a counter inside its bowl), or -1. Closed contours only.
+int contour_at(const model::Glyph& g, Vec2 pt);
 
 }  // namespace granjon::geom

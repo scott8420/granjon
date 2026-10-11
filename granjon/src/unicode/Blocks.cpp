@@ -59,6 +59,7 @@ int section_rank(const std::string& section) {
         return m;
     }();
     if (section == "Unencoded") return 200000;
+    if (section == "Parts") return -1;   // M14c: glyphs left out of the compile -- first (Scott, s05: "at the top of the navigator")
     const auto it = rank.find(section);
     return it == rank.end() ? kNone.rank : it->second;
 }

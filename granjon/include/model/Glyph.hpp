@@ -40,6 +40,11 @@ struct Glyph {
     GlyphStatus                status = GlyphStatus::Empty;
     std::string                note;
     double                     order = 0; // place in the glyph order (sorts ascending)
+    // M14c: a PART -- a piece to build glyphs from (a serif, a bowl, a stem),
+    // left out of the compile. UFO's public.skipExportGlyphs (font lib), so
+    // fontmake and the other UFO tools skip it too. Placed into real glyphs
+    // as a component (decomposed on export) or as plain contours.
+    bool                       skip_export = false;
 
     bool operator==(const Glyph&) const = default;
 

@@ -80,6 +80,7 @@ Settings load_settings(const std::string& file) {
         get(e, "image", s.editor_image);
         get(e, "image_tint", s.image_tint);
         get(e, "image_opacity", s.image_opacity);
+        get(e, "line_width", s.line_width);
         get(e, "handles_relative", s.handles_relative);
     }
     if (o.is_object()) {
@@ -88,6 +89,7 @@ Settings load_settings(const std::string& file) {
     }
     // Ranges and vocabularies: out of bounds -> the default.
     if (s.image_opacity < 5 || s.image_opacity > 100) s.image_opacity = d.image_opacity;
+    if (s.line_width < 0 || s.line_width > 10000) s.line_width = d.line_width;
     {
         const auto& t = s.image_tint;
         const bool hex = t.size() == 7 && t[0] == '#' &&
@@ -116,6 +118,7 @@ bool save_settings(const std::string& file, const Settings& s) {
                     {"image", s.editor_image},
                     {"image_tint", s.image_tint},
                     {"image_opacity", s.image_opacity},
+                    {"line_width", s.line_width},
                     {"handles_relative", s.handles_relative}}},
         {"overview", {{"cell", s.overview_cell}, {"charset", s.overview_charset}}},
         {"navigator", {{"open", s.navigator_open}}},

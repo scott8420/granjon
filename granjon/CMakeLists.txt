@@ -96,6 +96,7 @@ add_library(granjon_core STATIC
     src/geom/Edit.cpp
     src/geom/NodeEdit.cpp   # M5f: insert / delete nodes, line <-> curve
     src/geom/Overlap.cpp    # M10c: remove overlaps (Clipper2Z, exact rebuild)
+    src/geom/Shapes.cpp     # M14a: rectangle / ellipse / line primitives
     src/model/Glyph.cpp
     src/model/FontRecords.cpp
     src/model/Font.cpp
@@ -153,7 +154,7 @@ target_include_directories(granjon_core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thir
 # ── Headless selftest -- exercises the core with no display ────────────────────
 # Cairn's Stones (the journal's own fixture) compiles into the selftest only:
 # it proves the journal mechanics; the app's store is model::Font.
-add_executable(granjon_selftest src/selftest.cpp src/selftest_export.cpp src/selftest_edit.cpp src/selftest_import.cpp src/selftest_presets.cpp src/selftest_image.cpp src/core/Stones.cpp)
+add_executable(granjon_selftest src/selftest.cpp src/selftest_export.cpp src/selftest_edit.cpp src/selftest_import.cpp src/selftest_presets.cpp src/selftest_image.cpp src/selftest_draw.cpp src/core/Stones.cpp)
 target_link_libraries(granjon_selftest PRIVATE granjon_core ${BROTLIDEC_LIBRARIES})
 target_include_directories(granjon_selftest PRIVATE ${BROTLIDEC_INCLUDE_DIRS})
 # selftest.cpp's main() is one long walk; GCC 16 with -g notes "variable

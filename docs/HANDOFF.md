@@ -1,13 +1,85 @@
-# Granjon handoff — s07 -> s08
+# Granjon handoff — s08 -> s09
 
-# s08_drawing_kit
+# s09_m15_transform_corners
 
 ## Files to upload
-- `s07_m13_background_r4.zip` (the s07 ship; or a fresh `scripts/granjon_backup.sh -o s08_drawing_kit`)
+- `s08_m14_drawing_kit_r2.zip` (the s08 ship -- the one zip to install; M14 + the Select tool. Earlier s08 zips are superseded. Or a fresh `scripts/granjon_backup.sh -o s09_m15_transform_corners`)
 - `RULES.md`, `HANDOFF.md`, `ARCHITECTURE.md`, `ARC.md`, `CANON.md`
-- `My-Termes-Regular.granjon` from `fonts/` (the M7 / M8 readouts on it are still unseen), only if those get looked at.
 
 ---
+
+## Status — s08
+- **M14 drawing kit: crc** (Scott, on `s08_m14_drawing_kit.zip`: "excellent. crc.").
+- **r2 -- the Select tool** (`s08_m14_drawing_kit_r2.zip`; Scott: "a way to select a complete path. Like a global selection tool over a localized selection tool ... a solid pointer is global and a hollow selector is local"). Sandbox green, not crc. Selftest 1049 / 0 (7 new). No warnings in touched files.
+  - Tool panel, top: **Select** (the SOLID arrow, **V**) -- whole paths; then **Pick** (now the HOLLOW arrow, **A**) -- nodes and handles, as before. Illustrator's convention and keys. **V changed meaning**: it was Pick, it is now Select.
+  - Select: click a path's outline or inside it -> the whole path (inside = the smallest path there, so a click in a counter takes the counter, in the ink takes the bowl); Shift+click adds / removes a path (Shift-drag on a picked one moves, as in Pick); a marquee takes every path it touches; drag moves them (snapping off the node nearest the press). Handles don't catch. Anchors, components, guides, the image, sidebearings behave as in Pick. **Double-click** a path -> into Pick (the hollow arrow), path still picked. Status line counts paths ("2 paths picked").
+  - Escape from Measure / Hand / the shape tools returns to Select (was Pick). The pen still leaves to Pick. The app still opens on Pick.
+  - geom: `whole_contours` (a node / handle ref -> all its contour's nodes) and `contour_at` (smallest closed contour containing a point), both in the selftest.
+  - Sandbox shots on the sample H / O: click inside the left stem -> the stem; Shift+click the bar -> both; drag -> both moved; on O a marquee over the right side -> outer and counter whole; double-click -> Pick, "8 points picked".
+- **M14 drawing kit: sandbox green, not crc** -- `s08_m14_drawing_kit.zip` is the one zip to install (M14a + b + c). Selftest **1042 / 0** (89 new over s07's 953). Built against Ubuntu 24.04, g++ 13.3, gtkmm 4.10 / GTK 4.14, RelWithDebInfo; no warnings in any file touched (the known GCC 13 memmove false positive x3 elsewhere). **No new package.** (Sandbox only, as s06: Clipper2 from a git clone via FETCHCONTENT_SOURCE_DIR_CLIPPER2 -- nothing changes on Scott's machine.)
+- **M14c parts library: sandbox green.**
+  - A part is a glyph left out of the compile -- the per-glyph flag `Glyph::skip_export`, saved as UFO's **`public.skipExportGlyphs`** (fontmake and the other UFO tools skip it too). Rename / delete / undo carry the flag with the glyph.
+  - **Navigator + Overview: a PARTS section, first** (Scott, s05: "a category at the top of the navigator").
+  - Export (OTF / TTF / WOFF2, so the Preview and the CODE card too): parts are left out ("N part(s) left out" in the log); a glyph using a part as a component exports it decomposed; kerning naming a part is skipped.
+  - Inspector, GLYPH card: **Part -- not exported** check (one undo step) -- turns any glyph into a part or back.
+  - Inspector, new **PARTS** card (after COMPONENTS): the font's parts in a list; **Place linked** (a component at the origin -- edit the part and every glyph using it follows) / **Place as contours** (plain editable copies; a part's own components resolved). What's placed comes **picked**, so a drag or the arrows put it in place. Name field + **Make part**: the picked contours are COPIED into a new part where they sit (this glyph unchanged); the name suggests `_part.<glyph>`; Enter or the button (not focus-leave -- see below).
+  - Verbs, one step each, all in the verb table: `make_part`, `set_part`, `place_part`. Refusals: bad / taken name, nothing picked, not a part, a part into itself, a cycle, a part that draws nothing.
+  - Sandbox shots (sample font): PARTS 1 at the top of navigator and overview; n's left stem -> Make part "_part.stem" -> PARTS 2; o -> Place as contours (the stem appears, picked) -> Place linked _part.serif (component at the origin, picked).
+  - Caught in the sandbox and fixed before shipping: the name field first committed on focus-leave too, so clicking away made a stray "_part.part". Now Enter / the button only.
+- **M14b booleans: sandbox green** (`s08_m14b_booleans_wip.zip`, checkpoint; holds M14a too). Selftest 1006 / 0 (26 new: 10 geometry, 12 verb, 4 verb-table gate). Same toolchain; no warnings in the new code. **No new package.**
+- Inspector, OUTLINE card, a new row: **Union / Subtract / Intersect** on the PICKED contours (a contour counts when any of its nodes or handles is picked -- the "Reverse picked" rule). Glyphs' convention, which fits M14a: a freshly drawn shape comes picked, so **draw, then Subtract** cuts it out of the glyph.
+  - **Union**: the picked contours become one outline (two or more picked; the button greys otherwise).
+  - **Subtract**: the picked contours cut every unpicked contour whose box meets theirs, then go.
+  - **Intersect**: those unpicked contours keep only what the picked ones cover; the picked ones go.
+  - Contours not involved stay as they are, in order; the result takes the place of the first contour involved and is **picked**. One undo step each ("Undid: Subtract"), verb `boolean_contours` (in the verb table). Status line: "Subtract: 4 contours."
+  - Refusals (status line, no step): too few picked; every contour picked (nothing to cut); the cutter meets nothing; a contour running the wrong way in either set ("correct directions first"); a result that would be empty; a rebuild that fails M10c's safety net.
+- Engine: `geom::boolean_op(subject, clip, op)` -- the M10c engine with a subject / clip split (Clipper2 Difference / Intersection / Union, nonzero), the same tagged flattening and EXACT rebuild: original nodes keep place / handles / type, crossings are corners, a cut edge running backwards is the source curve reversed. `remove_overlaps` is now the union case of the same function (its "nothing crossed -> untouched" shortcut kept; the booleans skip it so a hole punched without a crossing still turns clockwise). All M10c tests unchanged and green.
+- Tested: a circle punched inside a square -> 2 contours, hole clockwise with its 4 smooth nodes; a circle over the edge -> one contour, 2 crossings, the bite within 0.03 unit of the true radius; intersect = the half disk; union = square + half disk; a clockwise cutter cuts the same.
+- Sandbox shots (n, an ellipse drawn across both stems): Subtract -> four stem pieces, curved cut edges; Intersect -> the two stem pieces inside the ellipse; Ctrl+A, Union -> one outline, corners at the crossings, the ellipse's curves kept.
+- Known (not new in M14, shows more with booleans): the pick is not part of undo. After Subtract then Ctrl+Z, the pick still holds the RESULT's contour indices, which now name other contours -- e.g. all three read as picked, so Intersect says "every contour is picked". Stale (out-of-range) refs are dropped already; refs that are still in range are kept. Fix candidates: clear the pick when an undo / redo changes the shown glyph's contour count, or journal the pick with the step. Asked, not done.
+
+- **M14a primitives: sandbox green** (`s08_m14a_primitives_wip.zip`, checkpoint -- not crc until Scott runs it). Selftest 980 / 0 (27 new in `src/selftest_draw.cpp`, the M14 file). Built against Ubuntu 24.04, g++ 13.3, gtkmm 4.10 / GTK 4.14, RelWithDebInfo; no warnings in the new files (the known GCC 13 memmove false positive x3). **No new package.**
+- Three new tools in the tool panel, under the Pen: **Rectangle (R)**, **Ellipse (E)**, **Line (\\)**. Drag to draw; **Shift** = square / circle / 45 degrees, **Alt** = from the centre (the press is the middle). A free drag snaps like a node drag (metric lines, sidebearings, the glyph's nodes, guides, the grid when shown; Ctrl or Shift: no snap). Live dashed preview + the size in the readout ("572 x 500", "340 long"). Escape mid-drag: nothing drawn.
+- Release = **one undo step** named for the shape ("Undid: Ellipse"), verb `add_shape` (in the verb table): one closed contour appended, snapped to units, turned counter-clockwise if it came in the other way, an Empty glyph becomes Drafted. The new contour is **picked**, so a drag / arrows / the inspector act on it at once. The tool stays on (draw several); V or Escape -> Pick.
+- Shapes (`geom/Shapes`, GTK-free): rectangle = 4 corners from bottom-left; ellipse = 4 smooth nodes at the extremes (bottom, right, top, left), handles at kappa 0.5523 (a circle within 0.03 %); line = a bar of the **Stroke** width, butt ends, 4 corners.
+- **Stroke** field in the editor bar, shown only with the Line tool: remembered (`editor.line_width` in settings.json); until set it is the font's stem -- a preset font's lowercase stem, else 8 % of the em.
+- Own icons (`granjon-tool-rect / ellipse / line-symbolic.svg`) -- redraw if they don't read. Shortcuts window lists R / E / \\.
+- Sandbox shots (Xvfb + xdotool, on the sample font's n): an ellipse mid-drag snapped to baseline and x-height, a Shift square below the baseline, an 80-unit line picked after drawing; Ctrl+Z -> "Undid: Line", Escape mid-drag drew nothing, two more Ctrl+Z -> n as it was.
+
+## What to look at in r2 (Select)
+- V (solid arrow): click inside a stem, inside a counter, on an outline. Shift+click a second path; drag both. Box across two paths.
+- Double-click a path -> hollow arrow (A), then work its nodes. V back.
+- Whether V = Select / A = Pick suits you (Illustrator's), or you'd rather keep V on the node tool; and whether the app should open on Select.
+
+## What to look at in M14c
+- Navigator: **PARTS** at the top (empty on an existing font until you make one).
+- Any glyph: pick a contour (click a segment) -> PARTS card -> a name (or the suggested `_part.n`) -> **Make part**. It shows under PARTS; open it in the editor and change it.
+- Another glyph: PARTS card -> pick it in the list -> **Place linked**; drag it into place. Edit the part -> the glyph follows. **Place as contours** -> plain contours you can cut / merge (M14b).
+- GLYPH card **Part -- not exported** on an existing glyph -> it moves to PARTS.
+- Export OTF: the log says "N part(s) left out"; GNOME Fonts shows no part glyph; a glyph with a linked part looks whole.
+- Save, close, reopen: the parts are still parts (lib.plist: public.skipExportGlyphs).
+
+## What to look at in M14b
+- Editor: draw an ellipse across a stem (it comes picked) -> OUTLINE -> **Subtract**: the stem is cut, the curve follows the ellipse. Ctrl+Z, click empty canvas, then the same with **Intersect**.
+- Ctrl+A on two overlapping shapes -> **Union**. A ring: draw a big circle and a small one inside it, pick the small one -> Subtract -> a counter (clockwise; the OUTLINE line should still say "all running the right way").
+- On a glyph with a wrong-way counter (Report flags it): a cut through it is refused with "correct directions first".
+- Whether "picked cuts the rest" is the convention you want (Glyphs' way), or Illustrator's "the frontmost cuts the ones behind".
+
+## What to look at in M14a
+- Editor on any glyph: R, drag a box (then with Shift, with Alt, with both). E, the same. \\ (backslash), drag a bar; change Stroke in the bar and drag another.
+- After each: the shape is picked -- drag it, arrow it; Ctrl+Z takes it out in one step.
+- Draw an ellipse over a stem and OUTLINE -> Remove overlaps: one outline (the M10c engine).
+- Whether the three icons read; whether Shift-square should grow from the larger side (now) or the horizontal one.
+
+## Decisions made in s08
+- Primitives are added on RELEASE (one verb call), not built live in the model like the pen -- the preview is the canvas's own drawing, so a cancelled drag never touched the journal.
+- Each shape is a NEW contour, never merged on drawing (overlaps are kept while drawing, as everywhere else; Remove overlaps / the booleans merge).
+- Line = a filled bar (Scott's spec), not an open path: font outlines are closed. Butt ends. Width is a remembered preference, not per glyph.
+- Keys R, E and backslash (Illustrator's line key; L is taken by "make lines").
+- Parts: a per-glyph flag rather than a font-level list (rename / delete / undo stay trivially right); the UFO list is only the file format. Make part COPIES (the glyph you took it from is untouched -- Subtract or Delete if you want it gone). A part keeps its position (a serif drawn at the baseline places at the baseline) and its source's width. Linked placement is a plain component, so Decompose (COMPONENTS card) turns a linked part into contours later. Name suggestion `_part.<source glyph>` (Glyphs' underscore convention for non-exporting glyphs).
+- Parts first in the navigator, overview too (Scott's s05 words).
+- No starter parts yet: a preset font could come with `_part.stem / _part.serif / _part.bowl` built from its own numbers (Presets.cpp already makes exactly those pieces). Asked, not built.
+- Booleans: picked = the cutter / the operand (Glyphs' convention, so draw -> Subtract is two moves); unpicked contours are involved only when their box meets the picked ones' (local, never a whole-glyph merge by surprise). A result that would be empty is refused rather than leaving an empty glyph.
 
 ## Status — s07
 - **r4** (`s07_m13_background_r4.zip`, Scott, with a shot of the Granjon logo dropped behind "eight" on a dark desktop: "the bkgd color is too similar and too opaque" -- "allow a user to set the color of drop ins with transparency level"): **Preferences -> Editor -> Background image colour** -- one colour button with transparency: its colour is the ink every image is drawn in (default a warm orange, `#e0703c`, so it never reads as the grey outline fill), its transparency is the opacity a newly placed image starts at (default 30 %, was 40). Settings `editor.image_tint` / `editor.image_opacity`, bad values fall back. Per image: the IMAGE card's **Colour** button (writes UFO's `color`, one undo step, verb `set_image_color`) and **Default** (back to the app's colour); the Opacity slider stays the per-image transparency. A Replace keeps the old image's colour and opacity. Selftest 953 / 0 (11 more). Shot: dark desktop, orange ink behind the grey n; the Preferences row with its swatch.
@@ -50,6 +122,8 @@ Primitives (rectangle, ellipse -- Shift square / circle, Alt from centre; line =
 Then: M15 transform panel + corner tools + extreme points + offset stroke; M16 mark positioning, features editor, italic angle / font info. Later: print proof, ttfautohint, weight masters (v3).
 
 ## Still open
+- **M14 questions (s08):** (1) booleans -- "picked cuts the rest" (Glyphs, now) or "the frontmost cuts the ones behind" (Illustrator)? (2) Should preset fonts start with parts (stem, serif, bowl from the preset's numbers)? (3) Undo and the pick: clear the pick when an undo / redo changes the shown glyph's contour count, or journal the pick with each step? (4) Shift-square grows from the larger side (now) -- right?
+- Not done in M14 (follow-ons): booleans on components (decompose first today); a parts preview strip (the list is names only); drag a part from the navigator onto the canvas; rounded rectangle / polygon primitives.
 - **Font-wide image sheet** (M13): wanted? (one scan of an alphabet, sliced per glyph). Asked in s07, no answer yet.
 - M13 follow-ons: SVG backgrounds; rotate an image (the fields show offset only on a rotated / skewed one from another tool); a "trace" helper (auto-outline from the scan) only if wanted; very large scans decode at full size (a 6000 x 8000 scan is ~190 MB of pixels in memory) -- a downscaled preview if that bites.
 - Packages: approved in s05. brotli-devel in use (M10b); Clipper2 1.5.4 fetched by CMake (M10c); harfbuzz-devel when the strip shapes. (FreeType is no longer needed for import.)

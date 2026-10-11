@@ -14,7 +14,11 @@
   <gresource prefix="/io/github/granjon/Granjon/icons/scalable/apps">
     <file preprocess="xml-stripblanks" alias="granjon-logo-symbolic.svg">icons/scalable/apps/granjon-logo-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="granjon-tool-pick-symbolic.svg">icons/scalable/apps/granjon-tool-pick-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="granjon-tool-select-symbolic.svg">icons/scalable/apps/granjon-tool-select-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="granjon-tool-pen-symbolic.svg">icons/scalable/apps/granjon-tool-pen-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="granjon-tool-rect-symbolic.svg">icons/scalable/apps/granjon-tool-rect-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="granjon-tool-ellipse-symbolic.svg">icons/scalable/apps/granjon-tool-ellipse-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="granjon-tool-line-symbolic.svg">icons/scalable/apps/granjon-tool-line-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="granjon-tool-measure-symbolic.svg">icons/scalable/apps/granjon-tool-measure-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="granjon-tool-hand-symbolic.svg">icons/scalable/apps/granjon-tool-hand-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="granjon-view-fill-symbolic.svg">icons/scalable/apps/granjon-view-fill-symbolic.svg</file>

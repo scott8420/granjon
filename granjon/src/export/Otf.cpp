@@ -114,6 +114,14 @@ Prepared prepare(const model::Font& f, const OtfOptions& opt, OtfReport& rep) {
                       std::chrono::system_clock::now().time_since_epoch()).count();
 
     std::vector<std::string> order = f.glyph_order();
+    // M14c: parts (public.skipExportGlyphs) stay out of the file; a glyph
+    // that uses one as a component is decomposed like any other.
+    {
+        const auto n0 = order.size();
+        std::erase_if(order, [&](const std::string& n) { return f.glyph(n)->skip_export; });
+        if (const auto parts = n0 - order.size())
+            rep.notes.push_back(std::to_string(parts) + " part(s) left out (not exported).");
+    }
     if (f.glyph(".notdef")) {
         order.erase(std::remove(order.begin(), order.end(), ".notdef"), order.end());
         order.insert(order.begin(), ".notdef");

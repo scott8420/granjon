@@ -6,6 +6,7 @@
 #include "model/Profiles.hpp"
 #include "geom/NodeEdit.hpp"
 #include "geom/Overlap.hpp"
+#include "geom/Shapes.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -952,6 +953,223 @@ bool remove_overlaps(FontJournal& j, Font& f, const std::vector<std::string>& gl
     });
 }
 
+namespace {
+struct Bx { double x0 = 1e18, y0 = 1e18, x1 = -1e18, y1 = -1e18; };
+void grow(Bx& b, const model::Contour& c) {   // the control hull: every node and handle
+    for (const auto& n : c.nodes)
+        for (const auto [x, y] : {std::pair{n.x, n.y}, {n.cx1, n.cy1}, {n.cx2, n.cy2}}) {
+            b.x0 = std::min(b.x0, x); b.y0 = std::min(b.y0, y);
+            b.x1 = std::max(b.x1, x); b.y1 = std::max(b.y1, y);
+        }
+}
+bool meets(const Bx& a, const Bx& b) { return a.x0 <= b.x1 && b.x0 <= a.x1 && a.y0 <= b.y1 && b.y0 <= a.y1; }
+}  // namespace
+
+bool boolean_contours(FontJournal& j, Font& f, const std::string& glyph, const std::vector<int>& picked,
+                      geom::BoolOp op, std::vector<int>* result, std::string* why) {
+    auto refuse = [&](const std::string& r) { if (why) *why = r; return false; };
+    const Glyph* was = f.glyph(glyph);
+    if (!was) return refuse("No glyph.");
+    const int n = static_cast<int>(was->contours.size());
+    std::set<int> pk;
+    for (int i : picked)
+        if (i >= 0 && i < n && was->contours[static_cast<std::size_t>(i)].closed &&
+            was->contours[static_cast<std::size_t>(i)].nodes.size() >= 2)
+            pk.insert(i);
+    const char* name = op == geom::BoolOp::Union ? "Union" : op == geom::BoolOp::Subtract ? "Subtract" : "Intersect";
+    std::vector<int> subj, clip;   // contour indices
+    if (op == geom::BoolOp::Union) {
+        if (pk.size() < 2) return refuse("Union: pick two or more contours (a node or a segment of each).");
+        subj.assign(pk.begin(), pk.end());
+    } else {
+        if (pk.empty()) return refuse(std::string(name) + ": pick the contour(s) that cut -- the rest of the glyph is what they work on.");
+        int closed = 0;
+        for (const auto& c : was->contours) closed += c.closed && c.nodes.size() >= 2;
+        if (static_cast<int>(pk.size()) == closed)
+            return refuse(std::string(name) + ": every contour is picked -- pick only the one(s) that cut.");
+        Bx cut;
+        for (int i : pk) grow(cut, was->contours[static_cast<std::size_t>(i)]);
+        for (int i = 0; i < n; ++i) {
+            const auto& c = was->contours[static_cast<std::size_t>(i)];
+            if (pk.count(i) || !c.closed || c.nodes.size() < 2) continue;
+            Bx b;
+            grow(b, c);
+            if (meets(b, cut)) subj.push_back(i);
+        }
+        if (subj.empty()) return refuse(std::string(name) + ": the picked contours don't meet the rest of the glyph.");
+        clip.assign(pk.begin(), pk.end());
+    }
+    auto gather = [&](const std::vector<int>& ix) {
+        std::vector<model::Contour> cs;
+        for (int i : ix) cs.push_back(was->contours[static_cast<std::size_t>(i)]);
+        return cs;
+    };
+    const auto s_cs = gather(subj), c_cs = gather(clip);
+    if (!geom::wrong_way(s_cs).empty() || !geom::wrong_way(c_cs).empty())
+        return refuse(std::string(name) + ": a contour runs the wrong way -- correct directions first (it would fill a counter).");
+    auto r = geom::boolean_op(s_cs, c_cs, op);
+    if (r.fallback) return refuse(std::string(name) + ": the outline could not be rebuilt cleanly (" + r.why + "); nothing changed.");
+    Glyph tmp;
+    tmp.contours = std::move(r.contours);
+    tmp.snap();
+    std::erase_if(tmp.contours, [](const model::Contour& c) { return c.closed && std::abs(geom::signed_area(c)) < 0.5; });
+    if (tmp.contours.empty()) return refuse(std::string(name) + ": nothing would be left -- nothing changed.");
+    // Untouched contours keep their order; the result takes the first involved one's place.
+    std::set<int> involved(subj.begin(), subj.end());
+    involved.insert(clip.begin(), clip.end());
+    const int first = *involved.begin();
+    std::vector<model::Contour> out;
+    std::vector<int> at;
+    for (int i = 0; i < n; ++i) {
+        if (i == first)
+            for (auto& c : tmp.contours) { at.push_back(static_cast<int>(out.size())); out.push_back(c); }
+        if (!involved.count(i)) out.push_back(was->contours[static_cast<std::size_t>(i)]);
+    }
+    if (out == was->contours) return refuse(std::string(name) + ": nothing to change.");
+    const bool ok = j.run(name, {glyph}, [&] {
+        Glyph g = glyph_copy(f, glyph);
+        g.contours = out;
+        f.put(glyph, Record{g});
+    });
+    if (ok && result) *result = at;
+    return ok;
+}
+
+// ── parts (M14c) ─────────────────────────────────────────────────────────────
+
+std::vector<std::string> parts(const Font& f) {
+    std::vector<std::string> out;
+    for (const auto& n : f.glyph_order())
+        if (f.glyph(n)->skip_export) out.push_back(n);
+    return out;
+}
+
+std::string free_part_name(const Font& f, const std::string& stem) {
+    std::string base;
+    for (char c : stem) {
+        const bool ok = std::isalnum(static_cast<unsigned char>(c)) || c == '.' || c == '_' || c == '-';
+        base += ok ? c : '_';
+    }
+    if (base.empty()) base = "part";
+    if (base.rfind("_", 0) != 0) base = "_part." + base;
+    if (!f.glyph(base)) return base;
+    for (int k = 1;; ++k)
+        if (const std::string n = base + "." + std::to_string(k); !f.glyph(n)) return n;
+}
+
+bool make_part(FontJournal& j, Font& f, const std::string& glyph, const std::vector<int>& contours,
+               const std::string& name, std::string* why) {
+    const Glyph* src = f.glyph(glyph);
+    if (!src) return false;
+    if (!model::valid_glyph_name(name)) {
+        say(why, q(name) + " is not a usable glyph name: A-Z a-z 0-9 . _ - , starting with a letter or underscore.");
+        return false;
+    }
+    if (f.glyph(name)) { say(why, "There is already a glyph named " + q(name) + "."); return false; }
+    std::vector<model::Contour> cs;
+    std::set<int> seen;
+    for (int i : contours)
+        if (i >= 0 && i < static_cast<int>(src->contours.size()) && seen.insert(i).second &&
+            src->contours[static_cast<std::size_t>(i)].closed)
+            cs.push_back(src->contours[static_cast<std::size_t>(i)]);
+    if (cs.empty()) { say(why, "Make part: pick the contour(s) to keep as a part (a node or segment of each)."); return false; }
+    return j.run("Make part " + q(name), {name}, [&] {
+        Glyph g;
+        g.name = name;
+        g.advance = src->advance;
+        g.contours = std::move(cs);
+        g.status = model::GlyphStatus::Drafted;
+        g.skip_export = true;
+        g.order = f.order_after("");
+        f.put(name, Record{g});
+    });
+}
+
+bool set_part(FontJournal& j, Font& f, const std::vector<std::string>& glyphs, bool part) {
+    std::vector<std::string> ids;
+    for (const auto& n : glyphs)
+        if (const Glyph* g = f.glyph(n); g && g->skip_export != part) ids.push_back(n);
+    if (ids.empty()) return false;
+    const std::string label = (part ? "Make " : "Unmake ") +
+                              (ids.size() == 1 ? "part " + q(ids[0]) : std::to_string(ids.size()) + " parts");
+    return j.run(label, ids, [&] {
+        for (const auto& n : ids) {
+            Glyph g = glyph_copy(f, n);
+            g.skip_export = part;
+            f.put(n, Record{g});
+        }
+    });
+}
+
+bool place_part(FontJournal& j, Font& f, const std::string& glyph, const std::string& part, bool as_component,
+                double dx, double dy, std::vector<int>* contours, int* component, std::string* why) {
+    const Glyph* g0 = f.glyph(glyph);
+    const Glyph* p = f.glyph(part);
+    if (!g0) return false;
+    if (!p) { say(why, "There is no glyph named " + q(part) + "."); return false; }
+    if (!p->skip_export) { say(why, q(part) + " is not a part."); return false; }
+    if (part == glyph) { say(why, "A part can't be placed into itself."); return false; }
+    if (reaches(f, part, glyph)) { say(why, q(part) + " already uses " + q(glyph) + " -- that would be a cycle."); return false; }
+    // What it draws (its contours, its components resolved), moved by (dx, dy).
+    std::vector<model::Contour> cs = p->contours;
+    for (const auto& k : p->components) {
+        auto more = geom::component_contours(f, k);
+        cs.insert(cs.end(), more.begin(), more.end());
+    }
+    if (cs.empty()) { say(why, q(part) + " draws nothing yet."); return false; }
+    dx = std::round(dx);
+    dy = std::round(dy);
+    std::vector<int> at;
+    int kat = -1;
+    const bool ok = j.run("Place part " + q(part), {glyph}, [&] {
+        Glyph g = glyph_copy(f, glyph);
+        if (as_component) {
+            model::Component k{part};
+            k.dx = dx;
+            k.dy = dy;
+            g.components.push_back(k);
+            kat = static_cast<int>(g.components.size()) - 1;
+        } else {
+            for (auto c : cs) {
+                for (auto& n : c.nodes) {
+                    n.x += dx; n.y += dy; n.cx1 += dx; n.cy1 += dy; n.cx2 += dx; n.cy2 += dy;
+                }
+                at.push_back(static_cast<int>(g.contours.size()));
+                g.contours.push_back(std::move(c));
+            }
+            g.snap();
+        }
+        if (g.status == model::GlyphStatus::Empty) g.status = model::GlyphStatus::Drafted;
+        f.put(glyph, Record{g});
+    });
+    if (ok && contours) *contours = at;
+    if (ok && component) *component = kat;
+    return ok;
+}
+
+bool add_shape(FontJournal& j, Font& f, const std::string& glyph, const model::Contour& c, const std::string& label,
+               int* index, std::string* why) {
+    auto refuse = [&](const char* r) { if (why) *why = r; return false; };
+    if (!f.glyph(glyph)) return refuse("No glyph.");
+    if (c.nodes.size() < 3 || !c.closed) return refuse("Drag to draw a shape.");
+    Glyph probe;
+    probe.contours = {c};
+    probe.snap();
+    const double area = geom::signed_area(probe.contours[0]);
+    if (std::abs(area) < 1.0) return refuse("Too small: drag a larger shape.");
+    if (area < 0) geom::reverse(probe.contours[0]);
+    int at = -1;
+    const bool ok = j.run(label, {glyph}, [&] {
+        Glyph g = glyph_copy(f, glyph);
+        g.contours.push_back(probe.contours[0]);
+        at = static_cast<int>(g.contours.size()) - 1;
+        if (g.status == model::GlyphStatus::Empty) g.status = model::GlyphStatus::Drafted;
+        f.put(glyph, Record{g});
+    });
+    if (index) *index = at;
+    return ok;
+}
+
 bool make_first(FontJournal& j, Font& f, const std::string& glyph, int contour, int index, std::string* why) {
     auto no = [&](const char* w) { if (why) *why = w; return false; };
     const Glyph* was = f.glyph(glyph);
@@ -1153,6 +1371,13 @@ void make_fixture(Font& f) {
     // M13: a background image on "o", for the image verbs.
     go.image = model::GlyphImage{f.add_image(sample_png(), "scan"), 100, 0, 0, 100, 20, -150, {}, 0.4, false};
     f.put(go.name, Record{go});
+    // M14c: a part (left out of the compile), for the part verbs.
+    {
+        Glyph ps = add("_part.serif", 0, 560, {box(40, 0, 180, 20)});
+        ps.unicodes.clear();
+        ps.skip_export = true;
+        f.put(ps.name, Record{ps});
+    }
     Glyph od = add("Odotbelow", U'Ọ', 760, {});
     od.components = {{"O"}};
     od.anchors = {{"bottom", 380, 0}};
@@ -1215,6 +1440,12 @@ const std::vector<Verb>& verbs() {
              pen_drag(j, f, "n", at, {30.2, 10.1}, false);
              pen_drag(j, f, "n", at, {60.4, 20.3}, false);
              drag_end(j, f); }},
+        {"add_shape", [](FontJournal& j, Font& f) {
+             add_shape(j, f, "n", geom::shape_ellipse({{600.3, 100}, {800, 299.6}}), "Ellipse"); }},
+        {"boolean_contours", [](FontJournal& j, Font& f) { boolean_contours(j, f, "H", {0, 2}, geom::BoolOp::Union); }},
+        {"make_part", [](FontJournal& j, Font& f) { make_part(j, f, "n", {0}, "_part.stem"); }},
+        {"set_part", [](FontJournal& j, Font& f) { set_part(j, f, {"o"}, true); }},
+        {"place_part", [](FontJournal& j, Font& f) { place_part(j, f, "H", "_part.serif", false, 0, -10); }},
         {"set_segments", [](FontJournal& j, Font& f) {
              set_segments(j, f, "n", {{0, 0, geom::PointRef::Part::Node}, {0, 1, geom::PointRef::Part::Node}}, true); }},
         {"set_position", [](FontJournal& j, Font& f) {

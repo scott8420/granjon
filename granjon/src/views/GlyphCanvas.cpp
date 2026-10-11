@@ -1,4 +1,5 @@
 #include "views/GlyphCanvas.hpp"
+#include "geom/Shapes.hpp"
 #include "geom/NodeEdit.hpp"
 
 #include "command/Verbs.hpp"
@@ -24,6 +25,7 @@
 #include <cctype>
 #include <cmath>
 #include <iomanip>
+#include <set>
 #include <sstream>
 
 namespace granjon::views {
@@ -118,9 +120,15 @@ GlyphCanvas::GlyphCanvas(ViewContext& ctx)
       m_snap("editor.snap"),
       m_image("editor.image"),
       m_pen("editor.tool_pen"),
+      m_tool_select("editor.tool_select"),
       m_tool_pick("editor.tool_pick"),
       m_tool_measure("editor.tool_measure"),
       m_tool_hand("editor.tool_hand"),
+      m_tool_rect("editor.tool_rect"),
+      m_tool_ellipse("editor.tool_ellipse"),
+      m_tool_line("editor.tool_line"),
+      m_stroke_label("editor.stroke_label"),
+      m_stroke("editor.stroke"),
       m_tools("editor.tools", Gtk::Orientation::VERTICAL, 2),
       m_work("editor.work", Gtk::Orientation::HORIZONTAL, 0),
       m_fit_button("editor.fit"),
@@ -167,6 +175,26 @@ GlyphCanvas::GlyphCanvas(ViewContext& ctx)
         m_area.grab_focus();
     });
     m_bar.append(m_anchors);
+    // M14a: the Line tool's stroke width -- shown only with that tool.
+    m_stroke_label.set_text("Stroke");
+    m_stroke_label.add_css_class("dim");
+    m_stroke.set_range(1, 2000);
+    m_stroke.set_increments(1, 10);
+    m_stroke.set_numeric(true);
+    m_stroke.set_width_chars(5);
+    m_stroke.set_enable_undo(false);
+    m_stroke.set_tooltip_text("The Line tool's stroke width, font units. Remembered; until set, the font's stem "
+                              "(a preset font's lowercase stem, else 8 % of the em).");
+    m_stroke_label.set_visible(false);
+    m_stroke.set_visible(false);
+    m_stroke.signal_value_changed().connect([this] {
+        const int v = static_cast<int>(m_stroke.get_value());
+        if (v == static_cast<int>(std::lround(stroke_width()))) return;
+        m_ctx.settings.line_width = v;
+        if (m_ctx.save_settings) m_ctx.save_settings();
+    });
+    m_bar.append(m_stroke_label);
+    m_bar.append(m_stroke);
     m_grid.set_label("Grid");
     m_grid.set_active(m_ctx.settings.editor_grid);
     m_grid.set_tooltip_text("A grid that follows the zoom: tenths of a unit close in, whole units drawn stronger");
@@ -230,9 +258,12 @@ GlyphCanvas::GlyphCanvas(ViewContext& ctx)
         b.add_css_class("tool");
         b.set_focus_on_click(false);
     };
+    icon_button(m_tool_select, "granjon-tool-select-symbolic",
+                "Select (V)\nWhole paths: click a path's outline or inside it, Shift+click adds / removes, drag a box "
+                "to take every path it touches; drag to move. Double-click: into Pick on that path.");
     icon_button(m_tool_pick, "granjon-tool-pick-symbolic",
-                "Pick (V)\nClick, Shift+click or drag a box to pick nodes, handles, anchors, components; drag to move. "
-                "Double-click a segment: add a node; a node: corner / smooth.");
+                "Pick (A)\nNodes and handles: click, Shift+click or drag a box to pick nodes, handles, anchors, "
+                "components; drag to move. Double-click a segment: add a node; a node: corner / smooth.");
     icon_button(m_pen, "granjon-tool-pen-symbolic",
                 "Pen (P)\nClick: a corner node. Drag: a smooth node (Alt: the out-handle alone; Shift: 45 degrees). "
                 "Click the first node: close. Click an open path's end: go on. Enter / Escape: end the path.");
@@ -240,11 +271,23 @@ GlyphCanvas::GlyphCanvas(ViewContext& ctx)
                 "Measure (hold M)\nDrag: distance and angle. Click: the stems through that point.");
     icon_button(m_tool_hand, "granjon-tool-hand-symbolic",
                 "Hand (hold Space)\nDrag to pan. Ctrl+scroll zooms; Ctrl+0 fits.");
+    icon_button(m_tool_rect, "granjon-tool-rect-symbolic",
+                "Rectangle (R)\nDrag a box. Shift: a square; Alt: from the centre. One closed contour, picked -- "
+                "one undo step.");
+    icon_button(m_tool_ellipse, "granjon-tool-ellipse-symbolic",
+                "Ellipse (E)\nDrag its box. Shift: a circle; Alt: from the centre. Four smooth nodes at the extremes.");
+    icon_button(m_tool_line, "granjon-tool-line-symbolic",
+                "Line (\\)\nDrag a bar of the Stroke width (the field in the bar above). Shift: 45 degrees; "
+                "Alt: from the centre.");
+    m_tool_select.set_group(m_tool_pick);
     m_pen.set_group(m_tool_pick);
+    m_tool_rect.set_group(m_tool_pick);
+    m_tool_ellipse.set_group(m_tool_pick);
+    m_tool_line.set_group(m_tool_pick);
     m_tool_measure.set_group(m_tool_pick);
     m_tool_hand.set_group(m_tool_pick);
     m_tool_pick.set_active(true);
-    for (auto* b : {&m_tool_pick, &m_pen, &m_tool_measure, &m_tool_hand}) {
+    for (auto* b : {&m_tool_select, &m_tool_pick, &m_pen, &m_tool_rect, &m_tool_ellipse, &m_tool_line, &m_tool_measure, &m_tool_hand}) {
         b->signal_toggled().connect([this, b] { if (b->get_active()) on_tool_changed(); });
         m_tools.append(*b);
     }
@@ -283,6 +326,10 @@ GlyphCanvas::GlyphCanvas(ViewContext& ctx)
         if (n != 2) return;
         const model::Glyph* g = glyph();
         if (!g) return;
+        if (tool() == Tool::Select) {   // the solid arrow: drill into the path with the hollow one
+            set_tool(Tool::Pick);
+            return;
+        }
         const geom::Hit hit = geom::hit_test(*g, to_font(x, y), kHitPx / m_s);
         if (hit.kind == geom::Hit::Kind::Segment) {   // M5f: a node on the segment, the shape unchanged
             int at = -1;
@@ -611,7 +658,7 @@ void GlyphCanvas::on_draw(const Cairo::RefPtr<Cairo::Context>& cr, int w, int h)
     draw_anchors(cr, *g);
 
     // What the lead point snapped to, while dragging: a dashed accent line.
-    if (m_mode == Mode::Points && (m_snap_x || m_snap_y)) {
+    if ((m_mode == Mode::Points || m_mode == Mode::Shape) && (m_snap_x || m_snap_y)) {
         std::vector<double> dash{4.0, 3.0};
         cr->set_dash(dash, 0);
         cr->set_source_rgba(NS[0], NS[1], NS[2], 0.9);
@@ -632,6 +679,7 @@ void GlyphCanvas::on_draw(const Cairo::RefPtr<Cairo::Context>& cr, int w, int h)
 
     draw_measure(cr, *g);
     if (m_pen.get_active()) draw_pen(cr, *g);
+    if (m_mode == Mode::Shape) draw_shape(cr);
     if (m_mode == Mode::Marquee) {
         const double x0 = std::min(m_press_x, m_mx), y0 = std::min(m_press_y, m_my);
         cr->rectangle(std::round(x0) + 0.5, std::round(y0) + 0.5, std::round(std::abs(m_mx - m_press_x)),
@@ -1270,6 +1318,21 @@ void GlyphCanvas::on_press(double x, double y) {
         return;
     }
 
+    // M14a: a primitive -- press .. release draws it; nothing is written
+    // until the release (one step).
+    if (const Tool t = tool(); t == Tool::Rect || t == Tool::Ellipse || t == Tool::Line) {
+        const auto pst = m_drag->get_current_event_state();
+        const bool ctrl = (pst & Gdk::ModifierType::CONTROL_MASK) == Gdk::ModifierType::CONTROL_MASK;
+        m_mode = Mode::Shape;
+        m_shape_a = m_shape_b = snap_free(to_font(x, y), !ctrl);
+        m_shape_shift = (pst & Gdk::ModifierType::SHIFT_MASK) == Gdk::ModifierType::SHIFT_MASK;
+        m_shape_alt = (pst & Gdk::ModifierType::ALT_MASK) == Gdk::ModifierType::ALT_MASK;
+        m_snap_x.reset();
+        m_snap_y.reset();
+        m_area.queue_draw();
+        return;
+    }
+
     const auto st = m_drag->get_current_event_state();
     const bool shift = (st & Gdk::ModifierType::SHIFT_MASK) == Gdk::ModifierType::SHIFT_MASK;
     // M13: a picked image's corner handles come first (they sit on its frame).
@@ -1302,6 +1365,46 @@ void GlyphCanvas::on_press(double x, double y) {
     };
 
     using K = geom::Hit::Kind;
+    // The Select tool (the solid arrow): whole paths. A press on a path's
+    // outline, or inside it (the smallest path there -- a counter inside its
+    // bowl), takes the whole path. Handles don't catch; anchors, components,
+    // guides, the image, sidebearings and the marquee act as in Pick.
+    m_unpick_contour.reset();
+    if (tool() == Tool::Select) {
+        const geom::Vec2 fp = to_font(x, y);
+        const geom::Hit sh = geom::hit_test(*g, fp, kHitPx / m_s, false);
+        int c = -1, lead = 0;
+        if (sh.kind == K::Node || sh.kind == K::Segment) {
+            c = sh.contour;
+            lead = sh.index;
+        } else if (sh.kind == K::None && sidebearing_at(x, y) < 0 && !guide_at(x, y) &&
+                   geom::component_at(m_ctx.doc.font, *g, fp) < 0) {
+            c = geom::contour_at(*g, fp);
+            if (c >= 0) {   // the lead (what snaps) is the node nearest the press
+                double best = 1e18;
+                const auto& ns = g->contours[static_cast<std::size_t>(c)].nodes;
+                for (int i = 0; i < static_cast<int>(ns.size()); ++i)
+                    if (const double d = (geom::Vec2{ns[static_cast<std::size_t>(i)].x, ns[static_cast<std::size_t>(i)].y} - fp).length();
+                        d < best) { best = d; lead = i; }
+            }
+        }
+        if (c >= 0) {
+            m_ctx.guide_pick.reset();
+            const geom::Points path = geom::whole_contours(*g, {{c, 0, Part::Node}});
+            const bool all = std::all_of(path.begin(), path.end(), [&](const PointRef& r) { return m_pick.count(r) > 0; });
+            if (shift) {
+                if (all) m_unpick_contour = c;   // a Shift-CLICK drops it; a Shift-drag moves
+                else m_pick.insert(path.begin(), path.end());
+            } else if (!all) {
+                m_pick = path;
+            }
+            m_lead = {c, lead, Part::Node};
+            m_mode = Mode::Points;
+            say_pick();
+            m_area.queue_draw();
+            return;
+        }
+    }
     int side = -1;
     if (hit.kind == K::Node)           pick_one({hit.contour, hit.index, Part::Node});
     else if (hit.kind == K::HandleIn)  pick_one({hit.contour, hit.index, Part::In});
@@ -1372,6 +1475,28 @@ void GlyphCanvas::on_press(double x, double y) {
 }
 
 void GlyphCanvas::on_drag(double dx, double dy) {
+    if (m_mode == Mode::Shape) {
+        const auto st = m_drag->get_current_event_state();
+        const bool ctrl = (st & Gdk::ModifierType::CONTROL_MASK) == Gdk::ModifierType::CONTROL_MASK;
+        m_shape_shift = (st & Gdk::ModifierType::SHIFT_MASK) == Gdk::ModifierType::SHIFT_MASK;
+        m_shape_alt = (st & Gdk::ModifierType::ALT_MASK) == Gdk::ModifierType::ALT_MASK;
+        m_mx = m_press_x + dx; m_my = m_press_y + dy;
+        // Shift constrains the shape itself, so only a free drag snaps.
+        m_shape_b = snap_free(to_font(m_mx, m_my), !ctrl && !m_shape_shift);
+        const model::Contour c = shape_now();
+        std::ostringstream o;
+        if (tool() == Tool::Line) {
+            geom::Vec2 a, b;
+            geom::drag_line(m_shape_a, m_shape_b, m_shape_shift, m_shape_alt, a, b);
+            o << fmt(std::round((b - a).length())) << " long";
+        } else {
+            const auto bx = geom::drag_box(m_shape_a, m_shape_b, m_shape_shift, m_shape_alt);
+            o << fmt(std::round(bx.hi.x - bx.lo.x)) << " \u00d7 " << fmt(std::round(bx.hi.y - bx.lo.y));
+        }
+        m_readout.set_text(c.nodes.empty() ? "" : o.str());
+        m_area.queue_draw();
+        return;
+    }
     if (m_mode == Mode::Pen) {
         const auto st = m_drag->get_current_event_state();
         const bool shift = (st & Gdk::ModifierType::SHIFT_MASK) == Gdk::ModifierType::SHIFT_MASK;
@@ -1476,6 +1601,7 @@ void GlyphCanvas::on_drag(double dx, double dy) {
                 m_pick = m_press_pick;
                 for (const auto& p : geom::points_in(*g, to_font(m_press_x, m_press_y), to_font(m_mx, m_my)))
                     m_pick.insert(p);
+                if (tool() == Tool::Select) m_pick = geom::whole_contours(*g, m_pick);   // every path it touches
             }
             m_area.queue_draw();
             return;
@@ -1580,6 +1706,27 @@ void GlyphCanvas::on_drag(double dx, double dy) {
 void GlyphCanvas::on_release(double dx, double dy) {
     const Mode was = m_mode;
     m_mode = Mode::None;
+    if (was == Mode::Shape) {
+        const model::Contour c = shape_now();
+        const Tool t = tool();
+        const std::string label = t == Tool::Rect ? "Rectangle" : t == Tool::Ellipse ? "Ellipse" : "Line";
+        int at = -1;
+        std::string why;
+        if (!c.nodes.empty() &&
+            command::add_shape(m_ctx.doc.journal, m_ctx.doc.font, m_shown, c, label, &at, &why) && at >= 0) {
+            m_pick.clear();
+            for (int i = 0; i < static_cast<int>(c.nodes.size()); ++i) m_pick.insert({at, i, Part::Node});
+            m_ctx.pick_changed.emit();
+            if (m_ctx.say) m_ctx.say(label + " drawn -- picked; drag or nudge it, or draw another. V to select.", false);
+        } else if (m_ctx.say) {
+            m_ctx.say(why.empty() ? std::string("Drag to draw a ") + (t == Tool::Rect ? "rectangle." : t == Tool::Ellipse ? "ellipse." : "line.") : why, false);
+        }
+        m_snap_x.reset();
+        m_snap_y.reset();
+        m_readout.set_text("");
+        m_area.queue_draw();
+        return;
+    }
     if (was == Mode::Pen) {
         command::drag_end(m_ctx.doc.journal, m_ctx.doc.font);
         m_began = false;
@@ -1646,6 +1793,10 @@ void GlyphCanvas::on_release(double dx, double dy) {
         return;
     }
     if (m_unpick && !m_began) m_pick.erase(*m_unpick);   // it was a Shift-click, not a drag
+    if (m_unpick_contour && !m_began)
+        if (const model::Glyph* g = glyph())
+            for (const auto& r : geom::whole_contours(*g, {{*m_unpick_contour, 0, Part::Node}})) m_pick.erase(r);
+    m_unpick_contour.reset();
     m_unpick.reset();
     if ((was == Mode::Points || was == Mode::Sidebearing) && m_began) {
         auto& doc = m_ctx.doc;
@@ -1683,12 +1834,22 @@ bool GlyphCanvas::on_key(guint keyval, guint, Gdk::ModifierType state) {
         set_pen(!m_pen.get_active());
         return true;
     }
-    if ((keyval == GDK_KEY_v || keyval == GDK_KEY_V) && !ctrl && m_mode == Mode::None) {
+    if (!ctrl && m_mode == Mode::None &&
+        (keyval == GDK_KEY_r || keyval == GDK_KEY_R || keyval == GDK_KEY_e || keyval == GDK_KEY_E || keyval == GDK_KEY_backslash)) {
+        set_tool(keyval == GDK_KEY_backslash ? Tool::Line : (keyval == GDK_KEY_r || keyval == GDK_KEY_R) ? Tool::Rect : Tool::Ellipse);
+        return true;
+    }
+    if ((keyval == GDK_KEY_a || keyval == GDK_KEY_A) && !ctrl && m_mode == Mode::None) {
         set_tool(Tool::Pick);
         return true;
     }
-    if (keyval == GDK_KEY_Escape && m_mode == Mode::None && (tool() == Tool::Measure || tool() == Tool::Hand)) {
-        set_tool(Tool::Pick);
+    if ((keyval == GDK_KEY_v || keyval == GDK_KEY_V) && !ctrl && m_mode == Mode::None) {
+        set_tool(Tool::Select);
+        return true;
+    }
+    if (keyval == GDK_KEY_Escape && m_mode == Mode::None && (tool() == Tool::Measure || tool() == Tool::Hand || tool() == Tool::Rect ||
+                                                          tool() == Tool::Ellipse || tool() == Tool::Line)) {
+        set_tool(Tool::Select);
         return true;
     }
     if ((keyval == GDK_KEY_Return || keyval == GDK_KEY_KP_Enter) && m_pen.get_active() && m_mode == Mode::None) {
@@ -1973,6 +2134,16 @@ void GlyphCanvas::say_pick() {
         return;
     }
     if (m_pick.empty()) return;
+    if (tool() == Tool::Select) {   // whole paths: count paths (and whatever else rides along)
+        std::set<int> paths;
+        std::size_t other = 0;
+        for (const auto& p : m_pick) (p.contour >= 0 ? (void)paths.insert(p.contour) : (void)++other);
+        std::string t = std::to_string(paths.size()) + (paths.size() == 1 ? " path" : " paths");
+        if (other) t += " + " + std::to_string(other) + (other == 1 ? " anchor / component" : " anchors / components");
+        m_ctx.say(t + " picked" + (paths.size() == 1 ? ", contour " + std::to_string(*paths.begin() + 1) + " of " +
+                                                         std::to_string(g->contours.size()) : std::string()), false);
+        return;
+    }
     if (m_pick.size() == 1) {
         const PointRef& p = *m_pick.begin();
         if (!geom::valid(*g, p)) return;
@@ -2058,15 +2229,23 @@ void GlyphCanvas::draw_pen(const Cairo::RefPtr<Cairo::Context>& cr, const model:
 // ── the tool panel (M5h) ──────────────────────────────────────────────────
 
 GlyphCanvas::Tool GlyphCanvas::tool() const {
+    if (m_tool_select.get_active()) return Tool::Select;
     if (m_pen.get_active()) return Tool::Pen;
+    if (m_tool_rect.get_active()) return Tool::Rect;
+    if (m_tool_ellipse.get_active()) return Tool::Ellipse;
+    if (m_tool_line.get_active()) return Tool::Line;
     if (m_tool_measure.get_active()) return Tool::Measure;
     if (m_tool_hand.get_active()) return Tool::Hand;
     return Tool::Pick;
 }
 
 bool GlyphCanvas::use_tool(const std::string& name) {
-    if (name == "pick")         set_tool(Tool::Pick);
+    if (name == "select")       set_tool(Tool::Select);
+    else if (name == "pick")    set_tool(Tool::Pick);
     else if (name == "pen")     set_tool(Tool::Pen);
+    else if (name == "rectangle") set_tool(Tool::Rect);
+    else if (name == "ellipse") set_tool(Tool::Ellipse);
+    else if (name == "line")    set_tool(Tool::Line);
     else if (name == "measure") set_tool(Tool::Measure);
     else if (name == "hand")    set_tool(Tool::Hand);
     else return false;
@@ -2074,7 +2253,11 @@ bool GlyphCanvas::use_tool(const std::string& name) {
 }
 
 void GlyphCanvas::set_tool(Tool t) {
-    Gtk::ToggleButton& b = t == Tool::Pen ? static_cast<Gtk::ToggleButton&>(m_pen)
+    Gtk::ToggleButton& b = t == Tool::Select ? static_cast<Gtk::ToggleButton&>(m_tool_select)
+                         : t == Tool::Pen ? static_cast<Gtk::ToggleButton&>(m_pen)
+                         : t == Tool::Rect ? static_cast<Gtk::ToggleButton&>(m_tool_rect)
+                         : t == Tool::Ellipse ? static_cast<Gtk::ToggleButton&>(m_tool_ellipse)
+                         : t == Tool::Line ? static_cast<Gtk::ToggleButton&>(m_tool_line)
                          : t == Tool::Measure ? static_cast<Gtk::ToggleButton&>(m_tool_measure)
                          : t == Tool::Hand ? static_cast<Gtk::ToggleButton&>(m_tool_hand)
                                            : static_cast<Gtk::ToggleButton&>(m_tool_pick);
@@ -2087,17 +2270,98 @@ void GlyphCanvas::on_tool_changed() {
     m_measure = t == Tool::Measure;
     m_space = t == Tool::Hand;
     if (t != Tool::Measure) { m_meas_a = m_meas_b = {}; m_stem_h.reset(); m_stem_v.reset(); }
-    m_area.set_cursor(t == Tool::Pen || t == Tool::Measure ? "crosshair" : t == Tool::Hand ? "grab" : "default");
+    const bool shape = t == Tool::Rect || t == Tool::Ellipse || t == Tool::Line;
+    m_area.set_cursor(t == Tool::Pen || t == Tool::Measure || shape ? "crosshair" : t == Tool::Hand ? "grab" : "default");
+    m_stroke_label.set_visible(t == Tool::Line);
+    m_stroke.set_visible(t == Tool::Line);
+    if (t == Tool::Line) m_stroke.set_value(stroke_width());
     if (m_ctx.say) {
         switch (t) {
-            case Tool::Pen:     m_ctx.say("Pen: click for a corner, drag for a curve; V or Escape for picking.", false); break;
-            case Tool::Measure: m_ctx.say("Measure: drag a distance, click for the stems; V for picking.", false); break;
-            case Tool::Hand:    m_ctx.say("Hand: drag to pan; V for picking.", false); break;
-            case Tool::Pick:    m_ctx.say("Pick.", false); break;
+            case Tool::Pen:     m_ctx.say("Pen: click for a corner, drag for a curve; A or Escape for picking.", false); break;
+            case Tool::Rect:    m_ctx.say("Rectangle: drag a box (Shift square, Alt from the centre); V to select.", false); break;
+            case Tool::Ellipse: m_ctx.say("Ellipse: drag its box (Shift circle, Alt from the centre); V to select.", false); break;
+            case Tool::Line:    m_ctx.say("Line: drag a bar of the Stroke width (Shift 45 degrees, Alt from the centre); V to select.", false); break;
+            case Tool::Measure: m_ctx.say("Measure: drag a distance, click for the stems; V to select.", false); break;
+            case Tool::Hand:    m_ctx.say("Hand: drag to pan; V to select.", false); break;
+            case Tool::Pick:    m_ctx.say("Pick: nodes and handles (A). V for whole paths.", false); break;
+            case Tool::Select:  m_ctx.say("Select: whole paths (V). A for nodes and handles; double-click a path to go in.", false); break;
         }
     }
     m_area.queue_draw();
     m_area.grab_focus();
+}
+
+// ── the primitives (M14a) ─────────────────────────────────────────────────
+
+double GlyphCanvas::stroke_width() const {
+    if (m_ctx.settings.line_width > 0) return m_ctx.settings.line_width;
+    const auto& info = m_ctx.doc.font.info();
+    if (info.origin.stem_v > 0) return info.origin.stem_v;
+    return std::max(1.0, std::round(info.units_per_em * 0.08));
+}
+
+model::Contour GlyphCanvas::shape_now() const {
+    const Tool t = tool();
+    if (t == Tool::Line) {
+        geom::Vec2 a, b;
+        geom::drag_line(m_shape_a, m_shape_b, m_shape_shift, m_shape_alt, a, b);
+        if ((b - a).length() < 1.0) return {};
+        return geom::shape_bar(a, b, stroke_width());
+    }
+    const geom::Box bx = geom::drag_box(m_shape_a, m_shape_b, m_shape_shift, m_shape_alt);
+    if (geom::degenerate(bx)) return {};
+    return t == Tool::Ellipse ? geom::shape_ellipse(bx) : geom::shape_rect(bx);
+}
+
+// The pointer, snapped as a dragged node would be: the metric lines, the
+// sidebearings, the glyph's nodes, guides, the grid (when shown).
+geom::Vec2 GlyphCanvas::snap_free(geom::Vec2 p, bool on) {
+    m_snap_x.reset();
+    m_snap_y.reset();
+    const model::Glyph* g = glyph();
+    if (!on || !g || !m_snap.get_active()) return p;
+    const auto& m = m_ctx.doc.font.metrics();
+    const double os = m.overshoot;
+    std::vector<double> xs{0.0, g->advance};
+    std::vector<double> ys{0.0, double(m.x_height), double(m.cap_height), double(m.ascender),
+                           double(m.descender), -os, m.x_height + os, m.cap_height + os};
+    for (const auto& c : g->contours)
+        for (const auto& n : c.nodes) { xs.push_back(n.x); ys.push_back(n.y); }
+    for (const std::vector<model::Guide>* gs : {&m_ctx.doc.font.info().guides, &g->guides})
+        for (const auto& gd : *gs) {
+            if (gd.horizontal()) ys.push_back(gd.y);
+            else if (gd.vertical()) xs.push_back(gd.x);
+        }
+    const double grid = m_grid.get_active() ? std::max(1.0, geom::grid_step(m_s)) : 0.0;
+    const double tol = kHitPx / m_s;
+    p.x = geom::snap_axis(p.x, xs, grid, tol, &m_snap_x);
+    p.y = geom::snap_axis(p.y, ys, grid, tol, &m_snap_y);
+    return p;
+}
+
+void GlyphCanvas::draw_shape(const Cairo::RefPtr<Cairo::Context>& cr) {
+    const model::Contour c = shape_now();
+    if (c.nodes.empty()) return;
+    cr->save();
+    cr->begin_new_path();
+    const int n = static_cast<int>(c.nodes.size());
+    const geom::Vec2 p0 = to_screen({c.nodes[0].x, c.nodes[0].y});
+    cr->move_to(p0.x, p0.y);
+    for (int i = 0; i < n; ++i) {
+        const auto& a = c.nodes[static_cast<std::size_t>(i)];
+        const auto& b = c.nodes[static_cast<std::size_t>((i + 1) % n)];
+        const geom::Vec2 h1 = to_screen({a.cx2, a.cy2}), h2 = to_screen({b.cx1, b.cy1}), q = to_screen({b.x, b.y});
+        cr->curve_to(h1.x, h1.y, h2.x, h2.y, q.x, q.y);
+    }
+    cr->close_path();
+    cr->set_source_rgba(NS[0], NS[1], NS[2], 0.12);
+    cr->fill_preserve();
+    cr->set_source_rgba(NS[0], NS[1], NS[2], 0.9);
+    cr->set_line_width(1.0);
+    std::vector<double> dash{5.0, 3.0};
+    cr->set_dash(dash, 0);
+    cr->stroke();
+    cr->restore();
 }
 
 // ── the background image (M13) ───────────────────────────────────────────
