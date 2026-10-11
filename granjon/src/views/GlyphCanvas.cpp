@@ -6,8 +6,11 @@
 #include "unicode/Blocks.hpp"
 #include "unicode/UcdTable.hpp"
 #include "views/GlyphPaint.hpp"
+#include "views/ImagePlace.hpp"
 
+#include <gdk/gdk.h>
 #include <glibmm/main.h>
+#include <gtkmm/droptarget.h>
 #include <gtkmm/eventcontrollermotion.h>
 #include <gtkmm/eventcontrollerscroll.h>
 #include <gtkmm/root.h>
@@ -16,6 +19,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstring>
 #include <cctype>
 #include <cmath>
 #include <iomanip>
@@ -77,6 +81,7 @@ GlyphCanvas::GlyphCanvas(ViewContext& ctx)
       m_fill("editor.fill"),
       m_grid("editor.grid"),
       m_snap("editor.snap"),
+      m_image("editor.image"),
       m_pen("editor.tool_pen"),
       m_tool_pick("editor.tool_pick"),
       m_tool_measure("editor.tool_measure"),
@@ -156,11 +161,17 @@ GlyphCanvas::GlyphCanvas(ViewContext& ctx)
         update_zoom_label();
     });
     m_snap.signal_toggled().connect([this, remember] { remember(m_ctx.settings.editor_snap, m_snap.get_active()); });
+    m_image.set_active(m_ctx.settings.editor_image);
+    m_image.signal_toggled().connect([this, remember] {
+        if (!m_image.get_active()) m_image_picked = false;
+        remember(m_ctx.settings.editor_image, m_image.get_active());
+    });
     m_ctx.settings_changed.connect([this] {
         if (m_context.get_active() != m_ctx.settings.editor_context) m_context.set_active(m_ctx.settings.editor_context);
         if (m_fill.get_active() != m_ctx.settings.editor_fill) m_fill.set_active(m_ctx.settings.editor_fill);
         if (m_grid.get_active() != m_ctx.settings.editor_grid) m_grid.set_active(m_ctx.settings.editor_grid);
         if (m_snap.get_active() != m_ctx.settings.editor_snap) m_snap.set_active(m_ctx.settings.editor_snap);
+        if (m_image.get_active() != m_ctx.settings.editor_image) m_image.set_active(m_ctx.settings.editor_image);
         m_area.queue_draw();   // context names may have changed
     });
     m_fit_button.signal_clicked().connect([this] { fit(); m_area.grab_focus(); });
@@ -214,7 +225,11 @@ GlyphCanvas::GlyphCanvas(ViewContext& ctx)
     icon_button(m_snap, "granjon-view-snap-symbolic",
                 "Snap\nDrags snap to the grid (when shown), the metric lines, the sidebearings and the other nodes. "
                 "Ctrl (fine drag) never snaps. Remembered.");
-    for (auto* b : {&m_fill, &m_context, &m_grid, &m_snap}) m_tools.append(*b);
+    icon_button(m_image, "granjon-view-image-symbolic",
+                "Image\nShow the background image -- a scan or sketch to trace (drop a PNG / JPEG on the canvas, "
+                "or the inspector's IMAGE card). Unlocked, drag it or its corners; locked, clicks go through. "
+                "Remembered.");
+    for (auto* b : {&m_fill, &m_context, &m_grid, &m_snap, &m_image}) m_tools.append(*b);
     m_work.append(m_tools);
     m_work.append(m_area);
     m_work.set_vexpand(true);
@@ -285,6 +300,26 @@ GlyphCanvas::GlyphCanvas(ViewContext& ctx)
     keys->signal_key_pressed().connect(sigc::mem_fun(*this, &GlyphCanvas::on_key), false);
     keys->signal_key_released().connect(sigc::mem_fun(*this, &GlyphCanvas::on_key_released));
     m_area.add_controller(keys);
+
+    // M13: drop an image file on the canvas -> it goes behind the glyph shown.
+    auto drop = Gtk::DropTarget::create(GDK_TYPE_FILE_LIST, Gdk::DragAction::COPY);
+    drop->signal_drop().connect([this](const Glib::ValueBase& value, double, double) {
+        if (!glyph() || !G_VALUE_HOLDS(value.gobj(), GDK_TYPE_FILE_LIST)) return false;
+        auto* list = static_cast<GSList*>(g_value_get_boxed(value.gobj()));
+        if (!list || !list->data) return false;
+        auto file = Glib::wrap(G_FILE(list->data), true);   // take a reference
+        const bool ok = place_image_file(m_ctx, m_shown, file);
+        if (ok) {
+            if (!m_image.get_active()) m_image.set_active(true);
+            m_image_picked = true;
+            m_pick.clear();
+            m_ctx.pick_changed.emit();
+        }
+        m_area.grab_focus();
+        m_area.queue_draw();
+        return ok;
+    }, false);
+    m_area.add_controller(drop);
 
     m_ctx.selection_changed.connect([this] { refresh(); });
     m_ctx.pick_changed.connect([this] { m_area.queue_draw(); });   // the inspector can pick too
@@ -370,6 +405,7 @@ void GlyphCanvas::refresh() {
         if (m_mode != Mode::None) cancel_drag();
         m_shown = m_ctx.selected;
         m_pick.clear();
+        m_image_picked = false;
         if (m_ctx.guide_pick && !m_ctx.guide_pick->owner.empty()) m_ctx.guide_pick.reset();
         m_ctx.pick_changed.emit();
         m_fitted = false;   // a new glyph: fit it on the next draw
@@ -381,6 +417,7 @@ void GlyphCanvas::refresh() {
             it = geom::valid(*g, *it) ? std::next(it) : m_pick.erase(it);
         if (m_ctx.guide_pick && !picked_guide()) { m_ctx.guide_pick.reset(); m_ctx.pick_changed.emit(); }
         if (m_pick.size() != had) m_ctx.pick_changed.emit();
+        if (m_image_picked && !image_live(*g)) m_image_picked = false;   // removed, locked, hidden
         std::string t = g->name;
         if (!g->unicodes.empty()) {
             std::ostringstream o;
@@ -467,6 +504,7 @@ void GlyphCanvas::on_draw(const Cairo::RefPtr<Cairo::Context>& cr, int w, int h)
     }
     const auto& font = m_ctx.doc.font;
 
+    if (g->image && m_image.get_active()) draw_image(cr, *g);   // behind everything
     if (m_grid.get_active()) draw_grid(cr, w, h);
     draw_guides(cr, w, h, *g);
     draw_user_guides(cr, w, h, *g);
@@ -1199,8 +1237,18 @@ void GlyphCanvas::on_press(double x, double y) {
 
     const auto st = m_drag->get_current_event_state();
     const bool shift = (st & Gdk::ModifierType::SHIFT_MASK) == Gdk::ModifierType::SHIFT_MASK;
+    // M13: a picked image's corner handles come first (they sit on its frame).
+    if (m_image_picked && image_live(*g)) {
+        if (const int hc = image_handle_at(*g, x, y); hc >= 0) {
+            m_image_handle = hc;
+            m_image_press = *g->image;
+            m_mode = Mode::Image;
+            return;
+        }
+    }
     const geom::Hit hit = geom::hit_test(*g, to_font(x, y), kHitPx / m_s);
     m_press_glyph = *g;
+    m_image_picked = false;   // re-set below when the press lands on the image
     m_lead = {};   // invalid: nothing snaps unless a point was grabbed
     m_unpick.reset();
 
@@ -1237,6 +1285,21 @@ void GlyphCanvas::on_press(double x, double y) {
                 if (const model::Guide* gd = picked_guide()) m_guide_press = *gd;
                 m_mode = Mode::Guide;
                 say_pick();
+                m_area.queue_draw();
+                return;
+            }
+            // M13: on an unlocked image: pick it -- a drag moves it.
+            if (image_live(*g) && image_inside(*g, x, y)) {
+                m_pick.clear();
+                m_ctx.guide_pick.reset();
+                m_image_picked = true;
+                m_image_handle = -1;
+                m_image_press = *g->image;
+                m_mode = Mode::Image;
+                m_ctx.pick_changed.emit();
+                if (m_ctx.say)
+                    m_ctx.say("Image " + g->image->file + ": drag to move, a corner to scale (Shift: from the centre); "
+                              "Delete removes it; lock it (inspector) to trace.", false);
                 m_area.queue_draw();
                 return;
             }
@@ -1284,6 +1347,43 @@ void GlyphCanvas::on_drag(double dx, double dy) {
         command::pen_drag(m_ctx.doc.journal, m_ctx.doc.font, m_shown,
                           {m_pen_at_contour, m_pen_at_node, m_pen_at_closed}, d, alt);
         m_mx = m_press_x + dx; m_my = m_press_y + dy;
+        return;
+    }
+    if (m_mode == Mode::Image) {
+        const model::Glyph* g = glyph();
+        if (!g || !g->image) return;
+        auto& doc = m_ctx.doc;
+        if (!m_began) {
+            if (std::hypot(dx, dy) < kDragPx) return;
+            command::image_drag_begin(doc.journal, doc.font, m_shown, m_image_handle < 0 ? "Move image" : "Scale image");
+            m_began = doc.journal.in_gesture();
+            if (!m_began) return;
+        }
+        model::GlyphImage im = m_image_press;
+        if (m_image_handle < 0) {
+            im.dx += dx / m_s;
+            im.dy -= dy / m_s;
+            m_readout.set_text(fmt(im.dx - m_image_press.dx) + ", " + fmt(im.dy - m_image_press.dy));
+        } else {
+            int pw = 0, ph = 0;
+            if (!image_px(m_image_press, pw, ph)) return;
+            const auto st = m_drag->get_current_event_state();
+            const bool centre = (st & Gdk::ModifierType::SHIFT_MASK) == Gdk::ModifierType::SHIFT_MASK;
+            const geom::Vec2 c0 = image_corner(m_image_press, pw, ph, m_image_handle);
+            const geom::Vec2 a = centre ? (c0 + image_corner(m_image_press, pw, ph, (m_image_handle + 2) % 4)) * 0.5
+                                        : image_corner(m_image_press, pw, ph, (m_image_handle + 2) % 4);
+            const geom::Vec2 p = to_font(m_press_x + dx, m_press_y + dy);
+            const geom::Vec2 diag = c0 - a;
+            const double len2 = diag.x * diag.x + diag.y * diag.y;
+            if (len2 <= 0) return;
+            const double k = std::max(0.02, ((p.x - a.x) * diag.x + (p.y - a.y) * diag.y) / len2);
+            // Scale about `a`: the matrix by k, the offset pulled toward a.
+            im.xx *= k; im.xy *= k; im.yx *= k; im.yy *= k;
+            im.dx = a.x + (m_image_press.dx - a.x) * k;
+            im.dy = a.y + (m_image_press.dy - a.y) * k;
+            m_readout.set_text(fmt(k * 100) + " %");
+        }
+        command::set_image_frame(doc.journal, doc.font, m_shown, im);
         return;
     }
     switch (m_mode) {
@@ -1499,6 +1599,17 @@ void GlyphCanvas::on_release(double dx, double dy) {
         m_area.queue_draw();
         return;
     }
+    if (was == Mode::Image) {
+        if (m_began) {
+            command::drag_end(m_ctx.doc.journal, m_ctx.doc.font);   // the offset snaps; one step
+            if (m_ctx.say) m_ctx.say(m_ctx.doc.journal.undo_label() + ".", false);
+        }
+        m_began = false;
+        m_image_handle = -1;
+        m_readout.set_text("");
+        m_area.queue_draw();
+        return;
+    }
     if (m_unpick && !m_began) m_pick.erase(*m_unpick);   // it was a Shift-click, not a drag
     m_unpick.reset();
     if ((was == Mode::Points || was == Mode::Sidebearing) && m_began) {
@@ -1556,6 +1667,7 @@ bool GlyphCanvas::on_key(guint keyval, guint, Gdk::ModifierType state) {
     }
     if (keyval == GDK_KEY_Escape) {
         if (m_mode != Mode::None) cancel_drag();
+        else if (m_image_picked) { m_image_picked = false; m_area.queue_draw(); }
         else if (m_pick.empty() && !m_ctx.guide_pick) {
             // Nothing left to drop: give the focus back (the canvas keeps Tab).
             if (auto* root = dynamic_cast<Gtk::Widget*>(m_area.get_root()))
@@ -1581,6 +1693,13 @@ bool GlyphCanvas::on_key(guint keyval, guint, Gdk::ModifierType state) {
     }
     if ((keyval == GDK_KEY_m || keyval == GDK_KEY_M) && !ctrl) {   // hold M: measure
         if (!m_measure) { m_measure = true; m_area.set_cursor("crosshair"); m_area.queue_draw(); }
+        return true;
+    }
+    if ((keyval == GDK_KEY_Delete || keyval == GDK_KEY_KP_Delete || keyval == GDK_KEY_BackSpace) && !ctrl &&
+        m_image_picked && m_mode == Mode::None) {
+        if (command::remove_image(m_ctx.doc.journal, m_ctx.doc.font, m_shown) && m_ctx.say)
+            m_ctx.say(m_ctx.doc.journal.undo_label() + " -- Ctrl+Z brings it back.", false);
+        m_image_picked = false;
         return true;
     }
     if ((keyval == GDK_KEY_Delete || keyval == GDK_KEY_KP_Delete || keyval == GDK_KEY_BackSpace) && !ctrl &&
@@ -1944,6 +2063,117 @@ void GlyphCanvas::on_tool_changed() {
     }
     m_area.queue_draw();
     m_area.grab_focus();
+}
+
+// ── the background image (M13) ───────────────────────────────────────────
+
+bool GlyphCanvas::image_px(const model::GlyphImage& im, int& w, int& h) const {
+    const auto bytes = m_ctx.doc.font.image(im.file);
+    return bytes && model::png_size(*bytes, w, h);
+}
+
+geom::Vec2 GlyphCanvas::image_corner(const model::GlyphImage& im, int w, int h, int i) const {
+    const double u = (i == 1 || i == 2) ? w : 0, v = (i >= 2) ? h : 0;   // ccw from bottom-left, y up
+    return {im.xx * u + im.yx * v + im.dx, im.xy * u + im.yy * v + im.dy};
+}
+
+bool GlyphCanvas::image_live(const model::Glyph& g) const {
+    int w = 0, h = 0;
+    return g.image && !g.image->locked && m_image.get_active() && image_px(*g.image, w, h);
+}
+
+int GlyphCanvas::image_handle_at(const model::Glyph& g, double sx, double sy) const {
+    int w = 0, h = 0;
+    if (!g.image || !image_px(*g.image, w, h)) return -1;
+    for (int i = 0; i < 4; ++i) {
+        const geom::Vec2 c = to_screen(image_corner(*g.image, w, h, i));
+        if (std::abs(c.x - sx) <= kHitPx + 1 && std::abs(c.y - sy) <= kHitPx + 1) return i;
+    }
+    return -1;
+}
+
+bool GlyphCanvas::image_inside(const model::Glyph& g, double sx, double sy) const {
+    int w = 0, h = 0;
+    if (!g.image || !image_px(*g.image, w, h)) return false;
+    const auto& im = *g.image;
+    const double det = im.xx * im.yy - im.xy * im.yx;
+    if (std::abs(det) < 1e-12) return false;
+    const geom::Vec2 p = to_font(sx, sy);
+    const double px = p.x - im.dx, py = p.y - im.dy;
+    const double u = ( im.yy * px - im.yx * py) / det;
+    const double v = (-im.xy * px + im.xx * py) / det;
+    return u >= 0 && u <= w && v >= 0 && v <= h;
+}
+
+void GlyphCanvas::draw_image(const Cairo::RefPtr<Cairo::Context>& cr, const model::Glyph& g) {
+    const auto& im = *g.image;
+    const auto bytes = m_ctx.doc.font.image(im.file);
+    int w = 0, h = 0;
+    if (!bytes || !model::png_size(*bytes, w, h)) return;
+    // Decode once per pool entry (drop entries whose bytes the pool let go).
+    std::erase_if(m_surfaces, [](const auto& e) { return e.second.first.use_count() <= 1; });
+    auto it = m_surfaces.find(bytes.get());
+    if (it == m_surfaces.end()) {
+        Cairo::RefPtr<Cairo::ImageSurface> surf;
+        try {
+            std::size_t at = 0;
+            surf = Cairo::ImageSurface::create_from_png_stream([&](unsigned char* data, unsigned int len) {
+                if (at + len > bytes->size()) return CAIRO_STATUS_READ_ERROR;
+                std::memcpy(data, bytes->data() + at, len);
+                at += len;
+                return CAIRO_STATUS_SUCCESS;
+            });
+        } catch (...) {
+            surf.reset();
+        }
+        it = m_surfaces.emplace(bytes.get(), std::make_pair(bytes, surf)).first;
+    }
+    const auto& surf = it->second.second;
+    if (!surf || surf->get_width() <= 0) return;
+
+    cr->save();
+    cr->translate(m_ox, m_oy);
+    cr->scale(m_s, -m_s);                                       // font units, y up
+    cr->transform(Cairo::Matrix(im.xx, im.xy, im.yx, im.yy, im.dx, im.dy));   // image px (y up) -> font
+    cr->translate(0, h);
+    cr->scale(1, -1);                                           // the PNG's rows run down
+    auto pat = Cairo::SurfacePattern::create(surf);
+    // Close in, show the pixels as pixels (what a tracer wants to see).
+    const double px_on_screen = m_s * std::sqrt(std::abs(im.xx * im.yy - im.xy * im.yx));
+    pat->set_filter(px_on_screen > 3 ? Cairo::SurfacePattern::Filter::NEAREST : Cairo::SurfacePattern::Filter::GOOD);
+    cr->set_source(pat);
+    cr->paint_with_alpha(std::clamp(im.opacity, 0.0, 1.0));
+    cr->restore();
+
+    if (im.locked) return;
+    // Unlocked: a thin frame says "this moves"; picked, accent with handles.
+    cr->begin_new_path();
+    for (int i = 0; i < 4; ++i) {
+        const geom::Vec2 c = to_screen(image_corner(im, w, h, i));
+        if (i == 0) cr->move_to(c.x, c.y); else cr->line_to(c.x, c.y);
+    }
+    cr->close_path();
+    if (m_image_picked) {
+        cr->set_source_rgba(NS[0], NS[1], NS[2], 0.95);
+        cr->set_line_width(1.5);
+        cr->stroke();
+        for (int i = 0; i < 4; ++i) {
+            const geom::Vec2 c = to_screen(image_corner(im, w, h, i));
+            cr->rectangle(std::round(c.x) - 4.5, std::round(c.y) - 4.5, 9, 9);
+            cr->set_source_rgba(NF[0], NF[1], NF[2], 1.0);
+            cr->fill_preserve();
+            cr->set_source_rgba(NS[0], NS[1], NS[2], 1.0);
+            cr->set_line_width(1.5);
+            cr->stroke();
+        }
+    } else {
+        std::vector<double> dash{3.0, 3.0};
+        cr->set_dash(dash, 0);
+        cr->set_source_rgba(NS[0], NS[1], NS[2], 0.55);
+        cr->set_line_width(1.0);
+        cr->stroke();
+        cr->unset_dash();
+    }
 }
 
 }  // namespace granjon::views

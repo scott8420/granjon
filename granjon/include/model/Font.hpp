@@ -19,6 +19,7 @@
 
 #include <functional>
 #include <map>
+#include <memory>
 #include <unordered_map>
 #include <optional>
 #include <string>
@@ -58,6 +59,19 @@ public:
     double order_after(const std::string& name) const;     // a slot just after `name` (end if "")
     const Glyph* glyph_for(char32_t cp) const;              // first glyph mapping cp
 
+    // ── the image pool (M13) ────────────────────────────────────────────────
+    // PNG bytes by file name (the UFO's images/ folder). NOT a record and not
+    // undoable: a glyph's image is a reference into the pool (that part is
+    // undoable); the bytes are append-only for the life of the document --
+    // undoing a placement drops the reference, the bytes stay. Save writes
+    // only the referenced files. Same bytes -> the same name, so placing one
+    // scan in ten glyphs stores it once.
+    using ImageBytes = std::shared_ptr<const std::string>;
+    std::string add_image(std::string png, const std::string& stem);
+    ImageBytes  image(const std::string& file) const;
+    const std::map<std::string, ImageBytes>& images() const { return m_images; }
+    void set_images(std::map<std::string, ImageBytes> pool) { m_images = std::move(pool); }
+
     // Every record, by id -- for snapshots (the selftest's undo checks).
     std::map<Id, Record> snapshot() const;
 
@@ -84,6 +98,7 @@ private:
     Features                     m_features;
     CheckSkips                   m_skips;
     std::map<std::string, Glyph> m_glyphs;
+    std::map<std::string, ImageBytes> m_images;
     int                          m_strays  = 0;
     int                          m_loading = 0;
     std::function<bool()>        m_door;
@@ -96,6 +111,9 @@ private:
 };
 
 using FontJournal = core::Journal<Font>;
+
+// A PNG's pixel size from its IHDR; false if the bytes aren't a PNG.
+bool png_size(const std::string& png, int& w, int& h);
 
 // A fresh font: default info + metrics, .notdef and space. Loaded, not a step.
 void make_new_font(Font& f);

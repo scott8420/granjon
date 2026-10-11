@@ -10,6 +10,7 @@
 //   lib.plist           public.glyphOrder; granjon.* (metrics keys, overshoot)
 //   layercontents.plist the one layer, public.default -> glyphs
 //   glyphs/contents.plist + *.glif
+//   images/*.png        background images (M13) -- only the ones a glyph places
 //
 // Saving writes a complete new folder beside the target and swaps it in, so a
 // failed save never leaves a half-written font, and glyphs deleted since the

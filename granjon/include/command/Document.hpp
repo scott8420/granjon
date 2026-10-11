@@ -59,6 +59,7 @@ public:
     // where; modified, so closing asks first). On failure nothing changes.
     bool import(const std::string& p, reader::ImportReport* rep, std::string* err) {
         if (!reader::import_font_file(p, font, rep, err)) return false;
+        font.set_images({});          // an OTF / TTF carries no tracing images
         path.clear();
         journal.clear();
         m_saved = ~journal.stamp();   // never the current stamp: unsaved

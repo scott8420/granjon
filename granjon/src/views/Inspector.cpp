@@ -10,6 +10,7 @@
 #include "unicode/Blocks.hpp"
 #include "unicode/UcdTable.hpp"
 #include "views/GlyphPaint.hpp"
+#include "views/ImagePlace.hpp"
 #include "export/Codes.hpp"
 
 #include <gtkmm/eventcontrollerfocus.h>
@@ -465,6 +466,91 @@ void Inspector::build_glyph_page() {
         outline.wide(*row2);
     }
 
+    // ── IMAGE: the background image (M13) ───────────────────────────────────
+    Card image(*page, "IMAGE");
+    m_image_info.set_xalign(0.0f);
+    m_image_info.set_wrap(true);
+    m_image_info.add_css_class("hint");
+    image.wide(m_image_info);
+    m_image_place.set_label("Place…");
+    m_image_place.set_tooltip_text("Put a scan or sketch (PNG / JPEG) behind this glyph to trace -- one undo step. "
+                                   "Dropping a file on the editor canvas does the same.");
+    m_image_place.signal_clicked().connect([this] {
+        if (m_ctx.selected.empty()) return;
+        choose_image_file(m_ctx, dynamic_cast<Gtk::Window*>(get_root()), m_ctx.selected);
+    });
+    m_image_fit.set_label("Fit");
+    m_image_fit.set_tooltip_text("Size the image to span descender to ascender, its left edge on the origin -- one undo step");
+    m_image_fit.signal_clicked().connect([this] {
+        const model::Glyph* g = m_ctx.doc.font.glyph(m_ctx.selected);
+        int w = 0, h = 0;
+        if (!g || !g->image) return;
+        const auto bytes = m_ctx.doc.font.image(g->image->file);
+        if (!bytes || !model::png_size(*bytes, w, h)) return;
+        command::set_image_frame(m_ctx.doc.journal, m_ctx.doc.font, m_ctx.selected,
+                                 command::image_fitted(m_ctx.doc.font, *g->image, w, h));
+    });
+    m_image_remove.set_label("Remove");
+    m_image_remove.set_tooltip_text("Take the image away from this glyph -- one undo step");
+    m_image_remove.signal_clicked().connect([this] {
+        if (command::remove_image(m_ctx.doc.journal, m_ctx.doc.font, m_ctx.selected))
+            m_ctx.say(m_ctx.doc.journal.undo_label() + " -- Ctrl+Z brings it back.", false);
+    });
+    {
+        auto row = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::HORIZONTAL, 6);
+        row->append(m_image_place);
+        row->append(m_image_fit);
+        row->append(m_image_remove);
+        image.wide(*row);
+    }
+    // The fields sit in their own grid so they can hide while there is no image.
+    m_image_rows = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::VERTICAL, 6);
+    {
+        auto grid = Gtk::make_managed<Gtk::Grid>();
+        grid->set_row_spacing(6);
+        grid->set_column_spacing(10);
+        int row = 0;
+        auto field = [&](const char* label, Gtk::Widget& w, const char* tip) {
+            auto l = Gtk::make_managed<Gtk::Label>(label);
+            l->set_xalign(0.0f);
+            l->add_css_class("field-label");
+            w.set_hexpand(true);
+            w.set_tooltip_text(tip);
+            grid->attach(*l, 0, row);
+            grid->attach(w, 1, row++);
+        };
+        spin_setup(m_image_x, -32768, 32767);
+        spin_setup(m_image_y, -32768, 32767);
+        spin_setup(m_image_h, 1, 65535);
+        for (auto* sb : {&m_image_x, &m_image_y, &m_image_h})
+            sb->signal_value_changed().connect([this] { on_image_frame(); });
+        field("X", m_image_x, "The image's left edge, font units");
+        field("Y", m_image_y, "The image's bottom edge, font units");
+        field("Height", m_image_h, "The image's height in font units -- the width follows (the aspect is kept)");
+        m_image_opacity.set_range(5, 100);
+        m_image_opacity.set_increments(5, 10);
+        m_image_opacity.set_digits(0);
+        m_image_opacity.set_draw_value(true);
+        m_image_opacity.set_value_pos(Gtk::PositionType::RIGHT);
+        m_image_opacity.signal_value_changed().connect([this] {
+            if (m_painting || m_ctx.selected.empty()) return;
+            command::set_image_opacity(m_ctx.doc.journal, m_ctx.doc.font, m_ctx.selected,
+                                       m_image_opacity.get_value() / 100.0);
+        });
+        field("Opacity", m_image_opacity, "How strongly the image shows behind the outline (one undo step per drag)");
+        m_image_lock.set_label("Locked");
+        m_image_lock.set_halign(Gtk::Align::START);
+        m_image_lock.set_hexpand(false);
+        m_image_lock.signal_toggled().connect([this] {
+            if (m_painting || m_ctx.selected.empty()) return;
+            command::set_image_locked(m_ctx.doc.journal, m_ctx.doc.font, m_ctx.selected, m_image_lock.get_active());
+        });
+        field("Lock", m_image_lock, "Locked: the mouse goes through the image -- trace without moving it. "
+                                    "Unlocked: drag it, or its corners, on the canvas.");
+        m_image_rows->append(*grid);
+    }
+    image.wide(*m_image_rows);
+
     // ── GUIDE: a picked guide ───────────────────────────────────────────────
     Card guide(*page, "GUIDE");
     m_guide_card = guide.box;
@@ -723,6 +809,7 @@ void Inspector::refresh() {
                                        : unicode::utf8(other) + "  " + unicode::format_cp(other) + "  (none yet)");
         if (!m_note.has_focus()) m_note.set_text(g->note);
         refresh_parts(*g);
+        refresh_image(*g);
         m_preview.queue_draw();
         refresh_code();
     }
@@ -788,6 +875,54 @@ void Inspector::refresh_parts(const model::Glyph& g) {
         none->add_css_class("hint");
         m_anchor_list.append(*none);
     }
+}
+
+// ── the background image (M13) ──────────────────────────────────────────────
+
+void Inspector::refresh_image(const model::Glyph& g) {
+    const auto& f = m_ctx.doc.font;
+    m_image_place.set_label(g.image ? "Replace…" : "Place…");
+    m_image_fit.set_visible(g.image.has_value());
+    m_image_remove.set_visible(g.image.has_value());
+    m_image_rows->set_visible(g.image.has_value());
+    if (!g.image) {
+        m_image_info.set_text("None. Drop a scan or sketch (PNG / JPEG) on the editor canvas, or Place… -- "
+                              "something to trace. Never exported.");
+        return;
+    }
+    const auto& im = *g.image;
+    int w = 0, h = 0;
+    const auto bytes = f.image(im.file);
+    const bool have = bytes && model::png_size(*bytes, w, h);
+    std::string t = im.file;
+    if (have) t += "   " + std::to_string(w) + " x " + std::to_string(h) + " px";
+    else      t += " -- the file is missing from the font's images/ folder";
+    if (im.xy != 0 || im.yx != 0) t += "\nRotated or skewed (from another tool): the fields show its offset only.";
+    m_image_info.set_text(t);
+    if (!m_image_x.has_focus()) m_image_x.set_value(std::round(im.dx));
+    if (!m_image_y.has_focus()) m_image_y.set_value(std::round(im.dy));
+    if (!m_image_h.has_focus()) m_image_h.set_value(have ? std::round(std::abs(im.yy) * h) : 0);
+    m_image_h.set_sensitive(have && im.xy == 0 && im.yx == 0);
+    m_image_fit.set_sensitive(have);
+    m_image_opacity.set_value(std::round(im.opacity * 100));
+    m_image_lock.set_active(im.locked);
+}
+
+void Inspector::on_image_frame() {
+    if (m_painting || m_ctx.selected.empty()) return;
+    const model::Glyph* g = m_ctx.doc.font.glyph(m_ctx.selected);
+    if (!g || !g->image) return;
+    model::GlyphImage im = *g->image;
+    im.dx = m_image_x.get_value();
+    im.dy = m_image_y.get_value();
+    int w = 0, h = 0;
+    const auto bytes = m_ctx.doc.font.image(im.file);
+    if (bytes && model::png_size(*bytes, w, h) && im.xy == 0 && im.yx == 0 && im.yy != 0) {
+        const double want = m_image_h.get_value();
+        const double k = want / (std::abs(im.yy) * h);
+        if (std::abs(k - 1) > 1e-9) { im.xx *= k; im.yy *= k; }
+    }
+    command::set_image_frame(m_ctx.doc.journal, m_ctx.doc.font, m_ctx.selected, im);
 }
 
 // ── the pair (M6) ───────────────────────────────────────────────────────────

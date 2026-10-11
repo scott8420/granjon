@@ -1,8 +1,11 @@
 #pragma once
 #include "Registry.hpp"
 
+#include <gtkmm/scale.h>
+#include <gtkmm/spinbutton.h>
 #include <gtkmm/widget.h>
 #include <string>
+#include <type_traits>
 #include <string_view>
 #include <utility>
 
@@ -38,6 +41,13 @@ namespace granjon::widgets {
 struct unregistered_t { explicit unregistered_t() = default; };
 inline constexpr unregistered_t unregistered{};
 
+// The mouse wheel changes a number field or slider only while it is being
+// edited (it has the keyboard focus -- clicked into, or tabbed to). Otherwise
+// the wheel goes to the panel it sits in, so scrolling the inspector past a
+// field never edits it (Scott, s07). Named<SpinButton> / Named<Scale> get this
+// by construction (src/widgets/Wheel.cpp).
+void guard_wheel(Gtk::Widget& w);
+
 template <class W>
 class Named : public W {
 public:
@@ -47,6 +57,7 @@ public:
         this->set_name(std::string(name));
         registry::add(name, this);
         m_registered = true;
+        if constexpr (std::is_base_of_v<Gtk::SpinButton, W> || std::is_base_of_v<Gtk::Range, W>) guard_wheel(*this);
     }
 
     // Parallel ctor: name for the Inspector, skip the registry.
@@ -54,6 +65,7 @@ public:
     explicit Named(unregistered_t, std::string_view name, Args&&... args)
         : W(std::forward<Args>(args)...) {
         this->set_name(std::string(name));
+        if constexpr (std::is_base_of_v<Gtk::SpinButton, W> || std::is_base_of_v<Gtk::Range, W>) guard_wheel(*this);
     }
 
     ~Named() override {

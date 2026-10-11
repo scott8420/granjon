@@ -164,6 +164,30 @@ void  pen_drag(FontJournal& j, Font& f, const std::string& glyph, const PenAt& a
 bool make_first(FontJournal& j, Font& f, const std::string& glyph, int contour, int index,
                 std::string* why = nullptr);
 
+// ── background image (M13) ─────────────────────────────────────────────────
+// A scan / sketch behind the glyph, to trace. The PNG goes into the font's
+// image pool first (Font::add_image -- not a step); these verbs write the
+// glyph's reference to it. Each is ONE step.
+// Place `img` (replacing any image there: "Replace image"). Refuses a file
+// the pool doesn't hold.
+bool place_image(FontJournal& j, Font& f, const std::string& glyph, const model::GlyphImage& img,
+                 std::string* why = nullptr);
+bool remove_image(FontJournal& j, Font& f, const std::string& glyph, std::string* why = nullptr);
+// Typed numbers (the inspector): the transform of `frame` (file, opacity and
+// lock ignored). Edits in a row merge (the window). Inside an image drag
+// (image_drag_begin .. drag_end) it just writes -- the drag's one step.
+bool set_image_frame(FontJournal& j, Font& f, const std::string& glyph, const model::GlyphImage& frame);
+bool set_image_opacity(FontJournal& j, Font& f, const std::string& glyph, double opacity);   // merges
+bool set_image_locked(FontJournal& j, Font& f, const std::string& glyph, bool locked);
+// Move / scale with the mouse: press .. release = ONE step (drag_end snaps
+// the offset to whole units; the scale is kept as dragged).
+void image_drag_begin(FontJournal& j, Font& f, const std::string& glyph, const std::string& label);
+// The image's frame for a fresh placement: its height spans descender to
+// ascender, the left edge on the glyph's origin, square pixels.
+model::GlyphImage image_fitted(const Font& f, model::GlyphImage img, int px_w, int px_h);
+// A 4 x 2 grey PNG (the selftest's and the fixture's image).
+const std::string& sample_png();
+
 // ── font records ───────────────────────────────────────────────────────────
 bool set_family(FontJournal& j, Font& f, const std::string& family);
 bool set_style(FontJournal& j, Font& f, const std::string& style);
@@ -206,7 +230,8 @@ struct Verb {
 };
 const std::vector<Verb>& verbs();
 // The fixture the table runs on: a new font plus H, O, n, o, a component
-// glyph (Ohorn-like "Odot" on O), a kerning group and a pair.
+// glyph (Ohorn-like "Odot" on O), a kerning group and a pair; "o" carries a
+// background image (sample_png, in the pool as "scan.png").
 void make_fixture(Font& f);
 
 }  // namespace granjon::command

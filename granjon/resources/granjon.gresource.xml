@@ -21,6 +21,7 @@
     <file preprocess="xml-stripblanks" alias="granjon-view-context-symbolic.svg">icons/scalable/apps/granjon-view-context-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="granjon-view-grid-symbolic.svg">icons/scalable/apps/granjon-view-grid-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="granjon-view-snap-symbolic.svg">icons/scalable/apps/granjon-view-snap-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="granjon-view-image-symbolic.svg">icons/scalable/apps/granjon-view-image-symbolic.svg</file>
   </gresource>
   <gresource prefix="/io/github/granjon/Granjon">
     <file>granjon.css</file>

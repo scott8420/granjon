@@ -45,6 +45,8 @@ private:
     void on_node_type(int type);
     void refresh_guide();              // the GUIDE card (a picked guide, M5c)
     void refresh_code();               // the CODE card (M9c)
+    void refresh_image(const model::Glyph& g);   // the IMAGE card (M13)
+    void on_image_frame();             // X / Y / Height typed
     void on_guide_field();
     void on_anchor_name();
 
@@ -138,6 +140,17 @@ private:
     widgets::Button      m_overlaps;          // M10c
     widgets::Button      m_reverse;
     widgets::Button      m_make_first;   // M5e: the picked node leads its contour
+    // image (M13): the background image -- place / replace, where, how strong, lock
+    widgets::Label       m_image_info{"inspector.image_info"};
+    widgets::Button      m_image_place{"inspector.image_place"};
+    widgets::Button      m_image_fit{"inspector.image_fit"};
+    widgets::Button      m_image_remove{"inspector.image_remove"};
+    widgets::SpinButton  m_image_x{"inspector.image_x"};
+    widgets::SpinButton  m_image_y{"inspector.image_y"};
+    widgets::SpinButton  m_image_h{"inspector.image_height"};
+    widgets::Scale       m_image_opacity{"inspector.image_opacity"};
+    widgets::ToggleButton m_image_lock{"inspector.image_lock"};
+    Gtk::Box*            m_image_rows = nullptr;   // the fields, hidden while there is no image
     // code (M9c): the glyph as the files carry it
     widgets::DropDown       m_code_fmt;
     widgets::ScrolledWindow m_code_scroll;

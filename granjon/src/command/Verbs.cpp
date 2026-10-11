@@ -65,6 +65,7 @@ void translate(Glyph& g, double dx, double dy) {
             n.cx2 += dx; n.cy2 += dy;
         }
     for (auto& a : g.anchors) { a.x += dx; a.y += dy; }
+    if (g.image) { g.image->dx += dx; g.image->dy += dy; }   // the scan stays under the drawing
 }
 
 }  // namespace
@@ -252,6 +253,98 @@ bool set_advance(FontJournal& j, Font& f, const std::string& name, double advanc
         g.advance = std::max(0.0, std::round(advance));
         f.put(name, Record{g});
     }, "advance:" + name);
+}
+
+// ── background image (M13) ─────────────────────────────────────────────────
+
+const std::string& sample_png() {
+    static const std::string png(
+        "\x89\x50\x4e\x47\x0d\x0a\x1a\x0a\x00\x00\x00\x0d\x49\x48\x44\x52\x00\x00\x00\x04\x00\x00\x00\x02"
+        "\x08\x02\x00\x00\x00\xf0\xca\xea\x34\x00\x00\x00\x0e\x49\x44\x41\x54\x78\x9c\x63\x38\x81\x04"
+        "\x18\x90\x39\x00\xf3\xda\x12\xc1\xa2\x3e\x32\x8b\x00\x00\x00\x00\x49\x45\x4e\x44\xae\x42\x60\x82",
+        71);
+    return png;
+}
+
+model::GlyphImage image_fitted(const Font& f, model::GlyphImage img, int px_w, int px_h) {
+    const auto& m = f.metrics();
+    const double span = std::max(1, m.ascender - m.descender);
+    const double s = px_h > 0 ? span / px_h : 1.0;
+    (void)px_w;
+    img.xx = s; img.yy = s; img.xy = 0; img.yx = 0;
+    img.dx = 0;
+    img.dy = m.descender;
+    return img;
+}
+
+bool place_image(FontJournal& j, Font& f, const std::string& glyph, const model::GlyphImage& img, std::string* why) {
+    const Glyph* was = f.glyph(glyph);
+    if (!was) return false;
+    if (!f.image(img.file)) {
+        if (why) *why = "The image " + q(img.file) + " isn't in this font.";
+        return false;
+    }
+    model::GlyphImage im = img;
+    im.opacity = std::clamp(im.opacity, 0.0, 1.0);
+    if (was->image == im) return false;
+    return j.run(std::string(was->image ? "Replace image on " : "Place image on ") + q(glyph), {glyph}, [&] {
+        Glyph g = glyph_copy(f, glyph);
+        g.image = im;
+        f.put(glyph, Record{g});
+    });
+}
+
+bool remove_image(FontJournal& j, Font& f, const std::string& glyph, std::string* why) {
+    const Glyph* was = f.glyph(glyph);
+    if (!was) return false;
+    if (!was->image) { if (why) *why = q(glyph) + " has no image to remove."; return false; }
+    return j.run("Remove image from " + q(glyph), {glyph}, [&] {
+        Glyph g = glyph_copy(f, glyph);
+        g.image.reset();
+        f.put(glyph, Record{g});
+    });
+}
+
+bool set_image_frame(FontJournal& j, Font& f, const std::string& glyph, const model::GlyphImage& frame) {
+    const Glyph* was = f.glyph(glyph);
+    if (!was || !was->image) return false;
+    if (std::abs(frame.xx * frame.yy - frame.xy * frame.yx) < 1e-9) return false;   // flat: nothing to see
+    model::GlyphImage im = *was->image;
+    im.xx = frame.xx; im.xy = frame.xy; im.yx = frame.yx; im.yy = frame.yy; im.dx = frame.dx; im.dy = frame.dy;
+    if (im == *was->image) return false;
+    return j.run("Image on " + q(glyph), {glyph}, [&] {
+        Glyph g = glyph_copy(f, glyph);
+        g.image = im;
+        f.put(glyph, Record{g});
+    }, "imageframe:" + glyph);
+}
+
+bool set_image_opacity(FontJournal& j, Font& f, const std::string& glyph, double opacity) {
+    const Glyph* was = f.glyph(glyph);
+    if (!was || !was->image) return false;
+    opacity = std::clamp(std::round(opacity * 100) / 100, 0.0, 1.0);
+    if (was->image->opacity == opacity) return false;
+    return j.run("Image opacity on " + q(glyph), {glyph}, [&] {
+        Glyph g = glyph_copy(f, glyph);
+        g.image->opacity = opacity;
+        f.put(glyph, Record{g});
+    }, "imageopacity:" + glyph);
+}
+
+bool set_image_locked(FontJournal& j, Font& f, const std::string& glyph, bool locked) {
+    const Glyph* was = f.glyph(glyph);
+    if (!was || !was->image || was->image->locked == locked) return false;
+    return j.run(std::string(locked ? "Lock image on " : "Unlock image on ") + q(glyph), {glyph}, [&] {
+        Glyph g = glyph_copy(f, glyph);
+        g.image->locked = locked;
+        f.put(glyph, Record{g});
+    });
+}
+
+void image_drag_begin(FontJournal& j, Font& f, const std::string& glyph, const std::string& label) {
+    const Glyph* g = f.glyph(glyph);
+    if (!g || !g->image) return;
+    drag_begin(j, f, {glyph}, label);   // drag_end snaps (the offset) and commits
 }
 
 // ── outline drag ───────────────────────────────────────────────────────────
@@ -1033,6 +1126,9 @@ void make_fixture(Font& f) {
     gn.guides = {{0, 100, 0, {}}};
     go.guides = {{0, 250, 0, {}}, {0, 100, 0, {}}};
     for (const Glyph* g : {&gh, &gn, &go}) f.put(g->name, Record{*g});
+    // M13: a background image on "o", for the image verbs.
+    go.image = model::GlyphImage{f.add_image(sample_png(), "scan"), 100, 0, 0, 100, 20, -150, {}, 0.4, false};
+    f.put(go.name, Record{go});
     Glyph od = add("Odotbelow", U'Ọ', 760, {});
     od.components = {{"O"}};
     od.anchors = {{"bottom", 380, 0}};
@@ -1121,6 +1217,20 @@ const std::vector<Verb>& verbs() {
         {"correct_directions", [](FontJournal& j, Font& f) { correct_directions(j, f, {"H", "n", "o", "O"}); }},
         {"remove_overlaps", [](FontJournal& j, Font& f) { remove_overlaps(j, f, {"H", "n", "o", "O"}); }},
         {"make_first",   [](FontJournal& j, Font& f) { make_first(j, f, "o", 0, 2); }},
+        {"place_image",  [](FontJournal& j, Font& f) {
+             place_image(j, f, "n", image_fitted(f, {"scan.png"}, 4, 2)); }},
+        {"replace_image", [](FontJournal& j, Font& f) {
+             place_image(j, f, "o", {f.add_image(sample_png() + std::string("x"), "other"), 50, 0, 0, 50, 0, 0, {}, 0.6, true}); }},
+        {"remove_image", [](FontJournal& j, Font& f) { remove_image(j, f, "o"); }},
+        {"set_image_frame", [](FontJournal& j, Font& f) {
+             set_image_frame(j, f, "o", {"", 120, 0, 0, 120, 31, -160}); }},
+        {"set_image_opacity", [](FontJournal& j, Font& f) { set_image_opacity(j, f, "o", 0.75); }},
+        {"set_image_locked", [](FontJournal& j, Font& f) { set_image_locked(j, f, "o", true); }},
+        {"image_drag",   [](FontJournal& j, Font& f) {
+             image_drag_begin(j, f, "o", "Move image");
+             set_image_frame(j, f, "o", {"", 100, 0, 0, 100, 27.4, -141.2});
+             set_image_frame(j, f, "o", {"", 112.5, 0, 0, 112.5, 33.6, -139.7});
+             drag_end(j, f); }},
         {"set_family",   [](FontJournal& j, Font& f) { set_family(j, f, "Garamond Nova"); }},
         {"set_style",    [](FontJournal& j, Font& f) { set_style(j, f, "Italic"); }},
         {"set_units_per_em", [](FontJournal& j, Font& f) { set_units_per_em(j, f, 2048); }},

@@ -24,6 +24,10 @@
 //               pick (or cancels a drag); Ctrl+0 fits; Ctrl+= / Ctrl+- zoom.
 //   view        Ctrl+scroll zooms toward the pointer, scroll pans; middle-
 //               drag or Space+drag pans.
+//   image       (M13) the glyph's background image, behind everything. Drop
+//               a PNG / JPEG on the canvas to place one. Unlocked: click it
+//               to pick it, drag to move, drag a corner to scale (Shift: from
+//               the centre), Delete removes. Locked: clicks go through.
 //
 // The y-up flip lives here and nowhere else (ARCHITECTURE §3): screen x =
 // ox + x * s, screen y = oy - y * s.
@@ -35,6 +39,7 @@
 #include <gtkmm/gestureclick.h>
 #include <gtkmm/gesturedrag.h>
 
+#include <map>
 #include <optional>
 #include <vector>
 
@@ -74,7 +79,7 @@ private:
     std::string context_glyph(const model::Glyph& g) const;   // "H" / "n" or "" if the font lacks it
 
     // ── input ──────────────────────────────────────────────────────────────
-    enum class Mode { None, Points, Sidebearing, Marquee, Pan, Guide, Measure, Pen };
+    enum class Mode { None, Points, Sidebearing, Marquee, Pan, Guide, Measure, Pen, Image };
     int  sidebearing_at(double sx, double sy) const;   // -1 none, 0 left, 1 right
     void on_press(double x, double y);
     void on_drag(double dx, double dy);
@@ -104,6 +109,7 @@ private:
     widgets::ToggleButton m_fill;
     widgets::ToggleButton m_grid;           // the zoom-adaptive grid (a preference)
     widgets::ToggleButton m_snap;           // snapping (a preference)
+    widgets::ToggleButton m_image;          // M13: show the background image (a preference)
     widgets::ToggleButton m_pen;            // M5g: the pen tool (P)
     // M5h: the tool panel down the canvas's left edge -- tools (one at a time)
     // above, the view toggles below.
@@ -172,6 +178,18 @@ private:
     void end_path(bool say_it = true);
     bool pen_path_live() const;             // a path is being drawn in the glyph shown
     void draw_pen(const Cairo::RefPtr<Cairo::Context>& cr, const model::Glyph& g);
+    // the background image (M13)
+    bool m_image_picked = false;            // its frame and corner handles show; Delete removes it
+    int  m_image_handle = -1;               // the drag: -1 moves, 0..3 scales from that corner
+    model::GlyphImage m_image_press;        // the image at the press
+    bool image_live(const model::Glyph& g) const;   // shown, unlocked, with its pixels
+    bool image_px(const model::GlyphImage& im, int& w, int& h) const;
+    geom::Vec2 image_corner(const model::GlyphImage& im, int w, int h, int i) const;   // font units, 0..3 ccw from bottom-left
+    int  image_handle_at(const model::Glyph& g, double sx, double sy) const;         // -1 none
+    bool image_inside(const model::Glyph& g, double sx, double sy) const;
+    void draw_image(const Cairo::RefPtr<Cairo::Context>& cr, const model::Glyph& g);
+    // Decoded pixels, keyed by the pool's bytes (the shared_ptr keeps the key alive).
+    std::map<const std::string*, std::pair<model::Font::ImageBytes, Cairo::RefPtr<Cairo::ImageSurface>>> m_surfaces;
 };
 
 }  // namespace granjon::views

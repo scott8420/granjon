@@ -1,6 +1,9 @@
 #include "model/Font.hpp"
 
 #include <algorithm>
+#include <cctype>
+#include <cstdint>
+#include <cstring>
 
 namespace granjon::model {
 
@@ -77,7 +80,51 @@ std::map<Font::Id, Record> Font::snapshot() const {
     return s;
 }
 
+// ── the image pool (M13) ───────────────────────────────────────────────────
+
+std::string Font::add_image(std::string png, const std::string& stem) {
+    for (const auto& [name, bytes] : m_images)
+        if (bytes && *bytes == png) return name;   // stored once
+    // A file name any file system takes: lowercase [a-z0-9._-], ".png".
+    std::string base;
+    for (char c : stem) {
+        const unsigned char u = static_cast<unsigned char>(c);
+        if (std::isalnum(u)) base += static_cast<char>(std::tolower(u));
+        else if (c == '-' || c == '_' || c == '.') base += c;
+        else base += '_';
+    }
+    while (!base.empty() && base[0] == '.') base.erase(0, 1);
+    if (base.size() > 4 && base.compare(base.size() - 4, 4, ".png") == 0) base.resize(base.size() - 4);
+    if (base.empty()) base = "image";
+    if (base.size() > 40) base.resize(40);
+    std::string name = base + ".png";
+    for (int n = 2; m_images.count(name); ++n) name = base + "-" + std::to_string(n) + ".png";
+    m_images[name] = std::make_shared<const std::string>(std::move(png));
+    return name;
+}
+
+Font::ImageBytes Font::image(const std::string& file) const {
+    const auto it = m_images.find(file);
+    return it == m_images.end() ? nullptr : it->second;
+}
+
+bool png_size(const std::string& png, int& w, int& h) {
+    static const unsigned char sig[8] = {0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A};
+    if (png.size() < 24 || std::memcmp(png.data(), sig, 8) != 0 || png.compare(12, 4, "IHDR") != 0) return false;
+    auto be32 = [&](std::size_t at) {
+        const auto* b = reinterpret_cast<const unsigned char*>(png.data() + at);
+        return (static_cast<std::uint32_t>(b[0]) << 24) | (static_cast<std::uint32_t>(b[1]) << 16) |
+               (static_cast<std::uint32_t>(b[2]) << 8) | b[3];
+    };
+    const std::uint32_t pw = be32(16), ph = be32(20);
+    if (pw == 0 || ph == 0 || pw > 100000 || ph > 100000) return false;
+    w = static_cast<int>(pw);
+    h = static_cast<int>(ph);
+    return true;
+}
+
 void make_new_font(Font& f) {
+    f.set_images({});
     Font::Loading load(f);
     for (const auto& [id, r] : f.snapshot())
         if (id.empty() || id[0] != '@') f.put(id, std::nullopt);

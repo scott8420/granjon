@@ -262,6 +262,7 @@ void shift_x(model::Glyph& g, double dx) {
         for (auto& n : c.nodes) { n.x += dx; n.cx1 += dx; n.cx2 += dx; }
     for (auto& a : g.anchors) a.x += dx;
     for (auto& k : g.components) k.dx += dx;
+    if (g.image) g.image->dx += dx;   // the scan stays under the drawing
 }
 
 // ── components ─────────────────────────────────────────────────────────────

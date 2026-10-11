@@ -1,16 +1,73 @@
-# Granjon handoff — s06 -> s07
+# Granjon handoff — s07 -> s08
 
-# s07_background_layer
+# s08_drawing_kit
 
 ## Files to upload
-- `s06_m12_presets_primer_r2.zip` (the last s06 ship; or a fresh `scripts/granjon_backup.sh -o s07_background_layer`)
+- `s07_m13_background_r2.zip` (the s07 ship; or a fresh `scripts/granjon_backup.sh -o s08_drawing_kit`)
 - `RULES.md`, `HANDOFF.md`, `ARCHITECTURE.md`, `ARC.md`, `CANON.md`
-- A scan or sketch image (PNG / JPEG) of a few letters, for M13's background layer to trace.
+- A real scan or sketch (PNG / JPEG) if M13 wants another look -- s07 was tested on a generated one.
 - `My-Termes-Regular.granjon` from `fonts/` (the M7 / M8 readouts on it are still unseen), only if those get looked at.
 
 ---
 
-## Status — s06
+## Status — s07
+- **r2** (`s07_m13_background_r2.zip`, Scott: "the scrollwheel ... should only work if field is active"): every number field and slider (all `widgets::SpinButton` / `widgets::Scale`, so the inspector, Preferences, the Overview / Spacing size sliders) takes the mouse wheel only while it has the keyboard focus (clicked into or tabbed to). Otherwise the wheel scrolls the panel it sits in. Built into `Named<>` (`guard_wheel`, `src/widgets/Wheel.cpp`), so new fields get it by construction. Shot: scrolling the inspector with the pointer over the spins scrolls the panel and edits nothing (undo stays grey); clicked into Height, two wheel notches -> 1000 to 1002.
+- **M13 background layer: sandbox green, awaiting crc** (`s07_m13_background.zip`, superseded by r2). Selftest 942 / 0 (36 new). Built against Ubuntu 24.04, g++ 13.3, gtkmm 4.10 / GTK 4.14, RelWithDebInfo; no warnings in the new files. **No new package.**
+- Per glyph, the UFO 3 way: `<image fileName=... xScale ... color=...>` in the .glif, the PNG in the font's `images/`; opacity and lock in the glyph lib (`granjon.image`). Other UFO tools (RoboFont, fontParts) read the placement; Granjon reads theirs.
+- **PNG in the font, always** (UFO 3 allows only PNG): a JPEG (or anything GTK reads) is converted when placed. Same bytes on ten glyphs are stored once.
+- **Place:** drop a file on the editor canvas, or the inspector's new **IMAGE** card -> Place… (Replace… when there is one). A fresh image spans descender to ascender, left edge on the origin.
+- **Canvas:** behind everything, at its opacity; pixels show square close in. **Unlocked:** dashed frame; click it to pick (accent frame + 4 corner handles), drag to move, drag a corner to scale (aspect kept; Shift = from the centre), Delete removes, Escape drops the pick. Nodes / segments under the pointer still win over the image. **Locked:** no frame; clicks go through to marquee / pick -- the tracing state.
+- **IMAGE card:** file + pixel size, Place… / Replace…, Fit, Remove, X, Y, Height (width follows), Opacity slider, Locked.
+- **Tool panel:** a new **Image** toggle (picture icon, under Snap) shows / hides -- remembered like Fill / Grid, not an undo step.
+- **One undo step each:** place, replace, remove, move (drag), scale (drag), typed X / Y / Height (merge in a row), opacity (merges), lock. A left-sidebearing drag or applied spacing carries the image with the drawing.
+- **Never exported** (selftest: the OTF is byte-identical with and without).
+- Sandbox shots (Xvfb + xdotool): the scan drawn upright behind n at 40 %, the picked frame + handles, a corner scale from top-right, a move, Ctrl+Z ("Undid: Move image"), Lock -> a drag over it marquees instead. The JPEG path ran through the app's own `place_image_file` (700 x 1000 JPEG -> `images/n_sketch.png`). **Not shot:** a real drag-and-drop from Files (xdotool can't drag a file in) -- the drop handler calls the same function.
+
+## What to look at in M13
+- Editor on any glyph: drag a PNG or JPEG from Files onto the canvas. It should sit from descender to ascender, at 40 %, dashed frame.
+- Click the image (not on the outline): frame + handles. Drag it; drag a corner (and with Shift). Ctrl+Z after each.
+- Inspector **IMAGE** card: type X / Y / Height; slide Opacity; **Locked** -> then draw over it with the pen and marquee across it (nothing should grab the image).
+- The **Image** toggle in the tool panel hides / shows it.
+- Save, close, reopen: the image comes back; `images/` holds only the placed files. Export OTF: no trace of it.
+- Dark desktop: the scan's paper is a light rectangle behind the outline -- say if you'd want it inverted / multiplied there.
+- The picture icon (mine) -- redraw if it doesn't read.
+
+## Decisions made in s07
+- Per glyph only. A font-wide sheet (one scan sliced per glyph) is asked, not built -- it would sit on top (slice -> place_image per glyph).
+- The image bytes live in a pool on the Font, outside the journal (append-only for the document's life); the glyph's reference is the undoable record. Keeps undo snapshots small and a replace cheap.
+- JPEG -> PNG on placing (UFO 3 is PNG-only); a PNG goes in byte for byte.
+- Show / hide is a view toggle (a preference), not per glyph and not an undo step -- consistent with Fill / Grid. (The s06 handoff had said "one undo step each" including show / hide; I made this call.)
+- Unlocked = grabbable (Glyphs-like); locked = invisible to the mouse. New images start unlocked (you usually move / scale first, then lock).
+- The drag's snap rounds the offset to whole units; the scale is kept exactly as dragged.
+- Opacity and lock are Granjon's own lib keys; UFO's `color` attribute is kept verbatim but not used for drawing (yet).
+
+## s08 goal — Milestone M14: drawing kit
+Primitives (rectangle, ellipse -- Shift square / circle, Alt from centre; line = a filled bar of a set stroke width), boolean ops on picked contours (union / subtract / intersect, on the M10c engine), and the **parts library**: a navigator section of partial glyphs (serifs, bowls, stems) left out of the compile (UFO `public.skipExportGlyphs`), placed into real glyphs as a linked component or as editable contours. Start with Scott's M13 report; fixes first. **Stop at M14** (or at M14a primitives if it runs long -- check in).
+
+Then: M15 transform panel + corner tools + extreme points + offset stroke; M16 mark positioning, features editor, italic angle / font info. Later: print proof, ttfautohint, weight masters (v3).
+
+## Still open
+- **Font-wide image sheet** (M13): wanted? (one scan of an alphabet, sliced per glyph). Asked in s07, no answer yet.
+- M13 follow-ons: SVG backgrounds; UFO `color` tint drawn; rotate an image (the fields show offset only on a rotated / skewed one from another tool); a "trace" helper (auto-outline from the scan) only if wanted; very large scans decode at full size (a 6000 x 8000 scan is ~190 MB of pixels in memory) -- a downscaled preview if that bites.
+- Packages: approved in s05. brotli-devel in use (M10b); Clipper2 1.5.4 fetched by CMake (M10c); harfbuzz-devel when the strip shapes. (FreeType is no longer needed for import.)
+- A RULES.md addition proposed in s05, answer pending: "One zip to install" (the final message names the single zip to install; checkpoint zips carry `_wip`). s06 followed it: two `_wip` checkpoints, one final zip.
+- M10 remainder: ttfautohint hook (optional external tool). WOFF2 glyf transform, CFF subroutinization (follow-ons).
+- Overlap follow-ons: the self-overlay fallbacks (estimated, leaf, permyriad, Lslash at shifts like (1, 0), (0.5, 0.5), (150, 0) -- area 0.3-0.6 % off, returned as drawn); an overlaps finding in the Checks report; remove overlaps on a picked set of contours; the Z-tag rebuild back-ported to Curvz.
+- granjon-cli scope (ARC backlog). `export_otf` is its first ready-made command.
+- Editor follow-ons (now behind M12-M16): Shift-constrained point drags (the pen has 45 degrees; picking-mode drags don't yet), node type by key, a delete-without-refit modifier, pen snapping to metrics / nodes, composite follow-ons (Greek tonos, stacking, ogonek anchor, rebuild), overview follow-ons -- all in the ARC backlog.
+- Profiles follow-ons: a profile cache + font-wide kern-to-gap over a pair list, per-class targets, collision check on proof strings.
+- Spacing follow-ons: kerning groups editor (create / assign public.kern1 / kern2 from the UI), a strip text history / presets.
+- Checks follow-ons (ARCHITECTURE §6): missing extreme points, overlaps, sidebearing consistency, stem drift, kerning class audit and outliers, collisions.
+- Import follow-ons: WOFF / WOFF2 in (zlib / brotli), font collections, GSUB -> features.fea, glyph/group kerning kept as exceptions (now expanded to glyph pairs), seac accents, variable fonts (v3).
+- Export follow-ons: italic angle / caret slope (no field in FontInfo yet), panose / family class, CFF subroutinization (size), PostScript blue zones from the metrics.
+- M12 follow-ons: more presets (a slab, a humanist sans, an italic -- once italic angle exists, M16); preset numbers editable before Create (an 'Advanced' fold); starter glyphs for figures (zero, one) and a starter mark (acutecomb) so composites show something at once; isFixedPitch / panose for Mono on export; notes on more topics (diagonals and v/w apex overshoot, S-curves, figure heights, accents) -- they are just text + SVG in resources/primer/.
+- The New Font window's Enter / Escape were tested by reading only (no window manager in the sandbox, so no keyboard focus there); the mouse path was shot.
+- The inspector panel is narrower than some of its rows in a 1280 px window (the OUTLINE card's "Reverse picked", the KERN hint): clipped, not wrapped. Check on Scott's screen.
+- selftest.cpp's main() wants splitting per milestone (M9's part is its own file now; the rest still one function).
+- `GRANJON_SAMPLE` env still there.
+
+
+## Status — s06 (for reference)
 - **M12 presets + primer: crc** (Scott, on `s06_m12_presets_primer_r2.zip` -- the one zip to install; the two `_wip` zips were checkpoints). Selftest 878 / 0 (81 new). Built against Ubuntu 24.04, g++ 13.3, gtkmm 4.10 / GTK 4.14, RelWithDebInfo; no warnings in the new files. **No new package.** (Sandbox only: GitHub's archive URL was refused, so Clipper2 came from a git clone via FETCHCONTENT_SOURCE_DIR_CLIPPER2 -- nothing changes on Scott's machine.)
 - **M12a preset core: sandbox green** (`s06_m12a_presets_wip.zip`, checkpoint). Not crc -- no UI yet.
 - `model/Presets` (GTK-free): `resources/presets/presets.txt` (compiled in, like the char sets) holds Sans / Serif / Display / Mono -- UPM, metrics, overshoot, stems (lowercase / caps, vertical / horizontal), serif length + thickness, mono width, space, char set, font guides, and per control glyph its width and sidebearings; a shared `[keys]` table (b L=n R=o, u L=|n R=|n, D L=H R=O ...).
@@ -40,29 +97,6 @@
 - New Font is a modal window (New replaces the document); the Primer is non-modal (read beside the work).
 - The Primer is its own window, not an inspector card (figures need width) and not a view (it would cover the canvas you're applying it to).
 - F1 = Primer (help), not About.
-
-## s07 goal — Milestone M13: background layer
-A placed image behind a glyph to trace: a scan or a sketch (PNG / JPEG; SVG later), per glyph (UFO 3 `image` in the GLIF, the file in the font's `images/` folder -- what UFO tools already read). Place / replace / remove from the editor (drop a file on the canvas, or a button), move and scale it with handles or numbers, opacity, lock, show / hide; one undo step each (Undo from the first write). Never exported. Check whether a font-wide image (one sheet sliced per glyph) is wanted before building it. **Stop at M13.**
-
-Then, agreed order: M14 drawing kit (primitives -- rectangle, ellipse, line as a filled bar of a set width -- boolean ops on picked contours, the parts library: navigator section, `public.skipExportGlyphs`, placed as linked component or editable contours); M15 transform panel + corner tools + extreme points + offset stroke; M16 mark positioning, features editor, italic angle / font info. Later: print proof, ttfautohint, weight masters (v3).
-
-## Still open
-- Packages: approved in s05. brotli-devel in use (M10b); Clipper2 1.5.4 fetched by CMake (M10c); harfbuzz-devel when the strip shapes. (FreeType is no longer needed for import.)
-- A RULES.md addition proposed in s05, answer pending: "One zip to install" (the final message names the single zip to install; checkpoint zips carry `_wip`). s06 followed it: two `_wip` checkpoints, one final zip.
-- M10 remainder: ttfautohint hook (optional external tool). WOFF2 glyf transform, CFF subroutinization (follow-ons).
-- Overlap follow-ons: the self-overlay fallbacks (estimated, leaf, permyriad, Lslash at shifts like (1, 0), (0.5, 0.5), (150, 0) -- area 0.3-0.6 % off, returned as drawn); an overlaps finding in the Checks report; remove overlaps on a picked set of contours; the Z-tag rebuild back-ported to Curvz.
-- granjon-cli scope (ARC backlog). `export_otf` is its first ready-made command.
-- Editor follow-ons (now behind M12-M16): Shift-constrained point drags (the pen has 45 degrees; picking-mode drags don't yet), node type by key, a delete-without-refit modifier, pen snapping to metrics / nodes, composite follow-ons (Greek tonos, stacking, ogonek anchor, rebuild), overview follow-ons -- all in the ARC backlog.
-- Profiles follow-ons: a profile cache + font-wide kern-to-gap over a pair list, per-class targets, collision check on proof strings.
-- Spacing follow-ons: kerning groups editor (create / assign public.kern1 / kern2 from the UI), a strip text history / presets.
-- Checks follow-ons (ARCHITECTURE §6): missing extreme points, overlaps, sidebearing consistency, stem drift, kerning class audit and outliers, collisions.
-- Import follow-ons: WOFF / WOFF2 in (zlib / brotli), font collections, GSUB -> features.fea, glyph/group kerning kept as exceptions (now expanded to glyph pairs), seac accents, variable fonts (v3).
-- Export follow-ons: italic angle / caret slope (no field in FontInfo yet), panose / family class, CFF subroutinization (size), PostScript blue zones from the metrics.
-- M12 follow-ons: more presets (a slab, a humanist sans, an italic -- once italic angle exists, M16); preset numbers editable before Create (an 'Advanced' fold); starter glyphs for figures (zero, one) and a starter mark (acutecomb) so composites show something at once; isFixedPitch / panose for Mono on export; notes on more topics (diagonals and v/w apex overshoot, S-curves, figure heights, accents) -- they are just text + SVG in resources/primer/.
-- The New Font window's Enter / Escape were tested by reading only (no window manager in the sandbox, so no keyboard focus there); the mouse path was shot.
-- The inspector panel is narrower than some of its rows in a 1280 px window (the OUTLINE card's "Reverse picked", the KERN hint): clipped, not wrapped. Check on Scott's screen.
-- selftest.cpp's main() wants splitting per milestone (M9's part is its own file now; the rest still one function).
-- `GRANJON_SAMPLE` env still there.
 
 ---
 

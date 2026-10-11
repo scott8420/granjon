@@ -30,6 +30,8 @@ void Glyph::snap() {
     for (auto& a : anchors) { a.x = r(a.x); a.y = r(a.y); }
     for (auto& k : components) { k.dx = r(k.dx); k.dy = r(k.dy); }
     for (auto& gd : guides) { gd.x = r(gd.x); gd.y = r(gd.y); }
+    // The image's place snaps like everything else; its scale never does.
+    if (image) { image->dx = r(image->dx); image->dy = r(image->dy); }
 }
 
 bool Glyph::is_integral() const {
@@ -41,6 +43,7 @@ bool Glyph::is_integral() const {
                 return false;
     for (const auto& a : anchors) if (!whole(a.x) || !whole(a.y)) return false;
     for (const auto& k : components) if (!whole(k.dx) || !whole(k.dy)) return false;
+    if (image && (!whole(image->dx) || !whole(image->dy))) return false;
     return true;
 }
 

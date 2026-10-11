@@ -201,6 +201,23 @@ bool save_ufo(const Font& f, const std::string& path_str, std::string* err) {
     }
     if (!write_file(tmp / "glyphs" / "contents.plist", write_plist(contents), err)) return false;
 
+    // images/ (M13): the pool's files that some glyph places -- the rest
+    // (replaced, removed, undone) are not carried into the new folder.
+    std::set<std::string> placed_images;
+    for (const auto& n : names)
+        if (const auto& im = f.glyph(n)->image) placed_images.insert(im->file);
+    bool images_dir = false;
+    for (const auto& file : placed_images) {
+        const auto bytes = f.image(file);
+        if (!bytes) continue;   // referenced but never had bytes (a missing file on load): the reference stays
+        if (!images_dir) {
+            fs::create_directories(tmp / "images", ec);
+            if (ec) { if (err) *err = "cannot create " + (tmp / "images").string() + ": " + ec.message(); return false; }
+            images_dir = true;
+        }
+        if (!write_file(tmp / "images" / file, *bytes, err)) return false;
+    }
+
     // Swap in: target -> .previous, new -> target, drop .previous.
     fs::remove_all(old, ec);
     if (fs::exists(path)) {
@@ -331,6 +348,19 @@ bool load_ufo(const std::string& path_str, Font& into, std::string* err) {
         glyphs[name] = std::move(*g);
     }
 
+    // images/ (M13): every PNG in it, by file name.
+    std::map<std::string, Font::ImageBytes> images;
+    if (fs::is_directory(path / "images")) {
+        std::error_code iec;
+        for (const auto& de : fs::directory_iterator(path / "images", iec)) {
+            if (!de.is_regular_file(iec)) continue;
+            auto bytes = read_file(de.path());
+            int w = 0, h = 0;
+            if (bytes && model::png_size(*bytes, w, h))
+                images[de.path().filename().string()] = std::make_shared<const std::string>(std::move(*bytes));
+        }
+    }
+
     // Order: public.glyphOrder first, then any glyph it omits, by name.
     double n = 1;
     std::set<std::string> placed;
@@ -353,6 +383,7 @@ bool load_ufo(const std::string& path_str, Font& into, std::string* err) {
     into.put(Font::kSkips, Record{skips});
     into.put(Font::kFeatures, Record{features});
     for (auto& [name, g] : glyphs) into.put(name, Record{g});
+    into.set_images(std::move(images));
     return true;
 }
 

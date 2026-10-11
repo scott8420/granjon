@@ -33,6 +33,7 @@ struct Settings {
     std::string sidebearing_mod = "alt";   // "alt" | "ctrl" | "shift": slide the drawing on a left-edge drag
     bool        editor_grid     = false;   // the zoom-adaptive grid
     bool        editor_snap     = true;    // snap drags to grid / metrics / sidebearings / other nodes
+    bool        editor_image    = true;    // M13: show the background image
     bool        handles_relative = true;   // the inspector shows handles relative to their node
 
     // ── Navigator ─────────────────────────────────────────────────────────

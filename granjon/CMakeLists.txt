@@ -153,7 +153,7 @@ target_include_directories(granjon_core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thir
 # ── Headless selftest -- exercises the core with no display ────────────────────
 # Cairn's Stones (the journal's own fixture) compiles into the selftest only:
 # it proves the journal mechanics; the app's store is model::Font.
-add_executable(granjon_selftest src/selftest.cpp src/selftest_export.cpp src/selftest_edit.cpp src/selftest_import.cpp src/selftest_presets.cpp src/core/Stones.cpp)
+add_executable(granjon_selftest src/selftest.cpp src/selftest_export.cpp src/selftest_edit.cpp src/selftest_import.cpp src/selftest_presets.cpp src/selftest_image.cpp src/core/Stones.cpp)
 target_link_libraries(granjon_selftest PRIVATE granjon_core ${BROTLIDEC_LIBRARIES})
 target_include_directories(granjon_selftest PRIVATE ${BROTLIDEC_INCLUDE_DIRS})
 # selftest.cpp's main() is one long walk; GCC 16 with -g notes "variable
@@ -210,6 +210,7 @@ add_executable(granjon
     src/views/Navigator.cpp
     src/views/GlyphSearch.cpp
     src/views/Inspector.cpp
+    src/views/ImagePlace.cpp   # M13: a scan from disk behind a glyph
     src/views/OverviewGrid.cpp
     src/views/GlyphCanvas.cpp
     src/views/SpacingStrip.cpp
@@ -226,6 +227,7 @@ add_executable(granjon
     src/NewFontDialog.cpp   # M12: the preset chooser on New
     src/PrimerWindow.cpp    # M12: the Primer (notes from core::Primer)
     src/Registry.cpp
+    src/widgets/Wheel.cpp   # spins / sliders: the wheel only while focused (s07)
     src/Log.cpp
 )
 target_include_directories(granjon PRIVATE include ${GTKMM_INCLUDE_DIRS} ${PANGOFT2_INCLUDE_DIRS} ${FONTCONFIG_INCLUDE_DIRS})

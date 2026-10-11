@@ -6,6 +6,7 @@
 #include <libxml/tree.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -57,6 +58,18 @@ std::string write_glif(const Glyph& g) {
         o += std::string("  <unicode hex=\"") + buf + "\"/>\n";
     }
     if (!g.note.empty()) o += "  <note>" + xml_escape(g.note) + "</note>\n";
+    // M13: the background image (GLIF's order: after <note>, before guidelines).
+    if (const auto& im = g.image) {
+        o += "  <image fileName=\"" + xml_escape(im->file) + "\"";
+        if (im->xx != 1) o += " xScale=\"" + format_number(im->xx) + "\"";
+        if (im->xy != 0) o += " xyScale=\"" + format_number(im->xy) + "\"";
+        if (im->yx != 0) o += " yxScale=\"" + format_number(im->yx) + "\"";
+        if (im->yy != 1) o += " yScale=\"" + format_number(im->yy) + "\"";
+        if (im->dx != 0) o += " xOffset=\"" + format_number(im->dx) + "\"";
+        if (im->dy != 0) o += " yOffset=\"" + format_number(im->dy) + "\"";
+        if (!im->color.empty()) o += " color=\"" + xml_escape(im->color) + "\"";
+        o += "/>\n";
+    }
     // Guidelines: horizontal -> y only, vertical -> x only, else x, y, angle (UFO 3).
     for (const auto& gd : g.guides) {
         o += "  <guideline";
@@ -144,6 +157,13 @@ std::string write_glif(const Glyph& g) {
             arr.arr.push_back(PValue::str(codes));
         }
         lib.set("granjon.nodeTypes", std::move(arr));
+    }
+    if (g.image && (g.image->opacity != model::GlyphImage{}.opacity || g.image->locked)) {
+        PValue im = PValue::dictionary();
+        // Opacity in whole percent, so the file reads (and stays stable).
+        im.set("opacity", PValue::integer(static_cast<long long>(std::lround(g.image->opacity * 100))));
+        if (g.image->locked) im.set("locked", PValue::boolean(true));
+        lib.set("granjon.image", std::move(im));
     }
     if (!lib.dict.empty()) {
         // The lib is a plist dict; GLIF bodies indent with spaces, so its
@@ -284,6 +304,8 @@ std::optional<Glyph> read_glif(const std::string& xml, std::string* err) {
     bool ok = true;
     std::vector<std::string> node_types;
     bool had_status = false;   // granjon.status in the lib
+    std::optional<double> image_opacity;   // granjon.image (the lib may come before or after <image>)
+    bool image_locked = false;
 
     for (xmlNode* c = root->children; c; c = c->next) {
         if (c->type != XML_ELEMENT_NODE) continue;
@@ -298,6 +320,15 @@ std::optional<Glyph> read_glif(const std::string& xml, std::string* err) {
             xmlChar* t = xmlNodeGetContent(c);
             g.note = t ? reinterpret_cast<const char*>(t) : "";
             if (t) xmlFree(t);
+        } else if (is(c, "image")) {
+            model::GlyphImage im;
+            im.file = attr(c, "fileName").value_or("");
+            if (im.file.empty()) return fail("<image> has no fileName");
+            im.xx = num(c, "xScale", 1, ok);  im.xy = num(c, "xyScale", 0, ok);
+            im.yx = num(c, "yxScale", 0, ok); im.yy = num(c, "yScale", 1, ok);
+            im.dx = num(c, "xOffset", 0, ok); im.dy = num(c, "yOffset", 0, ok);
+            im.color = attr(c, "color").value_or("");
+            g.image = im;
         } else if (is(c, "guideline")) {
             model::Guide gd;
             const bool hx = attr(c, "x").has_value(), hy = attr(c, "y").has_value();
@@ -345,10 +376,18 @@ std::optional<Glyph> read_glif(const std::string& xml, std::string* err) {
             }
             if (const PValue* nt = lib->get("granjon.nodeTypes"); nt && nt->kind == PValue::Kind::Array)
                 for (const auto& v : nt->arr) node_types.push_back(v.s);
+            if (const PValue* im = lib->get("granjon.image"); im && im->kind == PValue::Kind::Dict) {
+                image_opacity = im->get_number("opacity");
+                if (const PValue* lk = im->get("locked")) image_locked = lk->kind == PValue::Kind::Bool && lk->b;
+            }
         }
     }
     xmlFreeDoc(doc);
     if (!ok) { if (err) *err = "a number attribute did not parse"; return std::nullopt; }
+    if (g.image) {
+        if (image_opacity) g.image->opacity = std::clamp(*image_opacity / 100.0, 0.0, 1.0);
+        g.image->locked = image_locked;
+    }
     // A glyph from another tool carries no Granjon status. One that already
     // has a drawing is not "Empty" -- call it Drafted (Scott, s03).
     if (!had_status && (!g.contours.empty() || !g.components.empty())) g.status = model::GlyphStatus::Drafted;

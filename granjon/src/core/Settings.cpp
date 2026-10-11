@@ -77,6 +77,7 @@ Settings load_settings(const std::string& file) {
         get(e, "sidebearing_modifier", s.sidebearing_mod);
         get(e, "grid", s.editor_grid);
         get(e, "snap", s.editor_snap);
+        get(e, "image", s.editor_image);
         get(e, "handles_relative", s.handles_relative);
     }
     if (o.is_object()) {
@@ -103,6 +104,7 @@ bool save_settings(const std::string& file, const Settings& s) {
                     {"sidebearing_modifier", s.sidebearing_mod},
                     {"grid", s.editor_grid},
                     {"snap", s.editor_snap},
+                    {"image", s.editor_image},
                     {"handles_relative", s.handles_relative}}},
         {"overview", {{"cell", s.overview_cell}, {"charset", s.overview_charset}}},
         {"navigator", {{"open", s.navigator_open}}},

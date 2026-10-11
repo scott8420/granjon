@@ -51,6 +51,7 @@ void selftest_export(const std::function<void(const std::string&, bool, const st
 void selftest_edit(const std::function<void(const std::string&, bool, const std::string&)>& check);
 void selftest_import(const std::function<void(const std::string&, bool, const std::string&)>& check);
 void selftest_presets(const std::function<void(const std::string&, bool, const std::string&)>& check);
+void selftest_image(const std::function<void(const std::string&, bool, const std::string&)>& check);
 
 namespace core = granjon::core;
 namespace geom = granjon::geom;
@@ -1768,6 +1769,7 @@ int main() {
     selftest_edit([](const std::string& n, bool ok, const std::string& d) { check(n, ok, d); });
     selftest_import([](const std::string& n, bool ok, const std::string& d) { check(n, ok, d); });
     selftest_presets([](const std::string& n, bool ok, const std::string& d) { check(n, ok, d); });
+    selftest_image([](const std::string& n, bool ok, const std::string& d) { check(n, ok, d); });
 
     std::cout << "-----------------------------------------------\n";
     std::cout << g_pass << " pass / " << g_fail << " fail\n";
