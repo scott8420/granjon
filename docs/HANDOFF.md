@@ -3,13 +3,18 @@
 # s09_m15_transform_corners
 
 ## Files to upload
-- `s08_m14_drawing_kit_r2.zip` (the s08 ship -- the one zip to install; M14 + the Select tool. Earlier s08 zips are superseded. Or a fresh `scripts/granjon_backup.sh -o s09_m15_transform_corners`)
+- `s08_m14_drawing_kit_r3.zip` (the s08 ship -- the one zip to install; M14 + Select tool + Type it. Earlier s08 zips are superseded. Or a fresh `scripts/granjon_backup.sh -o s09_m15_transform_corners`)
 - `RULES.md`, `HANDOFF.md`, `ARCHITECTURE.md`, `ARC.md`, `CANON.md`
 
 ---
 
 ## Status — s08
 - **M14 drawing kit: crc** (Scott, on `s08_m14_drawing_kit.zip`: "excellent. crc.").
+- **r2: crc** (Scott: "great! crc.").
+- **r3 -- Type it** (`s08_m14_drawing_kit_r3.zip`; Scott: "a keyboard combination to show how to type the glyph in a text editor in the GLYPH panel ... doesn't create a glyph just shows how a user may create one"). Sandbox green, not crc. Selftest 1058 / 0 (9 new). No warnings in touched files. No new package.
+  - GLYPH card, a **Type it** row, display only: ASCII -> "Key: n" / "Key: Shift+N" (US layout); anything else -> its Compose sequence when the system has one ("Compose ' e") and "Ctrl+Shift+U e9 Space" (GNOME / GTK / IBus, any code point). Tooltip: the same for GNOME, how to get a Compose key, Windows (Alt+0233 from A0..FF, else "00E9 then Alt+X"), macOS (Option+00E9 with Unicode Hex Input, BMP only). A part: "never typed"; no code point: "not typed directly" + why. Selectable text.
+  - `unicode/TypeIt` (GTK-free): the system Compose table (`/usr/share/X11/locale/en_US.UTF-8/Compose`, read once; Fedora's libX11-common) -- <Multi_key> sequences only (dead keys depend on the layout), the shortest per character, keys spelled for reading. No table -> no Compose line, nothing else changes.
+  - Shot: n -> "Key: n"; Odotbelow (U+1ECC) -> "Compose ! O", "Ctrl+Shift+U 1ecc Space", tooltip with Windows / macOS.
 - **r2 -- the Select tool** (`s08_m14_drawing_kit_r2.zip`; Scott: "a way to select a complete path. Like a global selection tool over a localized selection tool ... a solid pointer is global and a hollow selector is local"). Sandbox green, not crc. Selftest 1049 / 0 (7 new). No warnings in touched files.
   - Tool panel, top: **Select** (the SOLID arrow, **V**) -- whole paths; then **Pick** (now the HOLLOW arrow, **A**) -- nodes and handles, as before. Illustrator's convention and keys. **V changed meaning**: it was Pick, it is now Select.
   - Select: click a path's outline or inside it -> the whole path (inside = the smallest path there, so a click in a counter takes the counter, in the ink takes the bowl); Shift+click adds / removes a path (Shift-drag on a picked one moves, as in Pick); a marquee takes every path it touches; drag moves them (snapping off the node nearest the press). Handles don't catch. Anchors, components, guides, the image, sidebearings behave as in Pick. **Double-click** a path -> into Pick (the hollow arrow), path still picked. Status line counts paths ("2 paths picked").

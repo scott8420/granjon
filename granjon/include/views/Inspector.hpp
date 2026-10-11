@@ -136,6 +136,7 @@ private:
     widgets::Button      m_decompose;
     // M14c: parts
     widgets::CheckButton m_is_part;           // GLYPH card: "Part -- not exported"
+    widgets::Label       m_type_it;           // GLYPH card: how to type it in an ordinary app (s08)
     widgets::DropDown    m_part_list;         // PARTS card: the font's parts
     std::vector<std::string> m_part_names;    // ... their names, in the list's order
     widgets::Button      m_place_linked;

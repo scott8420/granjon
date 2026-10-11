@@ -338,4 +338,6 @@ Newest session at the bottom.
 - Known: the pick is not journaled -- after an undo that changes the contour count, in-range pick refs can name different contours (out-of-range ones were already dropped). Shows with the booleans (Subtract, Ctrl+Z -> everything reads as picked). Asked.
 - M14 crc (Scott: "excellent. crc.").
 - r2, the Select tool (Scott: "a solid pointer is global and a hollow selector is local"): Tool::Select, the solid arrow (V), whole paths -- outline or inside (`geom::contour_at`, the smallest containing closed contour), Shift toggles a path (`m_unpick_contour`, dropped on a click-release as m_unpick is), marquee grown by `geom::whole_contours`, handles ignored (hit_test without handles), double-click -> Pick. Pick became the hollow arrow (A). Escape from the transient tools returns to Select. Keys follow Illustrator; V changed meaning (was Pick). Selftest 1049 / 0.
+- r2 crc (Scott: "great! crc.").
+- r3, Type it (Scott): the GLYPH card shows how to type the glyph's character in an ordinary app -- key (ASCII, US layout), the system Compose sequence (X11 Compose table, <Multi_key> only, shortest), Ctrl+Shift+U hex Space; Windows / macOS in the tooltip. `unicode/TypeIt`, tested on a sample table and on the system's. Selftest 1058 / 0.
 

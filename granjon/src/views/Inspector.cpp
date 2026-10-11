@@ -7,6 +7,7 @@
 #include "command/Verbs.hpp"
 #include "model/Bounds.hpp"
 #include "model/Find.hpp"
+#include "unicode/TypeIt.hpp"
 #include "unicode/Blocks.hpp"
 #include "unicode/UcdTable.hpp"
 #include "views/GlyphPaint.hpp"
@@ -165,6 +166,7 @@ Inspector::Inspector(ViewContext& ctx)
       m_comp_add("inspector.component_add"),
       m_decompose("inspector.decompose"),
       m_is_part("inspector.is_part"),
+      m_type_it("inspector.type_it"),
       m_part_list("inspector.part_list"),
       m_place_linked("inspector.place_part_linked"),
       m_place_contours("inspector.place_part_contours"),
@@ -294,6 +296,13 @@ void Inspector::build_glyph_page() {
         command::set_part(m_ctx.doc.journal, m_ctx.doc.font, {m_ctx.selected}, m_is_part.get_active());
     });
     glyph.wide(m_is_part);
+    // s08 (Scott): how a user types this character in a text editor -- shown, never acted on.
+    m_type_it.set_xalign(0.0f);
+    m_type_it.set_wrap(true);
+    m_type_it.set_selectable(true);
+    m_type_it.set_focusable(false);
+    m_type_it.add_css_class("hint");
+    glyph.field("Type it", m_type_it);
 
     Card metrics(*page, "METRICS");
     spin_setup(m_width, 0, 32767);
@@ -905,6 +914,30 @@ void Inspector::refresh() {
             m_painting = true;
             m_is_part.set_active(g->skip_export);
             m_painting = was;
+        }
+        if (g->skip_export) {
+            m_type_it.set_text("A part -- left out of the font, so never typed.");
+            m_type_it.set_tooltip_text("");
+        } else if (g->unicodes.empty()) {
+            m_type_it.set_text("Not typed directly: no code point. Give it one (UNICODE card), "
+                               "or it is reached through a feature (a ligature, a small cap ...).");
+            m_type_it.set_tooltip_text("");
+        } else {
+            const auto t = unicode::type_it(g->unicodes.front());
+            std::string s;
+            if (!t.key.empty()) {
+                s = "Key: " + t.key;   // ASCII: the key is all anyone needs
+            } else {
+                if (!t.compose.empty()) s += t.compose + "\n";
+                s += t.hex;
+            }
+            m_type_it.set_text(s);
+            std::string tip = "How to type it in a text editor once the font is installed (US keyboard).\n"
+                              "Any GNOME / GTK app: " + t.hex + " (type the hex, then Space or Enter).\n"
+                              "Compose needs a Compose key (GNOME Tweaks -> Keyboard & Mouse).";
+            if (!t.windows.empty()) tip += "\nWindows: " + t.windows;
+            if (!t.mac.empty()) tip += "\nmacOS: " + t.mac;
+            m_type_it.set_tooltip_text(tip);
         }
         m_width.set_value(g->advance);
         if (const auto sb = model::sidebearings(f, *g)) {

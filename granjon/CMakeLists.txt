@@ -107,6 +107,7 @@ add_library(granjon_core STATIC
     src/unicode/UcdTable.cpp
     src/unicode/Agl.cpp
     src/unicode/CharSet.cpp
+    src/unicode/TypeIt.cpp    # s08: how to type a glyph in an ordinary app
     src/model/Coverage.cpp
     src/model/Composite.cpp
     src/model/Spacing.cpp

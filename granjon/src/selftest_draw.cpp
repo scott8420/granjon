@@ -14,6 +14,7 @@
 #include "export/Otf.hpp"
 #include "import/FontReader.hpp"
 #include "io/Ufo.hpp"
+#include "unicode/TypeIt.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -395,5 +396,40 @@ void selftest_draw(const std::function<void(const std::string&, bool, const std:
         open.closed = false;
         g.contours[2] = open;
         check("select: an open path has no inside", geom::contour_at(g, {700, 100}) == -1);
+    }
+    std::cout << "s08 Type it (how to type a glyph)\n";
+    {
+        namespace uni = granjon::unicode;
+        const std::string table =
+            "# a Compose file\n"
+            "<dead_acute> <e>\t\t\t: \"\xC3\xA9\"\teacute # dead keys are skipped\n"
+            "<Multi_key> <apostrophe> <e>\t: \"\xC3\xA9\"\teacute\n"
+            "<Multi_key> <e> <apostrophe>\t: \"\xC3\xA9\"\teacute\n"
+            "<Multi_key> <minus> <minus> <period> : \"\xE2\x80\x93\"\tendash\n"
+            "<Multi_key> <minus> <minus> : \"\xE2\x80\x94\" emdash # (made up: shorter wins below)\n"
+            "<Multi_key> <minus> <minus> <minus> : \"\xE2\x80\x94\" emdash\n"
+            "<Multi_key> <Greek_alpha> <x> : \"x\" # an unspellable key: skipped\n"
+            "<Multi_key> <quotedbl> <backslash> : \"\\\"q\" # two characters: skipped\n";
+        const auto c = uni::parse_compose(table);
+        check("typeit: Compose sequences read, dead keys skipped, first of equal length kept",
+              c.count(0xE9) && c.at(0xE9) == "Compose ' e", c.count(0xE9) ? c.at(0xE9) : "none");
+        check("typeit: the shortest sequence wins", c.count(0x2014) && c.at(0x2014) == "Compose - -");
+        check("typeit: unspellable keys and multi-character results are skipped", c.size() == 3, std::to_string(c.size()));
+        const auto e = uni::type_it(0xE9, c);
+        check("typeit: e-acute -- no plain key, Compose, Ctrl+Shift+U e9, Alt+0233, Option+00E9",
+              e.key.empty() && e.compose == "Compose ' e" && e.hex == "Ctrl+Shift+U e9 Space" &&
+                  e.windows == "Alt+0233 (numeric keypad)" && e.mac == "Option+00E9 (Unicode Hex Input)", e.windows);
+        check("typeit: ASCII keys on a US layout", uni::type_it('n', c).key == "n" && uni::type_it('N', c).key == "Shift+N" &&
+                                                        uni::type_it('!', c).key == "Shift+1" && uni::type_it(' ', c).key == "Space" &&
+                                                        uni::type_it('?', c).key == "Shift+/" && uni::type_it('/', c).key == "/");
+        check("typeit: ASCII needs no Windows / macOS code", uni::type_it('n', c).windows.empty() && uni::type_it('n', c).mac.empty());
+        check("typeit: beyond Latin-1 -- Alt+X, and nothing for macOS past the BMP",
+              uni::type_it(0x416, c).windows == "0416 then Alt+X (Word, WordPad)" &&
+                  uni::type_it(0x1F600, c).mac.empty() && uni::type_it(0x1F600, c).hex == "Ctrl+Shift+U 1f600 Space");
+        check("typeit: C1 controls get no Alt+0 code (not Windows-1252)", uni::type_it(0x85, c).windows.rfind("Alt+0", 0) != 0);
+        const auto& sys = uni::system_compose();
+        check("typeit: the system Compose table (if installed) knows e-acute",
+              sys.empty() || (sys.count(0xE9) && sys.at(0xE9).rfind("Compose ", 0) == 0),
+              sys.count(0xE9) ? sys.at(0xE9) : "(no table here)");
     }
 }
