@@ -7,6 +7,8 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
+#include <cstdio>
 
 namespace granjon {
 
@@ -62,6 +64,8 @@ PreferencesWindow::PreferencesWindow(Gtk::Window& parent, views::ViewContext& ct
       m_upper("prefs.context_upper"),
       m_lower("prefs.context_lower"),
       m_modifier("prefs.sidebearing_modifier"),
+      m_image_tint("prefs.image_tint", [] { auto d = Gtk::ColorDialog::create(); d->set_with_alpha(true);
+                                              d->set_title("Background image colour"); return d; }()),
       m_cell("prefs.cell"),
       m_charset("prefs.charset"),
       m_file("prefs.file"),
@@ -95,6 +99,9 @@ PreferencesWindow::PreferencesWindow(Gtk::Window& parent, views::ViewContext& ct
     row(*editor, "Slide the drawing", m_modifier,
         "Hold this while dragging the left sidebearing to move the drawing inside the width "
         "instead of moving the origin.");
+    row(*editor, "Background image colour", m_image_tint,
+        "The colour a traced scan's ink is drawn in (its paper is never drawn), and -- the transparency -- "
+        "how strong a newly placed image starts. An image can have its own colour (inspector, IMAGE).");
 
     // ── Overview ───────────────────────────────────────────────────────────
     auto* overview = card(m_root, "OVERVIEW");
@@ -133,6 +140,7 @@ PreferencesWindow::PreferencesWindow(Gtk::Window& parent, views::ViewContext& ct
     m_upper.signal_changed().connect([this] { commit(); });
     m_lower.signal_changed().connect([this] { commit(); });
     m_modifier.property_selected().signal_changed().connect([this] { commit(); });
+    m_image_tint.property_rgba().signal_changed().connect([this] { commit(); });
     m_cell.signal_value_changed().connect([this] { commit(); });
     m_charset.property_selected().signal_changed().connect([this] { commit(); });
     m_reset.signal_clicked().connect([this] {
@@ -162,6 +170,12 @@ void PreferencesWindow::sync() {
     const auto mod = std::find(kModIds.begin(), kModIds.end(), s.sidebearing_mod);
     const guint mi = mod == kModIds.end() ? 0u : static_cast<guint>(mod - kModIds.begin());
     if (m_modifier.get_selected() != mi) m_modifier.set_selected(mi);
+    {
+        Gdk::RGBA c;
+        if (!c.set(s.image_tint)) c.set("#e0703c");
+        c.set_alpha(s.image_opacity / 100.0);
+        if (m_image_tint.get_rgba() != c) m_image_tint.set_rgba(c);
+    }
     if (static_cast<int>(m_cell.get_value()) != s.overview_cell) m_cell.set_value(s.overview_cell);
     guint ci = 0;
     const auto& sets = unicode::charsets();
@@ -183,6 +197,14 @@ void PreferencesWindow::commit() {
     const guint mi   = m_modifier.get_selected();
     s.sidebearing_mod = mi < kModIds.size() ? kModIds[mi] : "alt";
     s.overview_cell  = static_cast<int>(m_cell.get_value());
+    {
+        const Gdk::RGBA c = m_image_tint.get_rgba();
+        char hex[8];
+        std::snprintf(hex, sizeof hex, "#%02x%02x%02x", static_cast<int>(std::lround(c.get_red() * 255)),
+                      static_cast<int>(std::lround(c.get_green() * 255)), static_cast<int>(std::lround(c.get_blue() * 255)));
+        s.image_tint = hex;
+        s.image_opacity = std::clamp(static_cast<int>(std::lround(c.get_alpha() * 100)), 5, 100);
+    }
     const guint ci   = m_charset.get_selected();
     const auto& sets = unicode::charsets();
     s.overview_charset = (ci >= 1 && ci <= sets.size()) ? sets[ci - 1].id : std::string{};

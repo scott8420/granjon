@@ -13,6 +13,7 @@
 #include "views/ViewContext.hpp"
 #include "widgets/Widgets.hpp"
 
+#include <gtkmm/colordialogbutton.h>
 #include <gtkmm/dropdown.h>
 #include <gtkmm/switch.h>
 #include <gtkmm/window.h>
@@ -37,6 +38,7 @@ private:
     widgets::Entry             m_upper;
     widgets::Entry             m_lower;
     widgets::DropDown          m_modifier;
+    widgets::Named<Gtk::ColorDialogButton> m_image_tint;   // M13: colour + transparency of new background images
     widgets::SpinButton        m_cell;
     widgets::DropDown          m_charset;
     widgets::Label             m_file;

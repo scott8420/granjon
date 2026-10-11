@@ -179,6 +179,11 @@ bool remove_image(FontJournal& j, Font& f, const std::string& glyph, std::string
 bool set_image_frame(FontJournal& j, Font& f, const std::string& glyph, const model::GlyphImage& frame);
 bool set_image_opacity(FontJournal& j, Font& f, const std::string& glyph, double opacity);   // merges
 bool set_image_locked(FontJournal& j, Font& f, const std::string& glyph, bool locked);
+// The image's own ink colour (UFO's color attribute, "r,g,b,a" in 0..1); ""
+// = none, the app's default tint draws it. One step; refused when unchanged.
+bool set_image_color(FontJournal& j, Font& f, const std::string& glyph, const std::string& color);
+// "r,g,b,1" from 0..1 components (UFO's spelling, 3 decimals at most).
+std::string ufo_color(double r, double g, double b, double a = 1.0);
 // Move / scale with the mouse: press .. release = ONE step (drag_end snaps
 // the offset to whole units; the scale is kept as dragged).
 void image_drag_begin(FontJournal& j, Font& f, const std::string& glyph, const std::string& label);

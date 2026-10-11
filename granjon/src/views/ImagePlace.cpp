@@ -58,7 +58,10 @@ bool place_image_file(ViewContext& ctx, const std::string& glyph, const Glib::Re
     const std::string stem = std::filesystem::path(shown).stem().string();
     model::GlyphImage im;
     im.file = f.add_image(std::move(bytes), stem.empty() ? glyph : stem);
-    if (g->image) im.opacity = g->image->opacity;
+    // A fresh image at the preference's opacity; a replacement keeps the old
+    // one's opacity and colour.
+    im.opacity = ctx.settings.image_opacity / 100.0;
+    if (g->image) { im.opacity = g->image->opacity; im.color = g->image->color; }
     im = command::image_fitted(f, im, w, h);
     std::string why;
     if (!command::place_image(ctx.doc.journal, f, glyph, im, &why)) {

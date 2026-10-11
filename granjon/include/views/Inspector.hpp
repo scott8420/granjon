@@ -12,6 +12,8 @@
 #include "views/ViewContext.hpp"
 #include "widgets/Widgets.hpp"
 
+#include <gtkmm/colordialogbutton.h>
+
 #include <array>
 
 namespace granjon::views {
@@ -150,6 +152,8 @@ private:
     widgets::SpinButton  m_image_h{"inspector.image_height"};
     widgets::Scale       m_image_opacity{"inspector.image_opacity"};
     widgets::ToggleButton m_image_lock{"inspector.image_lock"};
+    widgets::Named<Gtk::ColorDialogButton> m_image_color{"inspector.image_color"};   // the image's own ink colour
+    widgets::Button      m_image_color_default{"inspector.image_color_default"};
     Gtk::Box*            m_image_rows = nullptr;   // the fields, hidden while there is no image
     // code (M9c): the glyph as the files carry it
     widgets::DropDown       m_code_fmt;

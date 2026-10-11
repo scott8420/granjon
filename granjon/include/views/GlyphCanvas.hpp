@@ -188,7 +188,9 @@ private:
     int  image_handle_at(const model::Glyph& g, double sx, double sy) const;         // -1 none
     bool image_inside(const model::Glyph& g, double sx, double sy) const;
     void draw_image(const Cairo::RefPtr<Cairo::Context>& cr, const model::Glyph& g);
-    // Decoded pixels, keyed by the pool's bytes (the shared_ptr keeps the key alive).
+    // The scan as an ink MASK (A8: dark ink -> opaque, paper -> clear), keyed
+    // by the pool's bytes (the shared_ptr keeps the key alive). Drawn in the
+    // image's colour (or the app's default tint) at its opacity.
     std::map<const std::string*, std::pair<model::Font::ImageBytes, Cairo::RefPtr<Cairo::ImageSurface>>> m_surfaces;
 };
 

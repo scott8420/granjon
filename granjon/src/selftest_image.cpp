@@ -6,6 +6,7 @@
 // export never seeing it.
 #include "command/Document.hpp"
 #include "command/Verbs.hpp"
+#include "core/Settings.hpp"
 #include "export/Otf.hpp"
 #include "geom/Edit.hpp"
 #include "io/Glif.hpp"
@@ -171,5 +172,34 @@ void selftest_image(const std::function<void(const std::string&, bool, const std
         }
         const auto without = granjon::otf::compile_otf(g);
         check("image: the OTF is the same with or without the image", !with.empty() && with == without);
+    }
+
+    {   // colour (r4): the image's own (UFO color) and the app's default
+        check("image: ufo_color spells UFO's r,g,b,a", command::ufo_color(0.2, 0.5, 1.0) == "0.2,0.5,1,1" &&
+              command::ufo_color(0.12345, 0, 1.5, 0.3) == "0.123,0,1,0.3", command::ufo_color(0.2, 0.5, 1.0));
+        granjon::command::Document doc;
+        command::make_fixture(doc.font);
+        doc.journal.clear();
+        check("image: colour is one step", command::set_image_color(doc.journal, doc.font, "o", "0.2,0.5,1,1") &&
+              doc.font.glyph("o")->image->color == "0.2,0.5,1,1");
+        check("image: the same colour again is refused", !command::set_image_color(doc.journal, doc.font, "o", "0.2,0.5,1,1"));
+        check("image: Default clears it", command::set_image_color(doc.journal, doc.font, "o", "") &&
+              doc.font.glyph("o")->image->color.empty());
+        doc.journal.undo();
+        check("image: undo Default -> the colour back", doc.font.glyph("o")->image->color == "0.2,0.5,1,1");
+
+        const std::string file = (fs::temp_directory_path() / "granjon_selftest_image_settings.json").string();
+        granjon::core::Settings st;
+        st.image_tint = "#3366ff";
+        st.image_opacity = 55;
+        granjon::core::save_settings(file, st);
+        const auto back = granjon::core::load_settings(file);
+        check("image: the tint and opacity preferences survive save + load",
+              back.image_tint == "#3366ff" && back.image_opacity == 55);
+        std::ofstream(file) << R"({"editor": {"image_tint": "orange", "image_opacity": 400}})";
+        const auto bad = granjon::core::load_settings(file);
+        check("image: a bad tint / opacity falls back to the defaults",
+              bad.image_tint == granjon::core::Settings{}.image_tint && bad.image_opacity == granjon::core::Settings{}.image_opacity);
+        fs::remove(file);
     }
 }

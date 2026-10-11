@@ -20,6 +20,7 @@
 #include <gtkmm/togglebutton.h>
 
 #include <cmath>
+#include <cstdio>
 #include <initializer_list>
 #include <optional>
 #include <set>
@@ -417,6 +418,12 @@ void Inspector::build_glyph_page() {
     pick.wide(m_make_first);
     m_ctx.settings_changed.connect([this] {
         if (m_relative.get_active() != m_ctx.settings.handles_relative) m_relative.set_active(m_ctx.settings.handles_relative);
+        // The IMAGE card's colour button shows the app tint for images without their own.
+        if (const model::Glyph* g = m_ctx.doc.font.glyph(m_ctx.selected); g && g->image) {
+            m_painting = true;
+            refresh_image(*g);
+            m_painting = false;
+        }
     });
     on_commit(m_anchor_name, [this] { on_anchor_name(); });
     m_anchor_name_label = pick.field("Name", m_anchor_name);
@@ -538,6 +545,28 @@ void Inspector::build_glyph_page() {
                                        m_image_opacity.get_value() / 100.0);
         });
         field("Opacity", m_image_opacity, "How strongly the image shows behind the outline (one undo step per drag)");
+        {   // Colour: the image's own ink colour (UFO color); Default = the app's tint.
+            auto dlg = Gtk::ColorDialog::create();
+            dlg->set_with_alpha(false);   // how strong it shows is the Opacity slider
+            dlg->set_title("Image colour");
+            m_image_color.set_dialog(dlg);
+            m_image_color.set_hexpand(false);
+            m_image_color.property_rgba().signal_changed().connect([this] {
+                if (m_painting || m_ctx.selected.empty()) return;
+                const Gdk::RGBA c = m_image_color.get_rgba();
+                command::set_image_color(m_ctx.doc.journal, m_ctx.doc.font, m_ctx.selected,
+                                         command::ufo_color(c.get_red(), c.get_green(), c.get_blue()));
+            });
+            m_image_color_default.set_label("Default");
+            m_image_color_default.set_tooltip_text("Back to the app's colour (Preferences -> Background image colour)");
+            m_image_color_default.signal_clicked().connect([this] {
+                command::set_image_color(m_ctx.doc.journal, m_ctx.doc.font, m_ctx.selected, "");
+            });
+            auto crow = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::HORIZONTAL, 6);
+            crow->append(m_image_color);
+            crow->append(m_image_color_default);
+            field("Colour", *crow, "The colour this image's ink is drawn in (its paper is never drawn) -- one undo step");
+        }
         m_image_lock.set_label("Locked");
         m_image_lock.set_halign(Gtk::Align::START);
         m_image_lock.set_hexpand(false);
@@ -906,6 +935,16 @@ void Inspector::refresh_image(const model::Glyph& g) {
     m_image_fit.set_sensitive(have);
     m_image_opacity.set_value(std::round(im.opacity * 100));
     m_image_lock.set_active(im.locked);
+    {   // the colour button shows what draws: the image's own, else the app's
+        Gdk::RGBA c;
+        double v[4] = {0, 0, 0, 1};
+        if (!im.color.empty() && std::sscanf(im.color.c_str(), "%lf,%lf,%lf,%lf", &v[0], &v[1], &v[2], &v[3]) >= 3)
+            c.set_rgba(v[0], v[1], v[2], 1.0);
+        else if (!c.set(m_ctx.settings.image_tint))
+            c.set("#e0703c");
+        if (m_image_color.get_rgba() != c) m_image_color.set_rgba(c);
+        m_image_color_default.set_sensitive(!im.color.empty());
+    }
 }
 
 void Inspector::on_image_frame() {

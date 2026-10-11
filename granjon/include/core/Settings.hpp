@@ -34,6 +34,9 @@ struct Settings {
     bool        editor_grid     = false;   // the zoom-adaptive grid
     bool        editor_snap     = true;    // snap drags to grid / metrics / sidebearings / other nodes
     bool        editor_image    = true;    // M13: show the background image
+    std::string image_tint      = "#e0703c";   // M13: the ink colour a background image is drawn in (#rrggbb),
+                                               // unless the image carries its own (UFO color)
+    int         image_opacity   = 30;      // M13: the opacity a newly placed image gets, percent (5..100)
     bool        handles_relative = true;   // the inspector shows handles relative to their node
 
     // ── Navigator ─────────────────────────────────────────────────────────

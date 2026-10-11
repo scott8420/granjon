@@ -78,6 +78,8 @@ Settings load_settings(const std::string& file) {
         get(e, "grid", s.editor_grid);
         get(e, "snap", s.editor_snap);
         get(e, "image", s.editor_image);
+        get(e, "image_tint", s.image_tint);
+        get(e, "image_opacity", s.image_opacity);
         get(e, "handles_relative", s.handles_relative);
     }
     if (o.is_object()) {
@@ -85,6 +87,13 @@ Settings load_settings(const std::string& file) {
         get(o, "charset", s.overview_charset);
     }
     // Ranges and vocabularies: out of bounds -> the default.
+    if (s.image_opacity < 5 || s.image_opacity > 100) s.image_opacity = d.image_opacity;
+    {
+        const auto& t = s.image_tint;
+        const bool hex = t.size() == 7 && t[0] == '#' &&
+                         t.find_first_not_of("0123456789abcdefABCDEF", 1) == std::string::npos;
+        if (!hex) s.image_tint = d.image_tint;
+    }
     if (s.overview_cell < kOverviewCellMin || s.overview_cell > kOverviewCellMax) s.overview_cell = d.overview_cell;
     if (s.sidebearing_mod != "alt" && s.sidebearing_mod != "ctrl" && s.sidebearing_mod != "shift")
         s.sidebearing_mod = d.sidebearing_mod;
@@ -105,6 +114,8 @@ bool save_settings(const std::string& file, const Settings& s) {
                     {"grid", s.editor_grid},
                     {"snap", s.editor_snap},
                     {"image", s.editor_image},
+                    {"image_tint", s.image_tint},
+                    {"image_opacity", s.image_opacity},
                     {"handles_relative", s.handles_relative}}},
         {"overview", {{"cell", s.overview_cell}, {"charset", s.overview_charset}}},
         {"navigator", {{"open", s.navigator_open}}},

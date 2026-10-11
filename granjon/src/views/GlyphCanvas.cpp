@@ -18,6 +18,7 @@
 #include <pangomm/layout.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <cctype>
@@ -51,6 +52,40 @@ constexpr double ST[3] = {0.98, 0.70, 0.12};         // start node: amber (Curvz
 constexpr double HL[4] = {0.55, 0.68, 1.00, 0.70};   // handle line
 constexpr double HC[4] = {0.30, 0.60, 1.00, 0.95};   // handle dot
 constexpr double AN[3] = {0.89, 0.30, 0.30};         // anchors (Granjon's own)
+
+// M13: a scan as an ink mask. Each pixel's darkness (over white, so a
+// transparent PNG reads as paper) becomes alpha through a levels ramp: paper
+// and its speckle (darkness < 40 of 255) go fully clear, ink (> 200) fully
+// opaque. The canvas fills it with a pale tint, so the drawing shows the
+// same on a light or a dark desktop -- never a white sheet.
+Cairo::RefPtr<Cairo::ImageSurface> ink_mask(const Cairo::RefPtr<Cairo::ImageSurface>& src) {
+    if (!src) return {};
+    src->flush();
+    const int w = src->get_width(), h = src->get_height();
+    auto out = Cairo::ImageSurface::create(Cairo::Surface::Format::A8, w, h);
+    out->flush();
+    const auto fmt = src->get_format();
+    const int ss = src->get_stride(), os = out->get_stride();
+    const unsigned char* sp = src->get_data();
+    unsigned char* op = out->get_data();
+    constexpr int kLo = 40, kHi = 200;   // the levels ramp, darkness 0..255
+    for (int y = 0; y < h; ++y) {
+        const auto* row = reinterpret_cast<const std::uint32_t*>(sp + y * ss);
+        unsigned char* orow = op + y * os;
+        for (int x = 0; x < w; ++x) {
+            const std::uint32_t p = row[x];   // premultiplied ARGB, native endian
+            const int a = fmt == Cairo::Surface::Format::RGB24 ? 255 : static_cast<int>(p >> 24);
+            const int r = static_cast<int>((p >> 16) & 0xFF) + (255 - a);   // over white
+            const int g = static_cast<int>((p >> 8) & 0xFF) + (255 - a);
+            const int b = static_cast<int>(p & 0xFF) + (255 - a);
+            const int lum = (299 * std::min(r, 255) + 587 * std::min(g, 255) + 114 * std::min(b, 255)) / 1000;
+            const int dark = 255 - lum;
+            orow[x] = static_cast<unsigned char>(std::clamp((dark - kLo) * 255 / (kHi - kLo), 0, 255));
+        }
+    }
+    out->mark_dirty();
+    return out;
+}
 
 std::string fmt(double v) {
     std::ostringstream o;
@@ -2114,22 +2149,37 @@ void GlyphCanvas::draw_image(const Cairo::RefPtr<Cairo::Context>& cr, const mode
     std::erase_if(m_surfaces, [](const auto& e) { return e.second.first.use_count() <= 1; });
     auto it = m_surfaces.find(bytes.get());
     if (it == m_surfaces.end()) {
-        Cairo::RefPtr<Cairo::ImageSurface> surf;
+        Cairo::RefPtr<Cairo::ImageSurface> mask;
         try {
             std::size_t at = 0;
-            surf = Cairo::ImageSurface::create_from_png_stream([&](unsigned char* data, unsigned int len) {
+            auto rgb = Cairo::ImageSurface::create_from_png_stream([&](unsigned char* data, unsigned int len) {
                 if (at + len > bytes->size()) return CAIRO_STATUS_READ_ERROR;
                 std::memcpy(data, bytes->data() + at, len);
                 at += len;
                 return CAIRO_STATUS_SUCCESS;
             });
+            mask = ink_mask(rgb);
         } catch (...) {
-            surf.reset();
+            mask.reset();
         }
-        it = m_surfaces.emplace(bytes.get(), std::make_pair(bytes, surf)).first;
+        it = m_surfaces.emplace(bytes.get(), std::make_pair(bytes, mask)).first;
     }
-    const auto& surf = it->second.second;
-    if (!surf || surf->get_width() <= 0) return;
+    const auto& mask = it->second.second;
+    if (!mask || mask->get_width() <= 0) return;
+
+    // The tint: the image's own UFO colour when it carries one, else the
+    // app's (Preferences -> Background image colour).
+    double tr = 0.88, tg = 0.44, tb = 0.24;
+    {
+        Gdk::RGBA pref;
+        if (pref.set(m_ctx.settings.image_tint)) { tr = pref.get_red(); tg = pref.get_green(); tb = pref.get_blue(); }
+    }
+    if (!im.color.empty()) {
+        double c[4] = {0, 0, 0, 1};
+        if (std::sscanf(im.color.c_str(), "%lf,%lf,%lf,%lf", &c[0], &c[1], &c[2], &c[3]) >= 3) {
+            tr = std::clamp(c[0], 0.0, 1.0); tg = std::clamp(c[1], 0.0, 1.0); tb = std::clamp(c[2], 0.0, 1.0);
+        }
+    }
 
     cr->save();
     cr->translate(m_ox, m_oy);
@@ -2137,12 +2187,12 @@ void GlyphCanvas::draw_image(const Cairo::RefPtr<Cairo::Context>& cr, const mode
     cr->transform(Cairo::Matrix(im.xx, im.xy, im.yx, im.yy, im.dx, im.dy));   // image px (y up) -> font
     cr->translate(0, h);
     cr->scale(1, -1);                                           // the PNG's rows run down
-    auto pat = Cairo::SurfacePattern::create(surf);
+    cr->set_source_rgba(tr, tg, tb, std::clamp(im.opacity, 0.0, 1.0));
+    auto pat = Cairo::SurfacePattern::create(mask);
     // Close in, show the pixels as pixels (what a tracer wants to see).
     const double px_on_screen = m_s * std::sqrt(std::abs(im.xx * im.yy - im.xy * im.yx));
     pat->set_filter(px_on_screen > 3 ? Cairo::SurfacePattern::Filter::NEAREST : Cairo::SurfacePattern::Filter::GOOD);
-    cr->set_source(pat);
-    cr->paint_with_alpha(std::clamp(im.opacity, 0.0, 1.0));
+    cr->mask(pat);
     cr->restore();
 
     if (im.locked) return;

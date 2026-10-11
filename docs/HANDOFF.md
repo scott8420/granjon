@@ -3,7 +3,7 @@
 # s08_drawing_kit
 
 ## Files to upload
-- `s07_m13_background_r2.zip` (the s07 ship; or a fresh `scripts/granjon_backup.sh -o s08_drawing_kit`)
+- `s07_m13_background_r4.zip` (the s07 ship; or a fresh `scripts/granjon_backup.sh -o s08_drawing_kit`)
 - `RULES.md`, `HANDOFF.md`, `ARCHITECTURE.md`, `ARC.md`, `CANON.md`
 - A real scan or sketch (PNG / JPEG) if M13 wants another look -- s07 was tested on a generated one.
 - `My-Termes-Regular.granjon` from `fonts/` (the M7 / M8 readouts on it are still unseen), only if those get looked at.
@@ -11,6 +11,8 @@
 ---
 
 ## Status — s07
+- **r4** (`s07_m13_background_r4.zip`, Scott, with a shot of the Granjon logo dropped behind "eight" on a dark desktop: "the bkgd color is too similar and too opaque" -- "allow a user to set the color of drop ins with transparency level"): **Preferences -> Editor -> Background image colour** -- one colour button with transparency: its colour is the ink every image is drawn in (default a warm orange, `#e0703c`, so it never reads as the grey outline fill), its transparency is the opacity a newly placed image starts at (default 30 %, was 40). Settings `editor.image_tint` / `editor.image_opacity`, bad values fall back. Per image: the IMAGE card's **Colour** button (writes UFO's `color`, one undo step, verb `set_image_color`) and **Default** (back to the app's colour); the Opacity slider stays the per-image transparency. A Replace keeps the old image's colour and opacity. Selftest 953 / 0 (11 more). Shot: dark desktop, orange ink behind the grey n; the Preferences row with its swatch.
+- **r3** (`s07_m13_background_r3.zip`, Scott: "the dropped in image should be a pale color by using the black as a mask"): the scan is drawn as an INK MASK -- each pixel's darkness (over white, so a transparent PNG reads as paper) through a levels ramp (darkness under 40 / 255 clear, over 200 full), filled with the canvas's text colour at the image's opacity. Paper and speckle vanish; the ink is a pale grey on a light desktop and a pale light tone on a dark one -- no white sheet in dark mode. An image carrying a UFO `color` uses that tint instead. Built once per image (A8 surface), cached. Shot in both modes (light / dark via gsettings color-scheme). The file in images/ is untouched -- this is only how the canvas draws it.
 - **r2** (`s07_m13_background_r2.zip`, Scott: "the scrollwheel ... should only work if field is active"): every number field and slider (all `widgets::SpinButton` / `widgets::Scale`, so the inspector, Preferences, the Overview / Spacing size sliders) takes the mouse wheel only while it has the keyboard focus (clicked into or tabbed to). Otherwise the wheel scrolls the panel it sits in. Built into `Named<>` (`guard_wheel`, `src/widgets/Wheel.cpp`), so new fields get it by construction. Shot: scrolling the inspector with the pointer over the spins scrolls the panel and edits nothing (undo stays grey); clicked into Height, two wheel notches -> 1000 to 1002.
 - **M13 background layer: sandbox green, awaiting crc** (`s07_m13_background.zip`, superseded by r2). Selftest 942 / 0 (36 new). Built against Ubuntu 24.04, g++ 13.3, gtkmm 4.10 / GTK 4.14, RelWithDebInfo; no warnings in the new files. **No new package.**
 - Per glyph, the UFO 3 way: `<image fileName=... xScale ... color=...>` in the .glif, the PNG in the font's `images/`; opacity and lock in the glyph lib (`granjon.image`). Other UFO tools (RoboFont, fontParts) read the placement; Granjon reads theirs.
@@ -29,7 +31,7 @@
 - Inspector **IMAGE** card: type X / Y / Height; slide Opacity; **Locked** -> then draw over it with the pen and marquee across it (nothing should grab the image).
 - The **Image** toggle in the tool panel hides / shows it.
 - Save, close, reopen: the image comes back; `images/` holds only the placed files. Export OTF: no trace of it.
-- Dark desktop: the scan's paper is a light rectangle behind the outline -- say if you'd want it inverted / multiplied there.
+- Light and dark desktop: the scan should be ink only, no paper, in orange at 30 %. Preferences (Ctrl+,) -> Background image colour: pick a colour and slide its transparency; the canvas follows at once (images without their own colour), the next drop starts at that transparency. IMAGE card -> Colour on one image, Default to undo that (or Ctrl+Z). If a pencil sketch comes out too faint, the ramp (40 / 200 in `ink_mask`, GlyphCanvas.cpp) is the knob.
 - The picture icon (mine) -- redraw if it doesn't read.
 
 ## Decisions made in s07
@@ -39,7 +41,9 @@
 - Show / hide is a view toggle (a preference), not per glyph and not an undo step -- consistent with Fill / Grid. (The s06 handoff had said "one undo step each" including show / hide; I made this call.)
 - Unlocked = grabbable (Glyphs-like); locked = invisible to the mouse. New images start unlocked (you usually move / scale first, then lock).
 - The drag's snap rounds the offset to whole units; the scale is kept exactly as dragged.
-- Opacity and lock are Granjon's own lib keys; UFO's `color` attribute is kept verbatim but not used for drawing (yet).
+- Opacity and lock are Granjon's own lib keys; UFO's `color` attribute is kept verbatim and, when present, is the tint (r3).
+- r3: the scan is shown as a mask, never in its own colours (Scott).
+- r4: the tint is a preference (colour + transparency in one button; the transparency is the starting opacity of new images), default orange, not the text colour -- the text colour read as the outline's own grey (Scott's shot). Per-image colour = UFO's `color`, so other UFO tools see it too.
 
 ## s08 goal — Milestone M14: drawing kit
 Primitives (rectangle, ellipse -- Shift square / circle, Alt from centre; line = a filled bar of a set stroke width), boolean ops on picked contours (union / subtract / intersect, on the M10c engine), and the **parts library**: a navigator section of partial glyphs (serifs, bowls, stems) left out of the compile (UFO `public.skipExportGlyphs`), placed into real glyphs as a linked component or as editable contours. Start with Scott's M13 report; fixes first. **Stop at M14** (or at M14a primitives if it runs long -- check in).
@@ -48,7 +52,7 @@ Then: M15 transform panel + corner tools + extreme points + offset stroke; M16 m
 
 ## Still open
 - **Font-wide image sheet** (M13): wanted? (one scan of an alphabet, sliced per glyph). Asked in s07, no answer yet.
-- M13 follow-ons: SVG backgrounds; UFO `color` tint drawn; rotate an image (the fields show offset only on a rotated / skewed one from another tool); a "trace" helper (auto-outline from the scan) only if wanted; very large scans decode at full size (a 6000 x 8000 scan is ~190 MB of pixels in memory) -- a downscaled preview if that bites.
+- M13 follow-ons: SVG backgrounds; rotate an image (the fields show offset only on a rotated / skewed one from another tool); a "trace" helper (auto-outline from the scan) only if wanted; very large scans decode at full size (a 6000 x 8000 scan is ~190 MB of pixels in memory) -- a downscaled preview if that bites.
 - Packages: approved in s05. brotli-devel in use (M10b); Clipper2 1.5.4 fetched by CMake (M10c); harfbuzz-devel when the strip shapes. (FreeType is no longer needed for import.)
 - A RULES.md addition proposed in s05, answer pending: "One zip to install" (the final message names the single zip to install; checkpoint zips carry `_wip`). s06 followed it: two `_wip` checkpoints, one final zip.
 - M10 remainder: ttfautohint hook (optional external tool). WOFF2 glyf transform, CFF subroutinization (follow-ons).

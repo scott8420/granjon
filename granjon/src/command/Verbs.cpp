@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdio>
 #include <map>
 #include <set>
 
@@ -337,6 +338,29 @@ bool set_image_locked(FontJournal& j, Font& f, const std::string& glyph, bool lo
     return j.run(std::string(locked ? "Lock image on " : "Unlock image on ") + q(glyph), {glyph}, [&] {
         Glyph g = glyph_copy(f, glyph);
         g.image->locked = locked;
+        f.put(glyph, Record{g});
+    });
+}
+
+std::string ufo_color(double r, double g, double b, double a) {
+    auto c = [](double v) {
+        v = std::clamp(v, 0.0, 1.0);
+        char buf[16];
+        std::snprintf(buf, sizeof buf, "%.3f", v);
+        std::string s = buf;
+        while (s.size() > 1 && s.back() == '0') s.pop_back();   // 0.500 -> 0.5, 1.000 -> 1.
+        if (s.back() == '.') s.pop_back();
+        return s;
+    };
+    return c(r) + "," + c(g) + "," + c(b) + "," + c(a);
+}
+
+bool set_image_color(FontJournal& j, Font& f, const std::string& glyph, const std::string& color) {
+    const Glyph* was = f.glyph(glyph);
+    if (!was || !was->image || was->image->color == color) return false;
+    return j.run(std::string(color.empty() ? "Default colour for image on " : "Colour of image on ") + q(glyph), {glyph}, [&] {
+        Glyph g = glyph_copy(f, glyph);
+        g.image->color = color;
         f.put(glyph, Record{g});
     });
 }
@@ -1226,6 +1250,7 @@ const std::vector<Verb>& verbs() {
              set_image_frame(j, f, "o", {"", 120, 0, 0, 120, 31, -160}); }},
         {"set_image_opacity", [](FontJournal& j, Font& f) { set_image_opacity(j, f, "o", 0.75); }},
         {"set_image_locked", [](FontJournal& j, Font& f) { set_image_locked(j, f, "o", true); }},
+        {"set_image_color", [](FontJournal& j, Font& f) { set_image_color(j, f, "o", ufo_color(0.2, 0.5, 1.0)); }},
         {"image_drag",   [](FontJournal& j, Font& f) {
              image_drag_begin(j, f, "o", "Move image");
              set_image_frame(j, f, "o", {"", 100, 0, 0, 100, 27.4, -141.2});
