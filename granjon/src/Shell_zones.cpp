@@ -177,6 +177,7 @@ Glib::RefPtr<Gio::Menu> Shell::build_menu() {  // zone: hamburger model
     auto fontm = Gio::Menu::create();
     fontm->append("Add default anchors to every letter and mark", "win.font-anchors");
     fontm->append("Correct contour directions in every glyph", "win.font-directions");
+    fontm->append("Remove overlaps in every glyph", "win.font-overlaps");
     fontm->append("Apply metrics keys in every glyph", "win.font-metrics-keys");
     menu->append_section(fontm);
 

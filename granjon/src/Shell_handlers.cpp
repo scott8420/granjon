@@ -207,6 +207,18 @@ void Shell::on_font_directions() {  // handler: the menu's "Correct contour dire
         say("Every contour already runs the right way.", false);
 }
 
+void Shell::on_font_overlaps() {  // handler: the menu's "Remove overlaps in every glyph" (M10c)
+    std::size_t n = 0, fb = 0, ww = 0;
+    const bool did = command::remove_overlaps(m_doc.journal, m_doc.font, m_doc.font.glyph_order(), &n, &fb, &ww);
+    std::string tail = fb ? " " + std::to_string(fb) + " glyph(s) could not be merged cleanly and were left as drawn." : "";
+    if (ww) tail += " " + std::to_string(ww) + " glyph(s) skipped: a contour runs the wrong way (correct directions first).";
+    fb += ww;
+    if (did)
+        say(m_doc.journal.undo_label() + ". Ctrl+Z takes it back." + tail, fb > 0);
+    else
+        say((fb ? std::string("No overlaps removed.") : std::string("No glyph has overlaps.")) + tail, fb > 0);
+}
+
 void Shell::on_font_metrics_keys() {  // handler: the menu's "Apply metrics keys in every glyph" (M6)
     std::size_t n = 0;
     std::vector<std::string> cyclic;

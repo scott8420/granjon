@@ -98,6 +98,7 @@ private:
     void on_dump_registry();                     // category: handler: print the live widget tree
     void on_about();                             // category: handler: open the About window (dialog-lifetime exemplar)
     void on_font_metrics_keys();                 // category: handler: apply metrics keys font-wide (one step, M6)
+    void on_font_overlaps();                     // category: handler: remove overlaps font-wide (one step, M10c)
     void on_font_directions();                   // category: handler: correct directions font-wide (one step)
     void on_font_anchors();                      // category: handler: default anchors on the whole font (one step)
     void on_preferences();                       // category: handler: open the Preferences window (Ctrl+,)

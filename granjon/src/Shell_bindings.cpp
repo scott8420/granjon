@@ -35,6 +35,7 @@ void Shell::bind_actions() {  // bindings: actions + recents group
     add_action("preferences",   sigc::mem_fun(*this, &Shell::on_preferences));
     add_action("font-anchors",  sigc::mem_fun(*this, &Shell::on_font_anchors));
     add_action("font-directions", sigc::mem_fun(*this, &Shell::on_font_directions));
+    add_action("font-overlaps", sigc::mem_fun(*this, &Shell::on_font_overlaps));
     add_action("font-metrics-keys", sigc::mem_fun(*this, &Shell::on_font_metrics_keys));
     add_action("quit",          [this]() { close(); });   // close-request asks about unsaved changes
 

@@ -166,6 +166,7 @@ Inspector::Inspector(ViewContext& ctx)
       m_default_anchors("inspector.default_anchors"),
       m_outline_info("inspector.outline_info"),
       m_correct("inspector.correct_directions"),
+      m_overlaps("inspector.remove_overlaps"),
       m_reverse("inspector.reverse_contours"),
       m_make_first("inspector.make_first"),
       m_code_fmt("inspector.code_format"),
@@ -431,11 +432,28 @@ void Inspector::build_glyph_page() {
             if (p.contour >= 0) cs.insert(p.contour);
         command::reverse_contours(m_ctx.doc.journal, m_ctx.doc.font, m_ctx.selected, {cs.begin(), cs.end()});
     });
+    m_overlaps.set_label("Remove overlaps");
+    m_overlaps.set_tooltip_text("Merge overlapping contours into one outline, the curves kept exact "
+                                "(components untouched) -- one undo step. Export does this on its own.");
+    m_overlaps.signal_clicked().connect([this] {
+        std::size_t n = 0, fb = 0, ww = 0;
+        if (command::remove_overlaps(m_ctx.doc.journal, m_ctx.doc.font, {m_ctx.selected}, &n, &fb, &ww))
+            m_ctx.say(m_ctx.doc.journal.undo_label() + ".", false);
+        else if (ww)
+            m_ctx.say("A contour runs the wrong way -- correct directions first (the union would fill that counter).", true);
+        else if (fb)
+            m_ctx.say("The overlaps could not be removed cleanly; the outline is as drawn.", true);
+        else
+            m_ctx.say("No overlaps to remove.", false);
+    });
     {
         auto row = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::HORIZONTAL, 6);
         row->append(m_correct);
         row->append(m_reverse);
         outline.wide(*row);
+        auto row2 = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::HORIZONTAL, 6);
+        row2->append(m_overlaps);
+        outline.wide(*row2);
     }
 
     // ── GUIDE: a picked guide ───────────────────────────────────────────────
@@ -720,6 +738,7 @@ void Inspector::refresh_parts(const model::Glyph& g) {
                                : ", " + std::to_string(wrong.size()) + " the wrong way (red on the canvas)";
         m_outline_info.set_text(t);
         m_correct.set_sensitive(!wrong.empty());
+        m_overlaps.set_sensitive(g.contours.size() > 0);
     }
     using Part = geom::PointRef::Part;
     auto pick = [this](geom::PointRef r) {

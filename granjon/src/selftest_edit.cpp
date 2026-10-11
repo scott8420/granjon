@@ -4,6 +4,7 @@
 #include "geom/CubicSegment.hpp"
 #include "geom/Edit.hpp"
 #include "geom/NodeEdit.hpp"
+#include "geom/Overlap.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -185,5 +186,86 @@ void selftest_edit(const Check& check_) {
         const auto a = geom::constrain45({100, 10});
         const auto b = geom::constrain45({70, 75});
         check("pen: Shift -- 45-degree steps", std::abs(a.y) < 1e-9 && a.x > 99 && std::abs(b.x - b.y) < 1e-9);
+    }
+
+    // ── M10c: remove overlaps ──
+    std::cout << "M10c overlaps\n";
+    {
+        auto box = [](double x0, double y0, double x1, double y1) {
+            model::Contour c;   // counter-clockwise
+            for (auto [x, y] : {std::pair{x0, y0}, {x1, y0}, {x1, y1}, {x0, y1}}) c.nodes.push_back(model::Node::corner(x, y));
+            return c;
+        };
+        auto area = [](const std::vector<model::Contour>& cs) { double a = 0; for (const auto& c : cs) a += geom::signed_area(c); return a; };
+        const auto r = geom::remove_overlaps({box(0, 0, 100, 100), box(50, 50, 150, 150)});
+        check("overlap: two boxes -> one outline, 8 corners, the union's area",
+              r.changed && !r.fallback && r.contours.size() == 1 && r.contours[0].nodes.size() == 8 &&
+              std::abs(area(r.contours) - 17500) < 1e-6 && r.crossings == 2,
+              std::to_string(r.contours.size()) + " contours, area " + std::to_string(area(r.contours)));
+        bool corners = true;
+        for (const auto& n : r.contours[0].nodes) corners = corners && !n.has_in() && !n.has_out();
+        check("overlap: straight in, straight out", corners);
+
+        auto ring = [](double cx, double cy, double rad, bool ccw) {
+            const double k = 0.5523 * rad;
+            model::Contour c;
+            c.nodes = {smooth(cx + rad, cy, cx + rad, cy - k, cx + rad, cy + k), smooth(cx, cy + rad, cx + k, cy + rad, cx - k, cy + rad),
+                       smooth(cx - rad, cy, cx - rad, cy + k, cx - rad, cy - k), smooth(cx, cy - rad, cx - k, cy - rad, cx + k, cy - rad)};
+            if (!ccw) geom::reverse(c);
+            return c;
+        };
+        const model::Contour A = ring(0, 0, 100, true), B = ring(120, 0, 100, true);
+        const auto u = geom::remove_overlaps({A, B});
+        check("overlap: two circles -> one outline", u.changed && !u.fallback && u.contours.size() == 1, std::to_string(u.contours.size()));
+        double off = 0;
+        for (const auto& c : u.contours)
+            for (int s2 = 0; s2 < geom::segment_count(c); ++s2)
+                for (int i = 0; i <= 20; ++i) {
+                    const auto p = geom::segment(c, s2).at(i / 20.0);
+                    double best = 1e9;
+                    for (const auto* src : {&A, &B})
+                        for (int k = 0; k < geom::segment_count(*src); ++k) best = std::min(best, geom::segment(*src, k).dist_to(p));
+                    off = std::max(off, best);
+                }
+        check("overlap: every rebuilt piece lies on the original curves (exact cubic cuts)", off < 1e-3, std::to_string(off));
+        bool kept = false;   // A's leftmost node (far from B) comes back byte for byte
+        for (const auto& n : u.contours[0].nodes) if (n == A.nodes[2]) kept = true;
+        check("overlap: an original node outside the overlap keeps its handles and type", kept);
+        int corners2 = 0;
+        for (const auto& n : u.contours[0].nodes) if (n.type == model::Node::Type::Corner) ++corners2;
+        check("overlap: 3 + 3 original nodes outside, 2 crossings as corners, nothing else added", u.contours[0].nodes.size() == 3 + 3 + 2 && corners2 == 2,
+              std::to_string(u.contours[0].nodes.size()) + " nodes, " + std::to_string(corners2) + " corners");
+
+        model::Contour o_in = box(160, 88, 600, 612);
+        geom::reverse(o_in);   // a proper counter (clockwise)
+        const std::vector<model::Contour> O = {box(60, -12, 700, 712), o_in};
+        const auto same = geom::remove_overlaps(O);
+        check("overlap: no overlap (an O with its counter) -> untouched", !same.changed && same.contours == O);
+        model::Contour open = box(0, 0, 10, 10);
+        open.closed = false;
+        const auto withopen = geom::remove_overlaps({box(0, 0, 100, 100), box(50, 50, 150, 150), open});
+        check("overlap: an open contour passes through", withopen.contours.size() == 2 && withopen.contours.back() == open);
+    }
+    {   // the verb: one step over the fixture, undone whole
+        namespace cmd = granjon::command;
+        granjon::command::Document doc;
+        cmd::make_fixture(doc.font);
+        auto& j = doc.journal;
+        auto& f = doc.font;
+        const auto before = f.snapshot();
+        std::size_t n = 0, fb = 0, ww = 0;
+        const bool did = cmd::remove_overlaps(j, f, f.glyph_order(), &n, &fb, &ww);
+        const auto& H = *f.glyph("H");
+        bool whole = true;
+        for (const auto& nd : H.contours.empty() ? std::vector<model::Node>{} : H.contours[0].nodes)
+            whole = whole && nd.x == std::round(nd.x) && nd.y == std::round(nd.y);
+        check("overlap verb: H's stems and bar become one outline, 12 corners, snapped -- one step",
+              did && n == 1 && fb == 0 && H.contours.size() == 1 && H.contours[0].nodes.size() == 12 && whole && j.size() == 1,
+              std::to_string(n) + " glyphs, " + std::to_string(H.contours.empty() ? 0 : H.contours[0].nodes.size()) + " nodes");
+        check("overlap verb: O (its counter the wrong way) skipped, not filled in; the component glyph untouched",
+              ww == 1 && f.glyph("O")->contours.size() == 2 && f.glyph("Odotbelow")->contours.empty());
+        check("overlap verb: again, nothing to do (refuses, no step)", !cmd::remove_overlaps(j, f, f.glyph_order()) && j.size() == 1);
+        j.undo();
+        check("overlap verb: undo restores the three boxes", f.snapshot() == before);
     }
 }

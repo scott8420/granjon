@@ -1,6 +1,7 @@
 // otf::Otf -- the pre-export steps and the whole-font compile (M9).
 #include "export/OtfParts.hpp"
 #include "geom/Edit.hpp"
+#include "geom/Overlap.hpp"
 #include "model/Bounds.hpp"
 #include "unicode/Agl.hpp"
 
@@ -64,7 +65,8 @@ std::string production_name(const model::Glyph& g) {
     return buf;
 }
 
-OutGlyph prepare_glyph(const model::Font& f, const model::Glyph& src) {
+OutGlyph prepare_glyph(const model::Font& f, const model::Glyph& src, bool overlaps, bool* changed,
+                       bool* fell_back) {
     OutGlyph o;
     o.source   = src.name;
     o.name     = production_name(src);
@@ -74,6 +76,14 @@ OutGlyph prepare_glyph(const model::Font& f, const model::Glyph& src) {
     flat.contours = src.contours;
     for (const auto& k : src.components)
         for (auto& c : geom::component_contours(f, k)) flat.contours.push_back(std::move(c));
+    if (changed) *changed = false;
+    if (fell_back) *fell_back = false;
+    if (overlaps && flat.contours.size() > 0) {
+        auto r = geom::remove_overlaps(flat.contours);
+        if (r.changed) flat.contours = std::move(r.contours);
+        if (changed) *changed = r.changed;
+        if (fell_back) *fell_back = r.fallback;
+    }
     flat.snap();
     if (auto b = model::bounds(f, flat)) {
         o.empty = false;
@@ -118,6 +128,7 @@ Prepared prepare(const model::Font& f, const OtfOptions& opt, OtfReport& rep) {
     }
 
     std::set<std::string> used;
+    std::vector<std::string> fell_back;
     for (const auto& g : p.glyphs) used.insert(g.name);
     for (const auto& name : order) {
         const model::Glyph& src = *f.glyph(name);
@@ -132,7 +143,10 @@ Prepared prepare(const model::Font& f, const OtfOptions& opt, OtfReport& rep) {
         }
         if (o.name != name) ++rep.renamed;
         used.insert(o.name);
-        OutGlyph shaped = prepare_glyph(f, src);
+        bool ov = false, fb = false;
+        OutGlyph shaped = prepare_glyph(f, src, opt.remove_overlaps, &ov, &fb);
+        if (ov) ++rep.overlaps_removed;
+        if (fb) { if (rep.overlap_fallbacks++ < 5) fell_back.push_back(name); }
         o.unicodes = std::move(shaped.unicodes);
         o.advance  = shaped.advance;
         o.contours = std::move(shaped.contours);
@@ -155,6 +169,13 @@ Prepared prepare(const model::Font& f, const OtfOptions& opt, OtfReport& rep) {
     }
     if (rep.open_contours)
         rep.notes.push_back(std::to_string(rep.open_contours) + " open contour(s) were written closed (CFF closes every path).");
+    if (rep.overlap_fallbacks) {
+        std::string l;
+        for (const auto& n : fell_back) l += (l.empty() ? "" : ", ") + n;
+        if (rep.overlap_fallbacks > 5) l += ", ...";
+        rep.notes.push_back(std::to_string(rep.overlap_fallbacks) +
+                            " glyph(s) kept their overlaps (the union failed its check): " + l + ".");
+    }
     if (rep.renamed)
         rep.notes.push_back(std::to_string(rep.renamed) + " glyph(s) carry a production name (uniXXXX) in the file.");
 

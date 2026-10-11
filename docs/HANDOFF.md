@@ -1,21 +1,27 @@
 # Granjon handoff — s05 -> s06
 
-# s06_overlaps
+# s06_presets_primer
 
 ## Files to upload
-- `s06_overlaps.zip` (made by `scripts/granjon_backup.sh -o s06_overlaps`)
+- `s06_presets_primer.zip` (made by `scripts/granjon_backup.sh -o s06_presets_primer`)
 - `RULES.md`, `HANDOFF.md`, `ARCHITECTURE.md`, `ARC.md`, `CANON.md`
 - `My-Termes-Regular.granjon` from the project's `fonts/` folder (not in the s05 upload; s05 rebuilt Termes in the sandbox from TeX Gyre the same way, but the M7 / M8 readouts on your copy are still unseen).
-- **Curvz source**: `BooleanOpsClipper` and what it includes (M10c, overlap removal starts from it); its pen code too if M5g's conventions should be brought in line with Curvz's.
+- Curvz's pen code, only if M5g's conventions should be brought in line with Curvz's (the geometry upload of s05 had the booleans, not the pen).
 
 ---
 
 ## Status — s05 (written as we go)
+- **M10c overlap removal: crc** (Scott, on `s05_m10c_overlaps_r2.zip`, the last s05 ship; r2 silences a GCC aarch64 -Wpsabi note in Overlap.cpp).
+- **Gap review (end of s05):** Scott raised primitives (square, oval, straight line), a parts library, presets and a primer; I added the rest. New milestones M12-M16 in ARCHITECTURE; order agreed ("okay"). Scott uploaded Curvz's code for it.
+- M10c: **Remove overlaps** -- the union of a glyph's contours, nonzero (what the renderer fills), the CURVES KEPT: Clipper2 (built with its Z channel) works out the topology on a tagged flattening (Curvz's flatten), and the result is rebuilt from the original cubics cut exactly at the crossings -- original nodes keep their place, handles and type; crossings become corners. Not refit, not polygons. A safety net returns a glyph as drawn if its rebuild doesn't check out (area), with the reason.
+- Where: on **export** (OTF, TTF, WOFF2, and so the Preview and the CODE card), always -- the source is never touched; **OUTLINE card -> Remove overlaps** (one undo step); **☰ Remove overlaps in every glyph** (one step). The verb skips a glyph with a contour running the wrong way (the union would fill that counter) and says "correct directions first".
+- **Clipper2 is downloaded by CMake at the first configure** (network once; no package to install). build.sh's header says so.
+- Selftest 797 / 0 (19 new). Sandbox: Termes overlaid on itself (shift 37, 23): 1084 / 1084 glyphs rebuilt, 11,624 crossings, ~150 ms; DejaVu Sans: 101 glyphs merged, OTF + TTF pass OTS / fontTools / FreeType, renders match the original except two where DejaVu stacks the dot below twice -- ours draws the dot once, without the darker double-antialiased edge (what overlap removal is for). Known: 1-4 fallbacks in the self-overlay stress at tiny or axis-aligned shifts (estimated, leaf, permyriad, Lslash; returned as drawn) -- follow-on.
 - **M8 profiles:** crc (s05 open).
 - **M9 export OTF: crc** (Scott, on r2: export via the dialog, GNOME Fonts reads the file, the Preview renders and follows the desktop's dark mode).
 - **M10a export TTF: crc** (Scott). He noticed the OTF is slightly smaller than the TTF: same outline size (CFF 152 KB vs glyf 156 KB on Termes); the gap is post 2's stored names (~10 KB) and loca (~4 KB). CFF subroutines would shrink the OTF further (follow-on).
 - **Packages: approved** (Scott, s05: "yes") -- brotli (WOFF2, now used), Clipper2 via FetchContent (M10c), HarfBuzz for the strip when it comes.
-- **M10b WOFF2: built, shipped (`s05_m10b_woff2.zip` -- the one to install; every earlier s05 zip is superseded), awaiting Scott's crc.** **New build dependency: `brotli-devel`** (Fedora; Ubuntu `libbrotli-dev`) -- `sudo dnf install brotli-devel` before building. build.sh's header names it.
+- **M10b WOFF2: crc** (Scott; `s05_m10b_woff2.zip`). **New build dependency: `brotli-devel`** (Fedora; Ubuntu `libbrotli-dev`) -- `sudo dnf install brotli-devel` before building. build.sh's header names it.
 - M10b: `export/Woff2` -- the TrueType compile wrapped as WOFF 2.0: tables sorted by tag, one Brotli stream (font mode, quality 11), glyf / loca with the null transform (version 3), head flags bit 11 + checksums redone, version from head. ☰ **Export WOFF2 (web font)…**. Termes: 212 KB TTF -> 55 KB WOFF2 (~0.5 s at quality 11).
 - Validation: selftest decodes the stream with libbrotlidec and gets every table back byte for byte (head: bit 11); OTS sanitizes it (the browsers' check); fontTools reads it, outlines / advances / cmap match the source; unwrapped it is our TTF byte-for-byte in size, FreeType renders all glyphs, HarfBuzz shapes all 25,579 pairs; headless Chromium loads it through @font-face (document.fonts: loaded) and kerns it (screenshot: font-kerning on vs none).
 - Selftest 778 / 0 (6 new). The selftest links libbrotlidec (same package).
@@ -40,7 +46,13 @@
 - Outside validation (`scripts/otf_check.py`, now OTF or TTF; TrueType outlines compared with fontTools' own cu2qu of the source, i.e. what fontmake would ship): Termes + groups and Termes at 2048 UPM as TTF, and a TTF exported through the app's dialog, pass OTS, fontTools, outlines (1090 glyphs), FreeType, HarfBuzz (25,579 pairs). OTF vs TTF rendered by FreeType at 160 px overlay with no visible difference. Termes TTF: ~55 ms, 217 KB, 52,715 points.
 - Before M10a: Scott ran M9 r1 and asked that the Preview page follow the desktop's dark mode -> r2 (see decisions).
 
-What to look at in M10b:
+What to look at in M10c (crc):
+- First build fetches Clipper2 (network once).
+- Draw two overlapping shapes in one glyph (pen, or paste a contour and drag it over another) -> OUTLINE card -> **Remove overlaps**: one outline, the curves where they were, corners at the crossings. Ctrl+Z.
+- An O whose counter runs the wrong way: Remove overlaps refuses with "correct directions first".
+- ☰ Remove overlaps in every glyph on an imported font (DejaVu Sans has overlapping accents); the status line counts glyphs. Export (OTF / TTF): the log says how many glyphs were merged.
+
+What to look at in M10b (crc):
 - **Install brotli-devel first**, then build.
 - ☰ Export WOFF2 (web font)… -> a .woff2; drop it in a page with @font-face and open it in Firefox / Chrome.
 
@@ -80,6 +92,7 @@ What to look at in M9:
 - On Termes: whether the Preview's kerning matches the Spacing strip on the same pairs (it should, exactly -- the GPOS is built from the strip's lookup).
 
 ## Decisions made in s05
+- M10c: the curves are kept (fontmake's booleanOperations approach) rather than Curvz's flatten-and-return-polygons: a font wants its nodes and handles. Clipper2 is built with Z only for Granjon (Curvz's build is without); the Z-tag rebuild is a candidate to bring back to Curvz. Export removes overlaps by default (fontmake's default); the source keeps them -- designers keep overlaps while drawing. Nonzero fill everywhere; a wrong-way counter is the Checks report's to fix (the verb refuses, export fills it as the renderer already did). Results snap to units. OVERLAP_SIMPLE stays set on TTF glyphs (harmless).
 - M10b: WOFF2 wraps the TrueType build (as the web-font services ship); no glyf transform yet (version 3 is valid; the transform would shave another 10-25 %, a follow-on). Quality 11: slow-ish (~0.5 s on Termes), smallest file.
 - M11: our own reader instead of FreeType (outlines would be FreeType's only; names, metrics, kerning classes are table parsing either way -- and no new package). Imports become a NEW unsaved document; the file on disk is never touched. Coordinates snap to units like every edit (TTF's 2/3-handles round within half a unit). Kerning: first-wins merge across subtables and lookups (noted when there is more than one lookup).
 - M5h: tools are a toggle group in a panel; the view toggles live in the same panel under a rule (the top bar stays for glyph actions). Own icons rather than theme icons (availability). Measure and Hand became tools as well as holds.
@@ -91,7 +104,7 @@ What to look at in M9:
 - Export OTF is Ctrl+E (free in the shortcut registry) with its own section in ☰; it always asks where (an "export again to the same file" can follow if you want one).
 - The Preview sets the compiled font with Pango in a PRIVATE font map (fontconfig holding only that font, a fresh cache file per compile, stale files from dead runs removed); its page follows the desktop's light / dark, live, with a button for the other mode (setting `preview.invert`, replacing r1's `preview.dark`) -- the desktop's text stack, no new package; direct HarfBuzz stays for the strip, pending the package answer.
 - Export never touches the font: no undo step (a product made from the font, not a choice on it).
-- Outlines go out **as drawn**: no silent direction correction (an overlapping contour can read as "inside" another and get reversed into a hole), no overlap removal (M10). Direction is the Checks report's job; CFF fills nonzero, as the editor shows.
+- Outlines go out with **direction as drawn**: no silent direction correction (an overlapping contour can read as "inside" another and get reversed into a hole). Direction is the Checks report's job; CFF fills nonzero, as the editor shows. (Overlaps: removed on export since M10c.)
 - Components are decomposed; coordinates rounded after the transform.
 - Production names: an encoded glyph whose name doesn't spell its first code point by the AGL rules goes out as uniXXXX / uXXXXX (what fontmake does); unencoded glyphs keep their names. Termes: 419 renamed (anglearc, baht, f_f on U+FB00, Delta on U+0394 ...).
 - No .notdef -> a box is supplied and noted.
@@ -100,20 +113,22 @@ What to look at in M9:
 - No CFF hints, no BlueValues (none in the model; M10's ttfautohint covers TTF).
 - head.created / modified honour SOURCE_DATE_EPOCH (reproducible builds); the selftest fixes the time.
 
-## s06 goal — Milestone M10c: overlap removal (then the editor follow-ons, Scott's order)
-Remove overlaps on export (OTF / TTF / WOFF2) and as a verb on glyphs, starting from Curvz's BooleanOpsClipper (Clipper2 via FetchContent, as Curvz). The fork to settle and record: Clipper2 works on polygons -- flatten curves and refit cubics afterwards (shape tolerance, node count), or keep curve segments where contours do not intersect and only rebuild around the crossings. Then the ttfautohint hook (optional external tool on TTF). **Stop at M10c.**
-WOFF2 (brotli; the glyf / loca transform is optional -- start without), overlap removal on export (Clipper2 via Curvz's BooleanOpsClipper; curves flattened -> rebuilt, or kept by a curve-aware pass -- a fork to settle and surface), the ttfautohint hook. Needs the package answer first. **Stop at M10b.**
+## s06 goal — Milestone M12: presets + primer
+**New font from a preset**: Sans / Serif / Display / Mono -- UPM, vertical metrics, overshoot, a char set, font guides, spacing keys, and starter control glyphs (n o H O p v) as simple, editable shapes to build from. A chooser on New (and ☰), the preset recorded in the font's lib. **Primer**: a Help panel (the inspector or its own page -- settle and surface) of short illustrated notes: overshoot (why rounds are larger), stem weight and contrast (horizontals thinner than verticals), round vs straight spacing (n / o), joins and ink traps, optical centre, drawing order; each note links to the tool or check that applies it (Measure, Checks overshoot, Profiles). Notes are data (resources/), not code. **Stop at M12.**
+
+Then, agreed order: M13 background image layer; M14 drawing kit (primitives -- rectangle, ellipse, line as a filled bar of a set width -- boolean ops on picked contours, the parts library: navigator section, `public.skipExportGlyphs`, placed as linked component or editable contours); M15 transform panel + corner tools + extreme points + offset stroke; M16 mark positioning, features editor, italic angle / font info. Later: print proof, ttfautohint, weight masters (v3).
 
 ## s05 goal (done) — Milestone M9: Export OTF
 (ARCHITECTURE milestone list.) An sfnt writer + CFF: head, hhea, maxp, OS/2, name, cmap, post, CFF (charstrings from the cubic outlines, components decomposed), hmtx; kerning as a GPOS pair table (class kerning -> class pairs, exceptions as glyph pairs) -- the first feature output. Validate by reloading with FreeType (and shaping a proof with HarfBuzz -- the moment HarfBuzz earns its place). **Packages** (Fedora: `harfbuzz-devel freetype-devel`; brotli waits for WOFF2): announce, check with Scott before relying on them. A Preview view (Ctrl+4, still a stub) showing the compiled font is the natural visual check. Settle forks inside; surface what changes the workflow.
 **Stop at M9** for a compile / run report.
 
 ## Still open
-- Packages: approved in s05. brotli-devel in use (M10b); Clipper2 1.5.4 via FetchContent comes with M10c; harfbuzz-devel when the strip shapes. (FreeType is no longer needed for import.)
+- Packages: approved in s05. brotli-devel in use (M10b); Clipper2 1.5.4 fetched by CMake (M10c); harfbuzz-devel when the strip shapes. (FreeType is no longer needed for import.)
 - A RULES.md addition proposed in s05, answer pending: "One zip to install" (the final message names the single zip to install; checkpoint zips carry `_wip`).
-- M10c: overlap removal (Clipper2, from Curvz's BooleanOpsClipper), ttfautohint hook (optional external tool). WOFF2 glyf transform (follow-on).
+- M10 remainder: ttfautohint hook (optional external tool). WOFF2 glyf transform, CFF subroutinization (follow-ons).
+- Overlap follow-ons: the self-overlay fallbacks (estimated, leaf, permyriad, Lslash at shifts like (1, 0), (0.5, 0.5), (150, 0) -- area 0.3-0.6 % off, returned as drawn); an overlaps finding in the Checks report; remove overlaps on a picked set of contours; the Z-tag rebuild back-ported to Curvz.
 - granjon-cli scope (ARC backlog). `export_otf` is its first ready-made command.
-- Editor follow-ons: Shift-constrained point drags (the pen has 45 degrees; picking-mode drags don't yet), node type by key, a delete-without-refit modifier, pen snapping to metrics / nodes, composite follow-ons (Greek tonos, stacking, ogonek anchor, rebuild), overview follow-ons -- all in the ARC backlog.
+- Editor follow-ons (now behind M12-M16): Shift-constrained point drags (the pen has 45 degrees; picking-mode drags don't yet), node type by key, a delete-without-refit modifier, pen snapping to metrics / nodes, composite follow-ons (Greek tonos, stacking, ogonek anchor, rebuild), overview follow-ons -- all in the ARC backlog.
 - Profiles follow-ons: a profile cache + font-wide kern-to-gap over a pair list, per-class targets, collision check on proof strings.
 - Spacing follow-ons: kerning groups editor (create / assign public.kern1 / kern2 from the UI), a strip text history / presets.
 - Checks follow-ons (ARCHITECTURE §6): missing extreme points, overlaps, sidebearing consistency, stem drift, kerning class audit and outliers, collisions.

@@ -81,7 +81,7 @@ Node      { x, y, in-handle, out-handle, type: smooth | cusp | symmetric | corne
 - Curvz is y-down doc space; Granjon is y-up font units. The flip lives in the canvas view transform, and the `signed_area()` sign convention flips with it.
 - Coordinates are double while editing and snapped to integer font units at gesture commit, so the stored model is always integral.
 - Curvz pulls in `SceneNode.hpp` and cairomm from `BezierPath.hpp`; the port (s03) lifted `Vec2`, `CubicSegment` and BezierPath's editing rules into a GTK-free `geom/` that works on `model::Contour` directly (no BezierPath type -- the model already is its node list); the cairo drawing lives in `views/GlyphCanvas`.
-- Curvz `BooleanOpsClipper` (Clipper2 1.5.4, FetchContent fallback) is the overlap-removal starting point.
+- Overlap removal (M10c, `geom/Overlap`): Clipper2 1.5.4 built with Z does the topology on a tagged flattening (Curvz's flatten); the result is rebuilt from the original cubics (fontmake's booleanOperations approach), not refit. Curvz's `BooleanOpsClipper` returns polygons -- the Z-tag rebuild is a candidate to bring back to Curvz.
 - To add: components, anchors, and sidebearings as canvas objects; contour-direction check.
 
 ---
@@ -210,7 +210,7 @@ Panels (always present, collapsible): **Navigator** (source list by Unicode bloc
 ### Pre-export steps
 - Decompose or keep components per the format.
 - Remove overlaps (boolean path operations).
-- Correct contour direction. (M9 decision: OTF goes out **as drawn** -- no silent correction, since an overlapping contour can test as "inside" and be reversed into a hole; direction is the Checks report's job, and CFF fills nonzero as the editor shows. Revisit with overlap removal, M10.)
+- Correct contour direction. (M9 decision: OTF goes out **as drawn** -- no silent correction, since an overlapping contour can test as "inside" and be reversed into a hole; direction is the Checks report's job, and CFF fills nonzero as the editor shows. M10c: still as drawn -- overlap removal is nonzero, so it fills exactly what the renderer fills; the verb skips a glyph with a wrong-way contour instead of filling its counter.)
 - Generate production names.
 - Compute OS/2 `ulUnicodeRange` and code page bits from actual coverage. These are never hand-set.
 
@@ -231,7 +231,7 @@ No manual hinting. `ttfautohint` runs as an optional external step on TTF.
 - HarfBuzz (shaping for the kerning strip) -- not linked yet
 - Pango + fontconfig (M9 Preview: the compiled font in a private font map) -- come with gtkmm, no extra package
 - libxml2 (plist / GLIF) -- chosen over libxml++ (small files, no extra C++ wrapper)   [M2]
-- Clipper2 1.5.4 (as Curvz: `find_package`, FetchContent fallback) for boolean ops
+- Clipper2 1.5.4 for boolean ops: URL FetchContent, CLIPPER2_USINGZ=ONLY (`Clipper2Z`); always fetched (a system Clipper2 lacks Z)
 - Brotli (WOFF2) -- libbrotlienc, M10b (Fedora brotli-devel)
 - Optional external tools: ttfautohint, ots-sanitize
 
@@ -298,5 +298,11 @@ Work stops at each milestone for a compile/run report before continuing.
 8. **M8 Profiles:** contact gap, optical area, kern-to-gap.   [s04: done (crc s05)]
 9. **M9 Export OTF:** sfnt writer + CFF; validate by FreeType reload.   [s05: done]
 9c. **M9c Drawing codes + SVG:** inspector CODE card (CFF / TrueType / SVG path), Export SVG of a glyph or the Spacing text.   [s05: done]
-10. **M10 Export TTF / WOFF2:** cubic → quadratic, overlap removal, ttfautohint hook.   [s05: M10a TTF done; M10b WOFF2 built; M10c overlap removal + ttfautohint to come]
+10. **M10 Export TTF / WOFF2:** cubic → quadratic, overlap removal, ttfautohint hook.   [s05: M10a TTF done; M10b WOFF2 done; M10c overlap removal done; ttfautohint hook to come]
 11. **M11 Import:** TTF/OTF (our own reader); SVG glyph import still to come.   [s05: done]
+12. **M12 Presets + primer:** New font from a preset (Sans / Serif / Display / Mono: metrics, overshoot, char set, guides, spacing keys, starter control glyphs n o H O p v); a Help panel of short illustrated type-design notes (overshoot, stem and contrast, round vs straight spacing, joins / ink traps, optical centre, drawing order), each linking to the tool or check that applies it.   [s05: agreed, next]
+13. **M13 Background layer:** a placed image (scan / sketch) behind a glyph to trace; position, scale, opacity, lock.
+14. **M14 Drawing kit:** primitives (rectangle, ellipse -- Shift square / circle, Alt from centre; line = a filled bar of a set stroke width), boolean ops on picked contours (union / subtract / intersect, on the M10c engine), and the **parts library**: a navigator section of partial glyphs (serifs, bowls, stems) left out of the compile (UFO `public.skipExportGlyphs`), placed into real glyphs as a linked component or as editable contours.
+15. **M15 Transform + corners:** transform panel (scale / rotate / skew / flip, numeric and handles), round corner, ink trap, add extreme points, offset / expand stroke.
+16. **M16 Features:** GPOS mark / mkmk from the anchors; a features editor (liga, smcp, ss01..); italic angle and the remaining font info (copyright, license, designer, version).
+Later: print proof (PDF glyph sheets + text), ttfautohint hook, weight masters / variable fonts (v3).

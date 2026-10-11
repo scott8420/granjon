@@ -21,7 +21,7 @@ The Unicode data needs no network at build time. To move to a newer Unicode
 or char-set revision, fetch the upstream files (URLs in the script's header)
 and run `../scripts/ucd_trim.py RAW_DIR`.
 
-Later milestones add FreeType, HarfBuzz, Brotli and Clipper2.
+Brotli (WOFF2) is a system package; Clipper2 (overlap removal) is fetched by CMake at the first configure (network once). HarfBuzz comes later.
 
 ## Layout
 

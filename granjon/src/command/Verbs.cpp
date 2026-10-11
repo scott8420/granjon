@@ -5,6 +5,7 @@
 #include "model/Checks.hpp"
 #include "model/Profiles.hpp"
 #include "geom/NodeEdit.hpp"
+#include "geom/Overlap.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -802,6 +803,38 @@ bool correct_directions(FontJournal& j, Font& f, const std::vector<std::string>&
     });
 }
 
+bool remove_overlaps(FontJournal& j, Font& f, const std::vector<std::string>& glyphs, std::size_t* changed,
+                     std::size_t* fell_back, std::size_t* wrong_way) {
+    std::map<std::string, std::vector<model::Contour>> out;
+    std::size_t fb = 0, ww = 0;
+    for (const auto& name : glyphs)
+        if (const Glyph* g = f.glyph(name); g && !g->contours.empty()) {
+            if (!geom::wrong_way(g->contours).empty()) { ++ww; continue; }
+            auto r = geom::remove_overlaps(g->contours);
+            if (r.fallback) ++fb;
+            if (!r.changed) continue;
+            Glyph t;
+            t.contours = std::move(r.contours);
+            t.snap();
+            if (t.contours != g->contours) out[name] = std::move(t.contours);
+        }
+    if (changed) *changed = out.size();
+    if (fell_back) *fell_back = fb;
+    if (wrong_way) *wrong_way = ww;
+    if (out.empty()) return false;
+    std::vector<std::string> ids;
+    for (const auto& [n, c] : out) ids.push_back(n);
+    const std::string label = ids.size() == 1 ? "Remove overlaps"
+                                              : "Remove overlaps (" + std::to_string(ids.size()) + " glyphs)";
+    return j.run(label, ids, [&] {
+        for (auto& [name, cs] : out) {
+            Glyph g = glyph_copy(f, name);
+            g.contours = std::move(cs);
+            f.put(name, Record{g});
+        }
+    });
+}
+
 bool make_first(FontJournal& j, Font& f, const std::string& glyph, int contour, int index, std::string* why) {
     auto no = [&](const char* w) { if (why) *why = w; return false; };
     const Glyph* was = f.glyph(glyph);
@@ -1086,6 +1119,7 @@ const std::vector<Verb>& verbs() {
                           Align::Top); }},
         {"reverse_contours", [](FontJournal& j, Font& f) { reverse_contours(j, f, "H", {0, 2}); }},
         {"correct_directions", [](FontJournal& j, Font& f) { correct_directions(j, f, {"H", "n", "o", "O"}); }},
+        {"remove_overlaps", [](FontJournal& j, Font& f) { remove_overlaps(j, f, {"H", "n", "o", "O"}); }},
         {"make_first",   [](FontJournal& j, Font& f) { make_first(j, f, "o", 0, 2); }},
         {"set_family",   [](FontJournal& j, Font& f) { set_family(j, f, "Garamond Nova"); }},
         {"set_style",    [](FontJournal& j, Font& f) { set_style(j, f, "Italic"); }},

@@ -133,6 +133,7 @@ private:
     // outline (M5d): contour count, direction, Correct / Reverse
     widgets::Label       m_outline_info;
     widgets::Button      m_correct;
+    widgets::Button      m_overlaps;          // M10c
     widgets::Button      m_reverse;
     widgets::Button      m_make_first;   // M5e: the picked node leads its contour
     // code (M9c): the glyph as the files carry it

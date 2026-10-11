@@ -300,6 +300,22 @@ void selftest_export(const Check& check_) {
     const otf::Bytes font = otf::compile_otf(f, opt, &rep);
     check("otf: compiles, starts OTTO", font.size() > 12 && rd32(font, 0) == 0x4F54544F, std::to_string(font.size()) + " bytes");
     check("otf: deterministic for a fixed time", otf::compile_otf(f, opt) == font);
+    {   // M10c: export merges H's touching stems and bar; the source keeps three
+        bool ch = false, fb = false;
+        const auto h = otf::prepare_glyph(f, *f.glyph("H"), true, &ch, &fb);
+        const auto raw = otf::prepare_glyph(f, *f.glyph("H"), false);
+        check("otf: overlaps removed on export (H: 3 boxes -> 1 outline), the source untouched",
+              ch && !fb && h.contours.size() == 1 && raw.contours.size() == 3 && f.glyph("H")->contours.size() == 3 &&
+              h.xmin == raw.xmin && h.xmax == raw.xmax && h.ymin == raw.ymin && h.ymax == raw.ymax,
+              std::to_string(h.contours.size()));
+        check("otf: the report counts glyphs whose overlaps went", rep.overlaps_removed >= 1 && rep.overlap_fallbacks == 0,
+              std::to_string(rep.overlaps_removed));
+        otf::OtfOptions keep = opt;
+        keep.remove_overlaps = false;
+        otf::OtfReport kr;
+        otf::compile_otf(f, keep, &kr);
+        check("otf: remove_overlaps = false writes them as drawn", kr.overlaps_removed == 0);
+    }
     check("otf: whole-file checksum is 0xB1B0AFBA", otf::checksum(font) == 0xB1B0AFBAu);
     bool all = true;
     std::string missing;
@@ -334,7 +350,8 @@ void selftest_export(const Check& check_) {
     const otf::Prepared p = otf::prepare(f, opt, r2);
     check("otf: .notdef is GID 0", p.glyphs.front().name == ".notdef");
     check("otf: a component is flattened (Odotbelow draws O)", rep.decomposed == 1 &&
-          p.glyphs[static_cast<std::size_t>(p.gid.at("Odotbelow"))].contours == f.glyph("O")->contours);
+          p.glyphs[static_cast<std::size_t>(p.gid.at("Odotbelow"))].contours ==
+          p.glyphs[static_cast<std::size_t>(p.gid.at("O"))].contours);
     check("otf: production names (myA -> uni0041, c stays, u1F600 stays)",
           p.glyphs[static_cast<std::size_t>(p.gid.at("myA"))].name == "uni0041" &&
           p.glyphs[static_cast<std::size_t>(p.gid.at("c"))].name == "c" &&
@@ -561,7 +578,7 @@ void selftest_export(const Check& check_) {
         check("ttf: hmtx lsb = glyf xMin", bounds, bad);
         {
             const auto H = read_glyf(glyf, loca, fmt, static_cast<unsigned>(pp.gid.at("H")));
-            check("ttf: H -- 3 contours, 12 on-curve points, outer contour clockwise", H.contours == 3 && H.pts.size() == 12 &&
+            check("ttf: H -- one outline (overlaps removed), 12 on-curve points, clockwise", H.contours == 1 && H.pts.size() == 12 &&
                   std::all_of(H.pts.begin(), H.pts.end(), [](const otf::QPointI& q) { return q.on; }) &&
                   H.pts[1].x == 80 && H.pts[1].y == 700);
             const auto c = read_glyf(glyf, loca, fmt, static_cast<unsigned>(pp.gid.at("c")));
@@ -604,17 +621,17 @@ void selftest_export(const Check& check_) {
             return n;
         };
         const auto cff = otf::glyph_code(f, "H", otf::CodeFormat::Cff);
-        check("codes: CFF for H -- width, 3 rmoveto, endchar", cff.text.find("700 % the width") != std::string::npos &&
-              count(cff.text, "rmoveto") == 3 && count(cff.text, "endchar") == 1 && !cff.summary.empty(), cff.summary);
+        check("codes: CFF for H -- width, 1 rmoveto (overlaps removed), endchar", cff.text.find("700 % the width") != std::string::npos &&
+              count(cff.text, "rmoveto") == 1 && count(cff.text, "endchar") == 1 && !cff.summary.empty(), cff.summary);
         const auto c = otf::glyph_code(f, "c", otf::CodeFormat::Cff);
         check("codes: CFF for c -- rrcurveto", c.text.find("rrcurveto") != std::string::npos);
         const auto tt = otf::glyph_code(f, "H", otf::CodeFormat::TrueType);
-        check("codes: TrueType for H -- 3 contours, 12 on-curve points", count(tt.text, "<contour>") == 3 &&
+        check("codes: TrueType for H -- 1 contour, 12 on-curve points", count(tt.text, "<contour>") == 1 &&
               count(tt.text, "<pt ") == 12 && count(tt.text, "on=\"0\"") == 0, tt.summary);
         const auto tc = otf::glyph_code(f, "c", otf::CodeFormat::TrueType);
         check("codes: TrueType for c -- off-curve points", count(tc.text, "on=\"0\"") > 0, tc.summary);
         const auto sv = otf::glyph_code(f, "H", otf::CodeFormat::Svg);
-        check("codes: SVG path for H -- 3 subpaths, y down from the ascender", count(sv.text, "M") == 3 &&
+        check("codes: SVG path for H -- 1 subpath, y down from the ascender", count(sv.text, "M") == 1 &&
               sv.text.find("M80 750") != std::string::npos, sv.text.substr(0, 80));
         check("codes: a missing glyph gives nothing", otf::glyph_code(f, "nope", otf::CodeFormat::Cff).text.empty());
         check("codes: production name shown with the designer's", otf::glyph_code(f, "myA", otf::CodeFormat::Cff).text.find("uni0041 (yours: myA)") != std::string::npos);

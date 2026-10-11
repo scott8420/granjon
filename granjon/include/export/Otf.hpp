@@ -10,8 +10,8 @@
 //
 // What goes in (ARCHITECTURE §8): head hhea maxp OS/2 name cmap post hmtx
 // CFF, and GPOS 'kern' when the font kerns. Components are decomposed,
-// outlines go out as drawn (direction, overlaps: the Checks report's job --
-// overlap removal arrives with M10), coordinates rounded to units.
+// overlaps are removed (M10c; `remove_overlaps`), direction goes out as
+// drawn (the Checks report's job), coordinates rounded to units.
 #include "export/Sfnt.hpp"
 #include "model/Font.hpp"
 
@@ -31,6 +31,9 @@ struct OtfOptions {
     // (the Preview compiles under a private name so the system's own copy of
     // the family -- or an older preview -- never answers for it).
     std::string family_override;
+    // M10c: the union of each glyph's contours (components included), rebuilt
+    // from the original curves. The source is never touched.
+    bool remove_overlaps = true;
 };
 
 struct OtfReport {
@@ -43,6 +46,8 @@ struct OtfReport {
     int         kern_glyph_pairs = 0;    // PairPos format 1 entries (exceptions, glyph/group)
     int         kern_class_pairs = 0;    // non-zero cells in the class matrices
     int         gpos_subtables = 0;
+    int         overlaps_removed = 0;    // glyphs whose outline the union changed
+    int         overlap_fallbacks = 0;   // glyphs the union could not rebuild: written as drawn
     int         tt_points = 0;           // TTF: points in glyf (on + off curve)
     std::size_t bytes = 0;
     double      ms = 0;

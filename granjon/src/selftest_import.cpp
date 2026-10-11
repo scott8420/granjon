@@ -46,6 +46,7 @@ void selftest_import(const std::function<void(const std::string&, bool, const st
     }
     otf::OtfOptions opt;
     opt.time = 1760000000;
+    opt.remove_overlaps = false;   // the round trips check the reader against outlines as drawn
     auto kern_same = [&](const model::Font& a, const model::Font& b, std::string& bad) {
         for (const auto& la : a.glyph_order())
             for (const auto& ra : a.glyph_order()) {

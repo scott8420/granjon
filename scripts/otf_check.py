@@ -221,7 +221,9 @@ def main():
             except Exception as e:  # noqa: BLE001
                 errs.append(f"{i}: {e}")
         say(not errs, f"freetype: loads and renders all {face.num_glyphs} glyphs", "; ".join(errs[:5]))
-        say(face.family_name.decode() == font["name"].getDebugName(1), "freetype: family name",
+        # FreeType reports the typographic family (ID 16) when there is one
+        fam = font["name"].getDebugName(16) or font["name"].getDebugName(1)
+        say(face.family_name.decode() == fam, "freetype: family name",
             face.family_name.decode())
     except ImportError:
         skip("freetype", "pip install freetype-py")

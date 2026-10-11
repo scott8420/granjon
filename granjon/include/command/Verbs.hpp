@@ -128,6 +128,15 @@ bool reverse_contours(FontJournal& j, Font& f, const std::string& glyph, const s
 // step; refuses when every one is right already. `fixed` counts contours.
 bool correct_directions(FontJournal& j, Font& f, const std::vector<std::string>& glyphs,
                         std::size_t* fixed = nullptr);
+// M10c: each glyph's own contours made one union (components untouched),
+// rebuilt from the original curves and snapped. ONE step; refuses when no
+// glyph changes. `changed` counts glyphs, `fell_back` the ones the union
+// could not rebuild (left as drawn), `wrong_way` the ones skipped because a
+// contour runs the wrong way (nonzero would fill that counter in -- correct
+// directions first).
+bool remove_overlaps(FontJournal& j, Font& f, const std::vector<std::string>& glyphs,
+                     std::size_t* changed = nullptr, std::size_t* fell_back = nullptr,
+                     std::size_t* wrong_way = nullptr);
 // M5f: a node on segment `segment` of `contour` at t, the shape unchanged.
 // ONE step; `index` gets the new node's index.
 bool insert_node(FontJournal& j, Font& f, const std::string& glyph, int contour, int segment, double t,
