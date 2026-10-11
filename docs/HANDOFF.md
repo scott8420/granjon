@@ -3,12 +3,21 @@
 # s09_m15_transform_corners
 
 ## Files to upload
-- `s08_m14_drawing_kit_r3.zip` (the s08 ship -- the one zip to install; M14 + Select tool + Type it. Earlier s08 zips are superseded. Or a fresh `scripts/granjon_backup.sh -o s09_m15_transform_corners`)
+- `s08_m14_drawing_kit_final.zip` (the s08 ship -- the one zip to install: r3's code + this handoff. Earlier s08 zips are superseded. Or a fresh `scripts/granjon_backup.sh -o s09_m15_transform_corners`)
 - `RULES.md`, `HANDOFF.md`, `ARCHITECTURE.md`, `ARC.md`, `CANON.md`
 
 ---
 
+## s09 first -- Scott's answers at the s08 close (do these before M15, one small ship)
+1. **Booleans: "top selection dictates."** Read as: the TOPMOST picked path (last in contour order = drawn last, on top) is the operand -- Subtract cuts it out of the other PICKED paths, Intersect keeps their overlap with it; Union unchanged. Unpicked paths no longer take part. (Illustrator's Minus Front.) Confirm the reading with Scott in one line before building -- it reverses s08's "picked cuts the rest".
+2. **Preset fonts start with parts** ("sounds like a good start"): `_part.stem`, `_part.serif` (serif presets), `_part.bowl` built from each preset's own numbers (Presets.cpp already makes those pieces). The presets selftest's "whole Checks report empty" must still hold.
+3. **Undo restores the pick: yes.** Journal the pick with each step (the selection before / after), so Ctrl+Z after Subtract picks what was picked before it.
+4. **The app opens on Select (V).** (V = Select / A = Pick confirmed by this.)
+
+Then M15 (transform + corners).
+
 ## Status — s08
+- **r3: crc** (Scott: "crc."). s08 closed here (Scott: "a good place for a handoff").
 - **M14 drawing kit: crc** (Scott, on `s08_m14_drawing_kit.zip`: "excellent. crc.").
 - **r2: crc** (Scott: "great! crc.").
 - **r3 -- Type it** (`s08_m14_drawing_kit_r3.zip`; Scott: "a keyboard combination to show how to type the glyph in a text editor in the GLYPH panel ... doesn't create a glyph just shows how a user may create one"). Sandbox green, not crc. Selftest 1058 / 0 (9 new). No warnings in touched files. No new package.
@@ -127,7 +136,7 @@ Primitives (rectangle, ellipse -- Shift square / circle, Alt from centre; line =
 Then: M15 transform panel + corner tools + extreme points + offset stroke; M16 mark positioning, features editor, italic angle / font info. Later: print proof, ttfautohint, weight masters (v3).
 
 ## Still open
-- **M14 questions (s08):** (1) booleans -- "picked cuts the rest" (Glyphs, now) or "the frontmost cuts the ones behind" (Illustrator)? (2) Should preset fonts start with parts (stem, serif, bowl from the preset's numbers)? (3) Undo and the pick: clear the pick when an undo / redo changes the shown glyph's contour count, or journal the pick with each step? (4) Shift-square grows from the larger side (now) -- right?
+- M14 questions (s08): answered at the close -- see "s09 first" at the top.
 - Not done in M14 (follow-ons): booleans on components (decompose first today); a parts preview strip (the list is names only); drag a part from the navigator onto the canvas; rounded rectangle / polygon primitives.
 - **Font-wide image sheet** (M13): wanted? (one scan of an alphabet, sliced per glyph). Asked in s07, no answer yet.
 - M13 follow-ons: SVG backgrounds; rotate an image (the fields show offset only on a rotated / skewed one from another tool); a "trace" helper (auto-outline from the scan) only if wanted; very large scans decode at full size (a 6000 x 8000 scan is ~190 MB of pixels in memory) -- a downscaled preview if that bites.
