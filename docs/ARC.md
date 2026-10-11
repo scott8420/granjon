@@ -326,4 +326,4 @@ Newest session at the bottom.
 - r2 (Scott): the mouse wheel edits a spin / slider only while it is focused; otherwise it scrolls the enclosing panel (capture-phase scroll controller in `Named<SpinButton / Range>`, `widgets::guard_wheel`). Was GTK's default on every field -- scrolling the inspector edited whatever passed under the pointer.
 - r3 (Scott): the scan draws as an ink mask -- darkness over white through a levels ramp (40 -> clear, 200 -> opaque) into an A8 surface, filled with the canvas text colour (or the image's UFO color) at the image's opacity. Paper disappears; pale ink in light and dark mode.
 - r4 (Scott: the fg-colour tint was "too similar and too opaque"): Preferences -> Background image colour (ColorDialogButton with alpha: `editor.image_tint` #rrggbb + `editor.image_opacity` 5..100, the opacity new drops start at; default #e0703c at 30 %). Per image: IMAGE card Colour (UFO `color`, `set_image_color`, `ufo_color()` spells "r,g,b,a") + Default. Replace keeps colour and opacity.
-
+- M13 crc (Scott, on r4: "excellent. crc.").
