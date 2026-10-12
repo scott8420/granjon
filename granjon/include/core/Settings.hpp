@@ -33,6 +33,7 @@ struct Settings {
     std::string sidebearing_mod = "alt";   // "alt" | "ctrl" | "shift": slide the drawing on a left-edge drag
     bool        editor_grid     = false;   // the zoom-adaptive grid
     bool        editor_snap     = true;    // snap drags to grid / metrics / sidebearings / other nodes
+    bool        editor_align    = true;    // s09: alignment guides while a node is dragged
     bool        editor_image    = true;    // M13: show the background image
     std::string image_tint      = "#e0703c";   // M13: the ink colour a background image is drawn in (#rrggbb),
                                                // unless the image carries its own (UFO color)

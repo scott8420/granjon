@@ -1,4 +1,5 @@
 #include "views/Inspector.hpp"
+#include "views/PathOps.hpp"
 #include "model/Presets.hpp"
 
 #include "model/Profiles.hpp"
@@ -77,6 +78,17 @@ struct Card {
         return l;
     }
     void wide(Gtk::Widget& w) { w.set_hexpand(true); grid->attach(w, 0, row++, 2, 1); }
+    // s09 r2 (Scott: "reclaim real estate by using icons with hints instead of
+    // words"): an icon where the label word was; the hint says what it is.
+    void icon_field(const char* icon, const char* tip, Gtk::Widget& w) {
+        auto im = Gtk::make_managed<Gtk::Image>();
+        im->set_from_icon_name(icon);
+        im->set_tooltip_text(tip);
+        im->add_css_class("field-icon");
+        w.set_hexpand(true);
+        grid->attach(*im, 0, row);
+        grid->attach(w, 1, row++);
+    }
 };
 
 // Commit a text field on Enter and on leaving it.
@@ -182,6 +194,24 @@ Inspector::Inspector(ViewContext& ctx)
       m_subtract("inspector.subtract"),
       m_intersect("inspector.intersect"),
       m_reverse("inspector.reverse_contours"),
+      m_tf_info("inspector.transform_info"),
+      m_tf_sx("inspector.transform_scale_x"),
+      m_tf_sy("inspector.transform_scale_y"),
+      m_tf_uniform("inspector.transform_uniform"),
+      m_tf_rot("inspector.transform_rotate"),
+      m_tf_skx("inspector.transform_skew_x"),
+      m_tf_sky("inspector.transform_skew_y"),
+      m_tf_apply("inspector.transform_apply"),
+      m_tf_reset("inspector.transform_reset"),
+      m_tf_ox("inspector.transform_origin_x"),
+      m_tf_oy("inspector.transform_origin_y"),
+      m_duplicate("inspector.duplicate"),
+      m_clone("inspector.clone"),
+      m_arr_front("inspector.arrange_front"),
+      m_arr_forward("inspector.arrange_forward"),
+      m_arr_backward("inspector.arrange_backward"),
+      m_arr_back("inspector.arrange_back"),
+      m_bool_hint("inspector.boolean_hint"),
       m_make_first("inspector.make_first"),
       m_code_fmt("inspector.code_format"),
       m_code_scroll("inspector.code_scroll"),
@@ -343,7 +373,8 @@ void Inspector::build_glyph_page() {
     m_py.signal_value_changed().connect([this] { on_pick_xy(); });
     // Node type: a linked row, applied to every picked node.
     {
-        static const char* names[] = {"Corner", "Smooth", "Sym.", "Cusp"};
+        static const char* icons[] = {"granjon-node-corner-symbolic", "granjon-node-smooth-symbolic",
+                                      "granjon-node-symmetric-symbolic", "granjon-node-cusp-symbolic"};
         static const char* tips[]  = {"Corner: handles move freely",
                                       "Smooth: one handle drags the other into line, lengths kept",
                                       "Symmetric: the handles mirror",
@@ -352,7 +383,8 @@ void Inspector::build_glyph_page() {
         m_types.add_css_class("node-types");
         m_types.set_homogeneous(true);
         for (int i = 0; i < 4; ++i) {
-            auto b = Gtk::make_managed<Gtk::ToggleButton>(names[i]);
+            auto b = Gtk::make_managed<Gtk::ToggleButton>();
+            b->set_icon_name(icons[i]);   // r2: the canvas's own node shapes
             b->set_tooltip_text(tips[i]);
             b->signal_clicked().connect([this, i] { on_node_type(i); });
             m_type_buttons[i] = b;
@@ -400,25 +432,31 @@ void Inspector::build_glyph_page() {
     pick.wide(m_relative);
     // Align / distribute: two picked nodes or anchors, or more.
     {
-        static const char* names[] = {"Left", "Centre", "Right", "\u2194", "Top", "Middle", "Bottom", "\u2195"};
+        static const char* icons[] = {"granjon-align-left-symbolic", "granjon-align-hcenter-symbolic",
+                                      "granjon-align-right-symbolic", "granjon-distribute-h-symbolic",
+                                      "granjon-align-top-symbolic", "granjon-align-vmiddle-symbolic",
+                                      "granjon-align-bottom-symbolic", "granjon-distribute-v-symbolic"};
+        static const char* what[] = {"Align left", "Align centres across", "Align right", "Distribute across",
+                                     "Align top", "Align middles up", "Align bottom", "Distribute up"};
         static const command::Align ops[] = {command::Align::Left, command::Align::HCenter, command::Align::Right,
                                              command::Align::DistributeH, command::Align::Top, command::Align::VMiddle,
                                              command::Align::Bottom, command::Align::DistributeV};
         auto rows = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::VERTICAL, 4);
-        for (int r = 0; r < 2; ++r) {
+        for (int r = 0; r < 1; ++r) {   // r2: one row of icons (was two rows of words)
             auto row = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::HORIZONTAL, 0);
             row->add_css_class("linked");
             row->add_css_class("node-types");
             row->set_homogeneous(true);
-            for (int k = r * 4; k < r * 4 + 4; ++k) {
-                auto b = Gtk::make_managed<Gtk::Button>(names[k]);
-                b->set_tooltip_text(k == 3 ? "Space them evenly across, between the outermost two"
-                                   : k == 7 ? "Space them evenly up, between the outermost two"
-                                            : "Align to the pick's edge / centre -- one undo step");
+            for (int k = 0; k < 8; ++k) {
+                auto b = Gtk::make_managed<Gtk::Button>();
+                b->set_icon_name(icons[k]);
+                b->set_tooltip_text(std::string(what[k]) +
+                                    (k == 3 || k == 7 ? " -- spaced evenly between the outermost two (whole paths: equal gaps)"
+                                                      : " -- to the pick's edge / centre, one undo step. Whole paths (Select, V) "
+                                                        "move as shapes; a single path aligns to the glyph's box (width, "
+                                                        "baseline to x-height or cap height)."));
                 const auto op = ops[k];
-                b->signal_clicked().connect([this, op] {
-                    command::align_points(m_ctx.doc.journal, m_ctx.doc.font, m_ctx.selected, m_ctx.pick, op);
-                });
+                b->signal_clicked().connect([this, op] { align_picked(m_ctx, op); });   // s09: whole paths or nodes
                 row->append(*b);
             }
             rows->append(*row);
@@ -455,86 +493,255 @@ void Inspector::build_glyph_page() {
     m_anchor_name_label = pick.field("Name", m_anchor_name);
 
     // ── OUTLINE: contours and their direction (M5d) ─────────────────────────
+    // ── TRANSFORM (M15a; r1 steps + origin) ─────────────────────────────────
+    // Scott: "Incremental rotate/skew/scale should be allowed with precision".
+    // Each row's buttons apply that row's amount at once, either way (a run
+    // of presses is one undo step, rounded once); Apply does all rows together.
+    Card tf(*page, "TRANSFORM");
+    m_tf_info.set_xalign(0.0f);
+    m_tf_info.set_wrap(true);
+    m_tf_info.add_css_class("hint");
+    tf.wide(m_tf_info);
+    for (auto* sp : {&m_tf_sx, &m_tf_sy}) {
+        spin_setup(*sp, 0.1, 10000);
+        sp->set_digits(1);
+        sp->set_increments(0.1, 1);
+        sp->set_value(101);
+    }
+    m_tf_rot.set_value(0);
+    for (auto* sp : {&m_tf_rot, &m_tf_skx, &m_tf_sky}) {
+        spin_setup(*sp, -360, 360);
+        sp->set_digits(2);
+        sp->set_increments(0.1, 1);
+    }
+    m_tf_rot.set_value(1);
+    m_tf_skx.set_range(-80, 80);
+    m_tf_sky.set_range(-80, 80);
+    m_tf_skx.set_value(1);
+    m_tf_sky.set_value(0);
+    for (auto* sp : {&m_tf_ox, &m_tf_oy}) {
+        spin_setup(*sp, -100000, 100000);
+        sp->set_digits(1);
+    }
+    for (auto* sp : {&m_tf_sx, &m_tf_sy, &m_tf_rot, &m_tf_skx, &m_tf_sky, &m_tf_ox, &m_tf_oy})
+        sp->set_width_chars(4);   // r2: narrow -- the scale row set the panel's width
+    m_tf_uniform.set_icon_name("granjon-tf-link-symbolic");
+    m_tf_uniform.set_active(true);
+    m_tf_uniform.set_tooltip_text("Uniform: height follows width (on) or the two scale apart (off)");
+    m_tf_info.set_tooltip_text("What the transform applies to and its size. Select (V) shows handles on the canvas: a "
+                               "corner scales, an edge's middle skews (Ctrl: scales one way), just outside a corner "
+                               "rotates; drag the round pivot to set the origin.");
+    m_tf_sx.set_tooltip_text("Scale across, per cent (101 = grow 1 %)");
+    m_tf_sy.set_tooltip_text("Scale up, per cent");
+    m_tf_rot.set_tooltip_text("Rotate, degrees (hundredths allowed)");
+    m_tf_skx.set_tooltip_text("Skew across, degrees -- slants as it rises (an italic's slant)");
+    m_tf_sky.set_tooltip_text("Skew up, degrees -- tilts as it goes right");
+    m_tf_ox.set_tooltip_text("Origin x, font units -- type to set the point everything turns / scales about");
+    m_tf_oy.set_tooltip_text("Origin y, font units");
+    m_tf_sx.signal_value_changed().connect([this] {
+        if (m_tf_uniform.get_active() && m_tf_sy.get_value() != m_tf_sx.get_value()) m_tf_sy.set_value(m_tf_sx.get_value());
+    });
+    m_tf_sy.signal_value_changed().connect([this] {
+        if (m_tf_uniform.get_active() && m_tf_sx.get_value() != m_tf_sy.get_value()) m_tf_sx.set_value(m_tf_sy.get_value());
+    });
+    {
+        // A field row with two step buttons after it.
+        const auto stepper = [](Gtk::Box& row, const char* icon_a, const char* tip_a, std::function<void()> fa,
+                                const char* icon_b, const char* tip_b, std::function<void()> fb) {
+            auto pair = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::HORIZONTAL, 0);
+            pair->add_css_class("linked");
+            for (int k = 0; k < 2; ++k) {
+                auto b = Gtk::make_managed<Gtk::Button>();
+                b->set_icon_name(k == 0 ? icon_a : icon_b);
+                b->set_tooltip_text(k == 0 ? tip_a : tip_b);
+                b->signal_clicked().connect(k == 0 ? fa : fb);
+                pair->append(*b);
+            }
+            row.append(*pair);
+        };
+        auto row = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::HORIZONTAL, 4);
+        row->append(m_tf_sx);
+        row->append(m_tf_uniform);
+        row->append(m_tf_sy);
+        stepper(*row, "list-remove-symbolic", "Shrink by the step (the exact inverse of grow) -- one press, one step",
+                [this] { transform_step(m_ctx, 100.0 / m_tf_sx.get_value(), 100.0 / m_tf_sy.get_value(), 0, 0, 0, "Scale"); },
+                "list-add-symbolic", "Grow by the step (101 % = 1 %)",
+                [this] { transform_step(m_ctx, m_tf_sx.get_value() / 100.0, m_tf_sy.get_value() / 100.0, 0, 0, 0, "Scale"); });
+        tf.icon_field("granjon-tf-scale-symbolic", "Scale, per cent -- across, (link), up; then shrink / grow by it", *row);
+        auto row1 = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::HORIZONTAL, 6);
+        row1->append(m_tf_rot);
+        stepper(*row1, "object-rotate-left-symbolic", "Turn left (counter-clockwise) by the step",
+                [this] { transform_step(m_ctx, 1, 1, m_tf_rot.get_value(), 0, 0, "Rotate"); },
+                "object-rotate-right-symbolic", "Turn right (clockwise) by the step",
+                [this] { transform_step(m_ctx, 1, 1, -m_tf_rot.get_value(), 0, 0, "Rotate"); });
+        tf.icon_field("granjon-tf-rotate-symbolic", "Rotate, degrees; then turn left / right by it", *row1);
+        auto row2 = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::HORIZONTAL, 6);
+        row2->append(m_tf_skx);
+        row2->append(m_tf_sky);
+        stepper(*row2, "go-previous-symbolic", "Skew back by the step",
+                [this] { transform_step(m_ctx, 1, 1, 0, -m_tf_skx.get_value(), -m_tf_sky.get_value(), "Skew"); },
+                "go-next-symbolic", "Skew on by the step",
+                [this] { transform_step(m_ctx, 1, 1, 0, m_tf_skx.get_value(), m_tf_sky.get_value(), "Skew"); });
+        tf.icon_field("granjon-tf-skew-symbolic", "Skew, degrees -- across, up; then back / on by it", *row2);
+        // The origin: a 3 x 3 grid -- the box's corners, edges and centre --
+        // plus x / y. Shared with the canvas pivot (drag it there).
+        auto grid = Gtk::make_managed<Gtk::Grid>();
+        grid->set_row_spacing(2);
+        grid->set_column_spacing(2);
+        grid->set_valign(Gtk::Align::CENTER);
+        for (int k = 0; k < 9; ++k) {
+            auto b = Gtk::make_managed<Gtk::Button>();
+            b->set_size_request(16, 16);
+            b->add_css_class("origin-cell");
+            b->set_tooltip_text(k == 4 ? "About the centre of the pick" : "About this corner / edge of the pick's box");
+            b->signal_clicked().connect([this, k] { set_origin_point(m_ctx, k); });
+            grid->attach(*b, k % 3, k / 3);
+            m_tf_cells.push_back(b);
+        }
+        auto ocol = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::VERTICAL, 4);
+        ocol->append(m_tf_ox);
+        ocol->append(m_tf_oy);
+        auto orow = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::HORIZONTAL, 8);
+        orow->append(*grid);
+        orow->append(*ocol);
+        tf.icon_field("granjon-tf-origin-symbolic", "Origin -- the point everything works about: a point of the "
+                      "pick's box, or x / y (or drag the pivot on the canvas)", *orow);
+        const auto typed = [this] {
+            if (m_tf_quiet) return;
+            set_custom_origin(m_ctx, {m_tf_ox.get_value(), m_tf_oy.get_value()});
+        };
+        m_tf_ox.signal_value_changed().connect(typed);
+        m_tf_oy.signal_value_changed().connect(typed);
+        m_ctx.tf_origin_changed.connect([this] { refresh_transform(); });
+        m_tf_apply.set_icon_name("granjon-tf-apply-symbolic");
+        m_tf_apply.set_tooltip_text("Apply all: scale, then skew, then rotate by the values above, about the origin -- one undo "
+                                    "step. Nothing picked: the whole glyph.");
+        m_tf_apply.signal_clicked().connect([this] {
+            const auto b = pick_box(m_ctx);
+            if (!b) return;
+            const geom::Affine m = geom::make_transform(m_tf_sx.get_value() / 100.0, m_tf_sy.get_value() / 100.0,
+                                                        m_tf_rot.get_value(), m_tf_skx.get_value(), m_tf_sky.get_value(),
+                                                        transform_origin(m_ctx, *b));
+            transform_picked(m_ctx, m, "Transform");
+        });
+        m_tf_reset.set_icon_name("granjon-tf-reset-symbolic");
+        m_tf_reset.set_tooltip_text("Reset: steps back to 101 %, 1 degree; the origin back to the default (handles: the "
+                                    "opposite side; buttons: the centre)");
+        m_tf_reset.signal_clicked().connect([this] {
+            m_tf_sx.set_value(101); m_tf_sy.set_value(101);
+            m_tf_rot.set_value(1); m_tf_skx.set_value(1); m_tf_sky.set_value(0);
+            clear_origin(m_ctx);
+        });
+        // r2: apply / reset | flips and quarter turns -- one row of icons.
+        auto row3 = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::HORIZONTAL, 8);
+        auto ar = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::HORIZONTAL, 0);
+        ar->add_css_class("linked");
+        ar->append(m_tf_apply);
+        ar->append(m_tf_reset);
+        row3->append(*ar);
+        auto row4 = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::HORIZONTAL, 0);
+        row4->add_css_class("linked");
+        row4->set_homogeneous(true);
+        row4->set_hexpand(true);
+        row3->append(*row4);
+        const auto quick = [row4](const char* icon, const char* tip, std::function<void()> f) {
+            auto b = Gtk::make_managed<Gtk::Button>();
+            b->set_icon_name(icon);
+            b->set_tooltip_text(tip);
+            b->signal_clicked().connect(f);
+            row4->append(*b);
+        };
+        quick("object-flip-horizontal-symbolic", "Flip horizontal (about the centre) -- one undo step",
+              [this] { flip_picked(m_ctx, true); });
+        quick("object-flip-vertical-symbolic", "Flip vertical (about the centre) -- one undo step",
+              [this] { flip_picked(m_ctx, false); });
+        quick("object-rotate-left-symbolic", "Rotate 90 degrees left (about the centre) -- one undo step",
+              [this] { rotate_picked(m_ctx, 90); });
+        quick("object-rotate-right-symbolic", "Rotate 90 degrees right (about the centre) -- one undo step",
+              [this] { rotate_picked(m_ctx, -90); });
+        tf.wide(*row3);
+    }
+
     Card outline(*page, "OUTLINE");
     m_outline_info.set_xalign(0.0f);
     m_outline_info.set_wrap(true);
     m_outline_info.add_css_class("hint");
     outline.wide(m_outline_info);
-    m_correct.set_label("Correct directions");
-    m_correct.set_tooltip_text("Outer contours counter-clockwise, counters clockwise (CFF / UFO) -- one undo step");
-    m_correct.signal_clicked().connect([this] {
-        std::size_t n = 0;
-        if (command::correct_directions(m_ctx.doc.journal, m_ctx.doc.font, {m_ctx.selected}, &n))
-            m_ctx.say(m_ctx.doc.journal.undo_label() + ".", false);
-    });
+    m_correct.set_icon_name("granjon-path-directions-symbolic");
+    m_correct.set_tooltip_text("Correct directions: outer contours counter-clockwise, counters clockwise (CFF / UFO) -- "
+                               "one undo step");
+    m_correct.signal_clicked().connect([this] { correct_directions_here(m_ctx); });
     m_reverse.set_label("Reverse picked");
-    m_reverse.set_tooltip_text("Reverse every contour with a picked node or handle (the start node stays)");
-    m_reverse.signal_clicked().connect([this] {
-        std::set<int> cs;
-        for (const auto& p : m_ctx.pick)
-            if (p.contour >= 0) cs.insert(p.contour);
-        command::reverse_contours(m_ctx.doc.journal, m_ctx.doc.font, m_ctx.selected, {cs.begin(), cs.end()});
-    });
+    m_reverse.set_icon_name("granjon-path-reverse-symbolic");
+    m_reverse.set_tooltip_text("Reverse picked: every contour with a picked node or handle runs the other way (the "
+                               "start node stays)");
+    m_reverse.signal_clicked().connect([this] { reverse_picked(m_ctx); });
     m_overlaps.set_label("Remove overlaps");
-    m_overlaps.set_tooltip_text("Merge overlapping contours into one outline, the curves kept exact "
+    m_overlaps.set_icon_name("granjon-path-overlaps-symbolic");
+    m_overlaps.set_tooltip_text("Remove overlaps: merge overlapping contours into one outline, the curves kept exact "
                                 "(components untouched) -- one undo step. Export does this on its own.");
-    m_overlaps.signal_clicked().connect([this] {
-        std::size_t n = 0, fb = 0, ww = 0;
-        if (command::remove_overlaps(m_ctx.doc.journal, m_ctx.doc.font, {m_ctx.selected}, &n, &fb, &ww))
-            m_ctx.say(m_ctx.doc.journal.undo_label() + ".", false);
-        else if (ww)
-            m_ctx.say("A contour runs the wrong way -- correct directions first (the union would fill that counter).", true);
-        else if (fb)
-            m_ctx.say("The overlaps could not be removed cleanly; the outline is as drawn.", true);
-        else
-            m_ctx.say("No overlaps to remove.", false);
-    });
+    m_overlaps.signal_clicked().connect([this] { remove_overlaps_here(m_ctx); });
     // M14b: the booleans on the picked contours (a node or segment of each).
-    auto boolean = [this](geom::BoolOp op) {
-        std::set<int> cs;
-        for (const auto& p : m_ctx.pick)
-            if (p.contour >= 0) cs.insert(p.contour);
-        std::vector<int> at;
-        std::string why;
-        if (command::boolean_contours(m_ctx.doc.journal, m_ctx.doc.font, m_ctx.selected, {cs.begin(), cs.end()}, op, &at, &why)) {
-            // The result is picked, so the next drag / op acts on it.
-            m_ctx.pick.clear();
-            if (const model::Glyph* g = m_ctx.doc.font.glyph(m_ctx.selected))
-                for (int ci : at)
-                    for (int i = 0; i < static_cast<int>(g->contours[static_cast<std::size_t>(ci)].nodes.size()); ++i)
-                        m_ctx.pick.insert({ci, i, geom::PointRef::Part::Node});
-            m_ctx.pick_changed.emit();
-            m_ctx.say(m_ctx.doc.journal.undo_label() + ": " + std::to_string(at.size()) +
-                          (at.size() == 1 ? " contour." : " contours."), false);
-        } else {
-            m_ctx.say(why, true);
-        }
-    };
-    m_union.set_label("Union");
-    m_union.set_tooltip_text("The picked contours become one outline (pick a node or segment of each) -- one undo step");
+    auto boolean = [this](geom::BoolOp op) { boolean_picked(m_ctx, op); };
+    m_union.set_icon_name("granjon-bool-union-symbolic");
+    m_union.set_tooltip_text("Union: the picked paths become one outline (two or more) -- one undo step");
     m_union.signal_clicked().connect([boolean] { boolean(geom::BoolOp::Union); });
-    m_subtract.set_label("Subtract");
-    m_subtract.set_tooltip_text("The picked contours cut the rest of the glyph, then go: draw a shape (it comes picked), "
-                                "Subtract -- one undo step");
+    m_subtract.set_icon_name("granjon-bool-subtract-symbolic");
+    m_subtract.set_tooltip_text("Subtract: the TOP picked path cuts the other picked paths, then goes. A shape you just drew is "
+                                "on top: draw it, Shift+click the paths to cut (Select, V), Subtract -- one undo step");
     m_subtract.signal_clicked().connect([boolean] { boolean(geom::BoolOp::Subtract); });
-    m_intersect.set_label("Intersect");
-    m_intersect.set_tooltip_text("The rest of the glyph keeps only what the picked contours cover; the picked ones go -- "
+    m_intersect.set_icon_name("granjon-bool-intersect-symbolic");
+    m_intersect.set_tooltip_text("Intersect: the other picked paths keep only what the TOP picked path covers; the top one goes -- "
                                  "one undo step");
     m_intersect.signal_clicked().connect([boolean] { boolean(geom::BoolOp::Intersect); });
     {
-        auto row = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::HORIZONTAL, 6);
-        row->append(m_correct);
-        row->append(m_reverse);
+        // r2: icons, two linked groups on one row -- direction / overlaps | the booleans.
+        const auto group = [](std::initializer_list<Gtk::Widget*> ws) {
+            auto g = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::HORIZONTAL, 0);
+            g->add_css_class("linked");
+            g->set_homogeneous(true);
+            g->set_hexpand(true);
+            for (auto* w : ws) g->append(*w);
+            return g;
+        };
+        auto row = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::HORIZONTAL, 8);
+        row->append(*group({&m_correct, &m_reverse, &m_overlaps}));
+        row->append(*group({&m_union, &m_subtract, &m_intersect}));
         outline.wide(*row);
-        auto row2 = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::HORIZONTAL, 6);
-        row2->append(m_overlaps);
-        outline.wide(*row2);
-        auto row3 = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::HORIZONTAL, 6);
-        row3->set_homogeneous(true);
-        row3->append(m_union);
-        row3->append(m_subtract);
-        row3->append(m_intersect);
-        outline.wide(*row3);
+        m_bool_hint.set_xalign(0.0f);
+        m_bool_hint.set_wrap(true);
+        m_bool_hint.add_css_class("hint");
+        outline.wide(m_bool_hint);
+        // s09: the paths' order (Scott: "a way of arranging paths up/down and
+        // the top path determines the boolean action").
+        const auto arr = [this](widgets::Button& b, const char* icon, const char* tip, command::Arrange how) {
+            b.set_icon_name(icon);
+            b.set_tooltip_text(tip);
+            b.signal_clicked().connect([this, how] { arrange_picked(m_ctx, how); });
+        };
+        arr(m_arr_front, "go-top-symbolic", "Bring to front (Ctrl+Shift+]): the picked paths go on top -- one undo step",
+            command::Arrange::Front);
+        arr(m_arr_forward, "go-up-symbolic", "Bring forward (Ctrl+]): each picked path one step up -- one undo step",
+            command::Arrange::Forward);
+        arr(m_arr_backward, "go-down-symbolic", "Send backward (Ctrl+[): each picked path one step down -- one undo step",
+            command::Arrange::Backward);
+        arr(m_arr_back, "go-bottom-symbolic", "Send to back (Ctrl+Shift+[): the picked paths go to the bottom -- one undo step",
+            command::Arrange::Back);
+        m_duplicate.set_icon_name("granjon-duplicate-symbolic");
+        m_duplicate.set_tooltip_text("Duplicate (Ctrl+D): copies of the picked paths in place, on top -- the copies come "
+                                     "picked, so a drag or the arrows place them. One undo step.");
+        m_duplicate.signal_clicked().connect([this] { duplicate_picked(m_ctx); });
+        m_clone.set_icon_name("granjon-clone-symbolic");
+        m_clone.set_tooltip_text("Clone (Alt+D): copies of the picked paths offset right and down (2 % of the em), on top, "
+                                 "picked. One undo step.");
+        m_clone.signal_clicked().connect([this] { clone_picked(m_ctx); });
+        // r2: duplicate / clone | arrange, one row.
+        auto row5 = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::HORIZONTAL, 8);
+        auto dc = group({&m_duplicate, &m_clone});
+        dc->set_hexpand(false);
+        row5->append(*dc);
+        row5->append(*group({&m_arr_front, &m_arr_forward, &m_arr_backward, &m_arr_back}));
+        outline.wide(*row5);
     }
 
     // ── IMAGE: the background image (M13) ───────────────────────────────────
@@ -1060,16 +1267,50 @@ void Inspector::place_selected_part(bool linked) {
 }
 
 // M14b: the boolean buttons follow the pick (contours with a picked point).
+void Inspector::refresh_transform() {
+    const auto b = pick_box(m_ctx);
+    if (!b) { m_tf_info.set_text("Nothing drawn to transform."); return; }
+    {   // the origin: the grid's dot and the x / y fields
+        const bool chosen = origin_chosen(m_ctx);
+        const int k = !chosen ? 4 : m_ctx.tf_origin;   // -1 (custom): no dot
+        for (int i = 0; i < static_cast<int>(m_tf_cells.size()); ++i)
+            m_tf_cells[static_cast<std::size_t>(i)]->set_label(i == k ? (chosen ? "\u25CF" : "\u25CB") : "");
+        const geom::Vec2 o = transform_origin(m_ctx, *b);
+        m_tf_quiet = true;
+        m_tf_ox.set_value(std::round(o.x * 10) / 10);
+        m_tf_oy.set_value(std::round(o.y * 10) / 10);
+        m_tf_quiet = false;
+    }
+    m_tf_info.set_text(pick_subject(m_ctx) + "  \u00b7  " + std::to_string(static_cast<int>(std::round(b->x1 - b->x0))) +
+                       " \u00d7 " + std::to_string(static_cast<int>(std::round(b->y1 - b->y0))));
+}
+
 void Inspector::refresh_booleans() {
+    refresh_transform();
     const model::Glyph* g = m_ctx.doc.font.glyph(m_ctx.selected);
     std::set<int> picked;
     if (g)
         for (const auto& p : m_ctx.pick)
             if (p.contour >= 0 && p.contour < static_cast<int>(g->contours.size())) picked.insert(p.contour);
     m_union.set_sensitive(picked.size() >= 2);
-    const bool cut = g && !picked.empty() && picked.size() < g->contours.size();
-    m_subtract.set_sensitive(cut);
-    m_intersect.set_sensitive(cut);
+    m_subtract.set_sensitive(picked.size() >= 2);
+    m_intersect.set_sensitive(picked.size() >= 2);
+    const int n = g ? static_cast<int>(g->contours.size()) : 0;
+    const bool can_up = !picked.empty() && (picked.size() < static_cast<std::size_t>(n)) &&
+                        !(*picked.begin() == n - static_cast<int>(picked.size()));   // not already the top block
+    const bool can_down = !picked.empty() && picked.size() < static_cast<std::size_t>(n) &&
+                          *picked.rbegin() != static_cast<int>(picked.size()) - 1;    // not already the bottom block
+    m_duplicate.set_sensitive(!picked.empty());
+    m_clone.set_sensitive(!picked.empty());
+    m_arr_front.set_sensitive(can_up);
+    m_arr_forward.set_sensitive(can_up);
+    m_arr_backward.set_sensitive(can_down);
+    m_arr_back.set_sensitive(can_down);
+    if (picked.size() >= 2)
+        m_bool_hint.set_text("Top: path " + std::to_string(*picked.rbegin() + 1) + " of " + std::to_string(n) +
+                             " (accent outline) -- it cuts / keeps for Subtract and Intersect.");
+    else
+        m_bool_hint.set_text("Pick two or more paths; the top one does the cutting.");
     if (g) refresh_parts_card(*g);
 }
 

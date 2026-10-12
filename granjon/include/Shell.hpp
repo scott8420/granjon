@@ -110,6 +110,7 @@ private:
     void on_other_case();                        // category: handler: A <-> a (Alt+C)
     void on_undo();                              // category: handler: Ctrl+Z / menu / button
     void on_redo();                              // category: handler: Ctrl+Shift+Z, Ctrl+Y / menu / button
+    void restore_pick(const std::string& detail); // category: helper: put back the pick an undo / redo step recorded (s09)
     void on_view(const Glib::ustring& id);       // category: handler: the view switcher (Ctrl+1..5)
     void on_toggle_navigator();                  // category: handler: show / hide the left panel (F9)
     void on_toggle_inspector();                  // category: handler: show / hide the right panel (Ctrl+I)
@@ -175,6 +176,7 @@ private:
 
     bool                            m_repaint_queued = false;
     std::set<std::string>           m_dirty;          // records written since the last repaint
+    bool                            m_pick_amend = false;  // s09: a step was just kept -- a pick now is its "after"
     bool                            m_closing = false;   // confirmed: let the next close through
     Glib::RefPtr<Gio::Menu>         m_edit_menu;      // Undo / Redo items, re-labelled live
     Glib::RefPtr<Gio::SimpleAction> m_act_undo, m_act_redo, m_act_view;

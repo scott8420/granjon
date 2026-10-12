@@ -7,6 +7,7 @@
 // (a glyph using one exports decomposed), make / set / place.
 #include "command/Document.hpp"
 #include "command/Verbs.hpp"
+#include "model/Bounds.hpp"
 #include "geom/CubicSegment.hpp"
 #include "geom/Edit.hpp"
 #include "geom/Overlap.hpp"
@@ -205,7 +206,7 @@ void selftest_draw(const std::function<void(const std::string&, bool, const std:
         command::add_shape(j, f, "n", geom::shape_rect({{40, 200}, {520, 260}}), "Rectangle", &bar);
         const auto before = f.snapshot();
         const std::size_t steps = j.size();
-        const bool ok = command::boolean_contours(j, f, "n", {bar}, geom::BoolOp::Subtract, &at, &why);
+        const bool ok = command::boolean_contours(j, f, "n", {0, 1, bar}, geom::BoolOp::Subtract, &at, &why);   // s09: the top (bar) cuts the picked stems
         const auto& n = *f.glyph("n");
         check("bool verb: subtract -- the cutter goes, each stem cut in two (4 contours), one step named Subtract",
               ok && n.contours.size() == 4 && j.size() == steps + 1 && j.undo_label() == "Subtract" && at.size() == 4,
@@ -219,7 +220,7 @@ void selftest_draw(const std::function<void(const std::string&, bool, const std:
         j.undo();
         check("bool verb: undo brings the stems and the cutter back", f.snapshot() == before);
         // Intersect: the stems keep only the bar's band.
-        command::boolean_contours(j, f, "n", {bar}, geom::BoolOp::Intersect, &at, &why);
+        command::boolean_contours(j, f, "n", {0, 1, bar}, geom::BoolOp::Intersect, &at, &why);
         double h = 0;
         for (const auto& c : f.glyph("n")->contours)
             for (const auto& nd : c.nodes) h = std::max(h, nd.y);
@@ -245,19 +246,43 @@ void selftest_draw(const std::function<void(const std::string&, bool, const std:
               !command::boolean_contours(j, f, "n", {bar}, geom::BoolOp::Union, nullptr, &why) && j.size() == s2 && !why.empty(), why);
         check("bool verb: subtract with nothing picked is refused",
               !command::boolean_contours(j, f, "n", {}, geom::BoolOp::Subtract, nullptr, &why) && j.size() == s2, why);
-        check("bool verb: subtract with everything picked has nothing to cut",
-              !command::boolean_contours(j, f, "n", {0, 1, bar}, geom::BoolOp::Subtract, nullptr, &why) && j.size() == s2, why);
+        check("bool verb (s09): subtract with one path picked is refused -- the top needs something to cut",
+              !command::boolean_contours(j, f, "n", {bar}, geom::BoolOp::Subtract, nullptr, &why) && j.size() == s2, why);
+        {   // s09: unpicked paths take no part -- only the picked left stem is cut.
+            const auto right = f.glyph("n")->contours[1];
+            check("bool verb (s09): the top cuts only the picked paths; the unpicked stem untouched",
+                  command::boolean_contours(j, f, "n", {0, bar}, geom::BoolOp::Subtract, &at, &why) &&
+                      f.glyph("n")->contours.size() == 3 && at.size() == 2 &&
+                      std::find(f.glyph("n")->contours.begin(), f.glyph("n")->contours.end(), right) != f.glyph("n")->contours.end(),
+                  why);
+            j.undo();
+            // The order decides: with the bar sent to the back, the left stem is on top and cuts the bar.
+            const auto as_drawn = f.glyph("n")->contours;
+            std::vector<int> moved;
+            check("arrange: send the bar to the back -> path 0, one step named so",
+                  command::arrange_contours(j, f, "n", {bar}, command::Arrange::Back, &moved, &why) && moved == std::vector<int>{0} &&
+                      j.undo_label() == "Send to back", why);
+            const double bar_area = std::abs(geom::signed_area(f.glyph("n")->contours[0]));
+            command::boolean_contours(j, f, "n", {0, 1}, geom::BoolOp::Subtract, &at, &why);   // stem (1, top) cuts the bar (0)
+            double after = 0;
+            for (int ci : at) after += std::abs(geom::signed_area(f.glyph("n")->contours[static_cast<std::size_t>(ci)]));
+            check("bool verb (s09): the top path is the operand -- the stem now cuts the bar",
+                  after > 0 && after < bar_area - 1 && f.glyph("n")->contours.size() == 3, why);
+            j.undo();
+            j.undo();
+            check("arrange: undone after the cut, n as it was", f.glyph("n")->contours == as_drawn);
+        }
         int sky = -1;
         command::add_shape(j, f, "n", geom::shape_rect({{0, 900}, {50, 950}}), "Rectangle", &sky);
         const std::size_t s3 = j.size();
         check("bool verb: a cutter that meets nothing is refused",
-              !command::boolean_contours(j, f, "n", {sky}, geom::BoolOp::Subtract, nullptr, &why) && j.size() == s3, why);
+              !command::boolean_contours(j, f, "n", {0, 1, sky}, geom::BoolOp::Subtract, nullptr, &why) && j.size() == s3, why);
         // O's counter runs the wrong way: a cut through O is refused.
         int slab = -1;
         command::add_shape(j, f, "O", geom::shape_rect({{0, 300}, {760, 400}}), "Rectangle", &slab);
         const std::size_t s4 = j.size();
         check("bool verb: a wrong-way counter among the cut contours is refused",
-              !command::boolean_contours(j, f, "O", {slab}, geom::BoolOp::Subtract, nullptr, &why) && j.size() == s4 &&
+              !command::boolean_contours(j, f, "O", {0, 1, slab}, geom::BoolOp::Subtract, nullptr, &why) && j.size() == s4 &&
                   why.find("wrong way") != std::string::npos, why);
         // Intersect that leaves nothing: refused.
         j.undo();   // the slab out
@@ -266,7 +291,215 @@ void selftest_draw(const std::function<void(const std::string&, bool, const std:
         command::add_shape(j, f, "O", geom::shape_rect({{300, 300}, {400, 400}}), "Rectangle", &inside);   // in the counter
         const std::size_t s5 = j.size();
         check("bool verb: an intersect that would leave nothing is refused",
-              !command::boolean_contours(j, f, "O", {inside}, geom::BoolOp::Intersect, nullptr, &why) && j.size() == s5, why);
+              !command::boolean_contours(j, f, "O", {0, 1, inside}, geom::BoolOp::Intersect, nullptr, &why) && j.size() == s5, why);
+        {   // arrange: forward / backward / front, the refusals
+            command::Document d2;
+            command::make_fixture(d2.font);
+            auto& j2 = d2.journal;
+            auto& f2 = d2.font;
+            for (int k = 0; k < 3; ++k)
+                command::add_shape(j2, f2, "n", geom::shape_rect({{10.0 * k, 600}, {10.0 * k + 5, 650}}), "Rectangle");
+            const auto c0 = f2.glyph("n")->contours;   // 5 paths: 2 stems + 3 boxes
+            std::vector<int> m;
+            command::arrange_contours(j2, f2, "n", {0, 2}, command::Arrange::Forward, &m);
+            const auto& c1 = f2.glyph("n")->contours;
+            check("arrange: forward -- each picked path over the unpicked one above (0,2 -> 1,3), own order kept",
+                  m == std::vector<int>{1, 3} && c1[0] == c0[1] && c1[1] == c0[0] && c1[2] == c0[3] && c1[3] == c0[2] && c1[4] == c0[4]);
+            command::arrange_contours(j2, f2, "n", {1, 3}, command::Arrange::Front, &m);
+            const auto& c2 = f2.glyph("n")->contours;
+            check("arrange: front -- the picked go on top, in their order", m == std::vector<int>{3, 4} && c2[3] == c0[0] && c2[4] == c0[2]);
+            const std::size_t s6 = j2.size();
+            std::string w2;
+            check("arrange: already on top is refused, no step",
+                  !command::arrange_contours(j2, f2, "n", {3, 4}, command::Arrange::Forward, nullptr, &w2) && j2.size() == s6 && !w2.empty(), w2);
+            command::arrange_contours(j2, f2, "n", {4}, command::Arrange::Backward, &m);
+            check("arrange: backward -- one step down", m == std::vector<int>{3} && f2.glyph("n")->contours[3] == c0[2]);
+            check("arrange: nothing picked is refused", !command::arrange_contours(j2, f2, "n", {}, command::Arrange::Back, nullptr, &w2));
+            j2.undo(); j2.undo(); j2.undo();
+            check("arrange: three undos -> the order as drawn", f2.glyph("n")->contours == c0);
+            {   // s09: Duplicate
+                std::vector<int> d;
+                check("duplicate: two picked paths -> two copies appended in order, in place, one step",
+                      command::duplicate_contours(j2, f2, "n", {3, 0}, 0, 0, &d) && d == std::vector<int>{5, 6} &&
+                          f2.glyph("n")->contours.size() == 7 && f2.glyph("n")->contours[5] == c0[0] &&
+                          f2.glyph("n")->contours[6] == c0[3] && j2.undo_label() == "Duplicate paths");
+                j2.undo();
+                command::duplicate_contours(j2, f2, "n", {1}, 20, -10, &d);
+                const auto& cp = f2.glyph("n")->contours[static_cast<std::size_t>(d[0])];
+                check("clone (s09): an offset copy -- every node and handle moved, the step named Clone",
+                      cp.nodes.size() == c0[1].nodes.size() && cp.nodes[0].x == c0[1].nodes[0].x + 20 &&
+                          cp.nodes[0].cy2 == c0[1].nodes[0].cy2 - 10 && j2.undo_label() == "Clone path");
+                j2.undo();
+                std::string w3;
+                check("duplicate: nothing picked is refused",
+                      !command::duplicate_contours(j2, f2, "n", {}, 0, 0, nullptr, &w3) && f2.glyph("n")->contours == c0, w3);
+            }
+        }
+    }
+    std::cout << "M15a transform\n";
+    {
+        using P = geom::PointRef::Part;
+        const auto near2 = [](geom::Vec2 a, geom::Vec2 b) { return std::abs(a.x - b.x) < 1e-9 && std::abs(a.y - b.y) < 1e-9; };
+        const auto r90 = geom::make_transform(1, 1, 90, 0, 0, {100, 100});
+        check("transform: rotate 90 about (100,100) -- (200,100) -> (100,200), counter-clockwise",
+              near2(r90.apply({200, 100}), {100, 200}));
+        const auto sc = geom::make_transform(2, 0.5, 0, 0, 0, {10, 0});
+        check("transform: scale 200 % x 50 % about (10,0)", near2(sc.apply({20, 40}), {30, 20}));
+        const auto sk = geom::make_transform(1, 1, 0, 45, 0, {0, 0});
+        check("transform: skew 45 horizontal slants right as y rises", std::abs(sk.apply({0, 100}).x - 100) < 1e-9);
+        const auto id = geom::make_transform(1, 1, 0, 0, 0, {50, 50});
+        check("transform: nothing asked -> identity", std::abs(id.xx - 1) < 1e-12 && std::abs(id.dx) < 1e-12);
+
+        command::Document doc;
+        command::make_fixture(doc.font);
+        auto& j = doc.journal;
+        auto& f = doc.font;
+        int box = -1;
+        command::add_shape(j, f, "n", geom::shape_rect({{100, 600}, {200, 650}}), "Rectangle", &box);
+        const auto before = f.glyph("n")->contours;
+        geom::Points path;
+        for (int i = 0; i < 4; ++i) path.insert({box, i, P::Node});
+        check("transform verb: rotate the box 90 about its centre -- 50 wide, 100 tall, still counter-clockwise, one step",
+              command::transform_points(j, f, "n", path, geom::make_transform(1, 1, 90, 0, 0, {150, 625}), "Rotate"));
+        {
+            model::Glyph one;
+            one.contours = {f.glyph("n")->contours[static_cast<std::size_t>(box)]};
+            const auto b = *model::bounds(f, one);
+            check("transform verb: ... the box", b.x1 - b.x0 == 50 && b.y1 - b.y0 == 100 &&
+                  geom::signed_area(one.contours[0]) > 0 && j.undo_label() == "Rotate");
+        }
+        check("transform verb: the stems untouched (only the pick moves)", f.glyph("n")->contours[0] == before[0]);
+        j.undo();
+        command::transform_points(j, f, "n", path, geom::make_transform(-1, 1, 0, 0, 0, {150, 625}), "Flip horizontal");
+        check("transform verb: a flip reverses the whole path -- it still runs counter-clockwise",
+              geom::signed_area(f.glyph("n")->contours[static_cast<std::size_t>(box)]) > 0);
+        j.undo();
+        const auto adv = f.glyph("n")->advance;
+        command::transform_points(j, f, "n", {}, geom::make_transform(0.5, 0.5, 0, 0, 0, {0, 0}), "Scale");
+        check("transform verb: an empty pick scales the whole glyph (every contour), the width untouched",
+              f.glyph("n")->contours[0] != before[0] && f.glyph("n")->contours[static_cast<std::size_t>(box)] != before[static_cast<std::size_t>(box)] &&
+                  f.glyph("n")->advance == adv);
+        j.undo();
+        check("transform verb: undone -> as drawn", f.glyph("n")->contours == before);
+        const std::size_t s0 = j.size();
+        check("transform verb: identity refused, no step",
+              !command::transform_points(j, f, "n", path, geom::Affine{}, "Transform") && j.size() == s0);
+        // A picked component: its matrix takes the map.
+        model::Glyph g;
+        model::Glyph src;
+        src.components.push_back({});
+        src.components[0].base = "o";
+        geom::transform_points(g, src, {{-1, 0, P::Component}}, geom::make_transform(2, 2, 0, 0, 0, {0, 0}));
+        check("transform: a picked component's matrix composes (scale 2)", g.components[0].xx == 2 && g.components[0].yy == 2);
+        {   // r1: a run of steps is written from the base and rounded once
+            command::Document d3;
+            command::make_fixture(d3.font);
+            auto& j3 = d3.journal;
+            auto& f3 = d3.font;
+            int ring = -1;
+            command::add_shape(j3, f3, "n", geom::shape_ellipse({{100, 300}, {500, 700}}), "Ellipse", &ring);
+            const model::Glyph base = *f3.glyph("n");
+            geom::Points rp;
+            for (int i = 0; i < 4; ++i) rp.insert({ring, i, P::Node});
+            const std::size_t s1 = j3.size();
+            geom::Affine acc;
+            for (int k = 0; k < 90; ++k) {
+                acc = geom::compose(geom::make_transform(1, 1, 1, 0, 0, {300, 500}), acc);
+                command::transform_from(j3, f3, "n", base, rp, acc, "Rotate", "tfstep:n:Rotate");
+            }
+            // 90 one-degree steps = a quarter turn: a circle's nodes land on the
+            // circle's extremes again, exactly (whole units), and it is one step.
+            const auto& c = f3.glyph("n")->contours[static_cast<std::size_t>(ring)];
+            bool on = true;
+            for (const auto& n : c.nodes) {
+                const double r = std::hypot(n.x - 300, n.y - 500);
+                on = on && std::abs(r - 200) < 0.6;
+            }
+            check("transform steps: 90 x 1 degree from the base -- nodes still on the circle (rounded once), one undo step",
+                  on && j3.size() == s1 + 1, std::to_string(j3.size() - s1));
+            j3.undo();
+            check("transform steps: one undo takes the whole run back", *f3.glyph("n") == base);
+        }
+    }
+    std::cout << "s09 align paths\n";
+    {
+        command::Document doc;
+        command::make_fixture(doc.font);
+        auto& j = doc.journal;
+        auto& f = doc.font;
+        // Three boxes in n beside the stems: 2, 3, 4.
+        command::add_shape(j, f, "n", geom::shape_rect({{100, 600}, {150, 700}}), "Rectangle");
+        command::add_shape(j, f, "n", geom::shape_rect({{220, 620}, {240, 640}}), "Rectangle");
+        command::add_shape(j, f, "n", geom::shape_rect({{400, 610}, {480, 690}}), "Rectangle");
+        const auto box = [&](int c) {
+            model::Glyph one;
+            one.contours = {f.glyph("n")->contours[static_cast<std::size_t>(c)]};
+            return *model::bounds(f, one);
+        };
+        const auto before = f.glyph("n")->contours;
+        std::string why;
+        check("align paths: left -- every box's left edge on the leftmost, shapes intact, one step",
+              command::align_contours(j, f, "n", {2, 3, 4}, command::Align::Left, &why) && box(2).x0 == 100 &&
+                  box(3).x0 == 100 && box(4).x0 == 100 && box(4).x1 - box(4).x0 == 80 && j.undo_label() == "Align left",
+              why);
+        j.undo();
+        command::align_contours(j, f, "n", {2, 3, 4}, command::Align::Top, &why);
+        check("align paths: top -- on the highest top (700)", box(2).y1 == 700 && box(3).y1 == 700 && box(4).y1 == 700);
+        j.undo();
+        command::align_contours(j, f, "n", {2, 3, 4}, command::Align::DistributeH, &why);
+        const double g1 = box(3).x0 - box(2).x1, g2 = box(4).x0 - box(3).x1;
+        check("align paths: distribute across -- equal gaps, the outer two stay",
+              std::abs(g1 - g2) <= 1 && box(2).x0 == 100 && box(4).x1 == 480, std::to_string(g1) + " / " + std::to_string(g2));
+        j.undo();
+        const double adv = f.glyph("n")->advance;
+        command::align_contours(j, f, "n", {3}, command::Align::HCenter, &why);
+        check("align paths: one path centres in the glyph's width", std::abs((box(3).x0 + box(3).x1) / 2 - adv / 2) <= 0.5,
+              std::to_string(box(3).x0));
+        command::align_contours(j, f, "n", {3}, command::Align::Top, &why);
+        check("align paths: one path's top on the x-height (lowercase n)", box(3).y1 == f.metrics().x_height);
+        j.undo(); j.undo();
+        check("align paths: undone, as drawn", f.glyph("n")->contours == before);
+        const std::size_t s0 = j.size();
+        check("align paths: distribute with two is refused",
+              !command::align_contours(j, f, "n", {2, 3}, command::Align::DistributeH, &why) && j.size() == s0, why);
+        command::align_contours(j, f, "n", {2, 3, 4}, command::Align::Left, &why);
+        const std::size_t s1 = j.size();
+        check("align paths: already lined up -> refused, no step",
+              !command::align_contours(j, f, "n", {2, 3, 4}, command::Align::Left, &why) && j.size() == s1, why);
+    }
+    std::cout << "s09 undo restores the pick\n";
+    {
+        using P = geom::PointRef::Part;
+        const geom::Points pts{{0, 1, P::Node}, {2, 3, P::Out}, {-1, 0, P::Component}};
+        std::string g;
+        check("pick text: round trip, glyph and points", geom::pick_from_text(geom::pick_to_text("n", pts), &g) == pts && g == "n");
+        check("pick text: junk skipped, empty pick", geom::pick_from_text("n\nx y z;1 2 99;", &g).empty() && g == "n");
+        command::Document doc;
+        command::make_fixture(doc.font);
+        auto& j = doc.journal;
+        auto& f = doc.font;
+        geom::Points pick;   // stands in for the editor's pick
+        j.set_detail_source([&] { return geom::pick_to_text("n", pick); });
+        int bar = -1;
+        command::add_shape(j, f, "n", geom::shape_rect({{40, 200}, {520, 260}}), "Rectangle", &bar);
+        pick = {{bar, 0, P::Node}};                       // the drawn bar comes picked
+        j.redetail(geom::pick_to_text("n", pick));        // (the Shell does this on pick_changed)
+        std::vector<int> at;
+        std::string why;
+        command::boolean_contours(j, f, "n", {0, 1, bar}, geom::BoolOp::Subtract, &at, &why);
+        pick.clear();
+        for (int ci : at) pick.insert({ci, 0, P::Node});   // the result is picked
+        j.redetail(geom::pick_to_text("n", pick));
+        const geom::Points result = pick;
+        const auto u = j.undo();
+        check("undo pick: Ctrl+Z after Subtract hands back the bar's pick",
+              geom::pick_from_text(u.detail, &g) == geom::Points{{bar, 0, P::Node}} && g == "n", u.detail);
+        const auto r = j.redo();
+        check("undo pick: redo hands back the result's pick", geom::pick_from_text(r.detail, &g) == result, r.detail);
+        const auto u2 = j.undo();
+        const auto u3 = j.undo();
+        check("undo pick: undoing the Rectangle hands back the pick before it (none)",
+              geom::pick_from_text(u3.detail, &g).empty() && u2.done && u3.done, u3.detail);
     }
     std::cout << "M14c parts\n";
     namespace fs = std::filesystem;

@@ -43,6 +43,10 @@
 //   * a no-op is not a step (a refused delete, a value set to itself).
 //   * SELECTION travels with the step: undo hands back what was selected
 //     before, redo what was selected after (Curvz: preserves_selection()).
+//   * a DETAIL travels the same way (s09): an opaque string the UI hands in
+//     (the editor's pick of nodes inside the glyph), recorded before / after
+//     each step and handed back in Result::detail -- so Ctrl+Z after Subtract
+//     picks what was picked before it. The journal never reads it.
 //   * open(): true inside run / a gesture / undo / redo. A store that wants the
 //     ONE-DOOR guarantee checks it in put() and counts a write made outside --
 //     the selftest walks every verb and fails on a stray (the gate).
@@ -76,6 +80,8 @@ public:
         std::vector<Entry> entries;     // in the order the ids were given
         std::vector<Id>    sel_before;  // selection when the step began
         std::vector<Id>    sel_after;   // selection when it ended
+        std::string        detail_before;   // the UI's detail (the pick) when it began
+        std::string        detail_after;    // ... and when it ended
         std::string        merge_key;   // "" = never merges
         Clock::time_point  at{};        // last time it grew (for merging)
         std::uint64_t      id = 0;      // unique per state the step leaves (see stamp())
@@ -85,6 +91,7 @@ public:
         bool            done = false;
         std::string     label;
         std::vector<Id> selection;
+        std::string     detail;      // the detail to restore (before on undo, after on redo)
     };
 
     static constexpr std::size_t kMax = 500;   // Curvz's limit
@@ -94,6 +101,8 @@ public:
 
     // The UI tells the journal how to read the selection (optional).
     void set_selection_source(std::function<std::vector<Id>()> f) { m_sel = std::move(f); }
+    // ... and the detail (optional; s09: the editor's pick).
+    void set_detail_source(std::function<std::string()> f) { m_detail = std::move(f); }
     // Called after every change to the journal itself (a step kept, undone,
     // redone, cleared) -- the UI re-labels Undo / Redo and greys them here.
     void set_on_change(std::function<void()> f) { m_changed = std::move(f); }
@@ -114,6 +123,7 @@ public:
         st.merge_key = merge_key;
         st.at        = now;
         st.sel_before = selection();
+        st.detail_before = detail();
         for (const auto& id : ids) st.entries.push_back({id, m_store.get(id), std::nullopt});
 
         ++m_depth;
@@ -124,6 +134,7 @@ public:
             if (!has(st, id)) st.entries.push_back({id, std::nullopt, std::nullopt});
         for (auto& e : st.entries) e.after = m_store.get(e.id);
         st.sel_after = selection();
+        st.detail_after = detail();
         if (unchanged(st)) return false;
 
         // Merge: same key, same records, inside the window, nothing undone in
@@ -133,6 +144,7 @@ public:
             if (top.merge_key == merge_key && now - top.at <= merge_window && same_ids(top, st)) {
                 for (auto& e : top.entries) e.after = m_store.get(e.id);
                 top.sel_after = st.sel_after;
+                top.detail_after = st.detail_after;
                 top.at        = now;
                 top.label     = label;
                 top.id        = ++m_ids;   // the merged step leaves a new state
@@ -153,6 +165,7 @@ public:
         m_open.label      = label;
         m_open.merge_key.clear();
         m_open.sel_before = selection();
+        m_open.detail_before = detail();
         m_open.entries.clear();
         for (const auto& id : ids) m_open.entries.push_back({id, m_store.get(id), std::nullopt});
     }
@@ -164,6 +177,7 @@ public:
         --m_depth;
         for (auto& e : m_open.entries) e.after = m_store.get(e.id);
         m_open.sel_after = selection();
+        m_open.detail_after = detail();
         m_open.at        = now;
         if (unchanged(m_open)) return false;
         keep(std::move(m_open));
@@ -190,7 +204,7 @@ public:
         for (auto it = st.entries.rbegin(); it != st.entries.rend(); ++it)
             m_store.put(it->id, it->before);
         --m_depth;
-        r = {true, st.label, pick(st.sel_before, st, true)};
+        r = {true, st.label, pick(st.sel_before, st, true), st.detail_before};
         notify();
         return r;
     }
@@ -201,7 +215,7 @@ public:
         ++m_depth;
         for (const auto& e : st.entries) m_store.put(e.id, e.after);
         --m_depth;
-        r = {true, st.label, pick(st.sel_after, st, false)};
+        r = {true, st.label, pick(st.sel_after, st, false), st.detail_after};
         notify();
         return r;
     }
@@ -210,6 +224,11 @@ public:
     // neighbour): amend what redo of the last step will hand back.
     void reselect(const std::vector<Id>& sel) {
         if (can_undo() && m_at == m_steps.size()) m_steps.back().sel_after = sel;
+    }
+    // Same for the detail: the UI picked the result AFTER the verb returned
+    // (a Subtract picks what it made) -- redo hands that back.
+    void redetail(const std::string& d) {
+        if (can_undo() && m_at == m_steps.size()) m_steps.back().detail_after = d;
     }
 
     bool        can_undo()   const { return m_at > 0; }
@@ -239,6 +258,7 @@ private:
     bool                              m_gesture = false;
     Step                              m_open;        // the gesture being recorded
     std::function<std::vector<Id>()>  m_sel;
+    std::function<std::string()>      m_detail;
     std::function<void()>             m_changed;
     std::uint64_t                     m_ids = 0;     // never reused, so stamps never collide
 
@@ -248,6 +268,7 @@ private:
         else return op();
     }
     std::vector<Id> selection() const { return m_sel ? m_sel() : std::vector<Id>{}; }
+    std::string     detail() const { return m_detail ? m_detail() : std::string{}; }
     static bool has(const Step& st, const Id& id) {
         for (const auto& e : st.entries) if (e.id == id) return true;
         return false;

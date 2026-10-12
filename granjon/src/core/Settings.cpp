@@ -77,6 +77,7 @@ Settings load_settings(const std::string& file) {
         get(e, "sidebearing_modifier", s.sidebearing_mod);
         get(e, "grid", s.editor_grid);
         get(e, "snap", s.editor_snap);
+        get(e, "align", s.editor_align);
         get(e, "image", s.editor_image);
         get(e, "image_tint", s.image_tint);
         get(e, "image_opacity", s.image_opacity);
@@ -115,6 +116,7 @@ bool save_settings(const std::string& file, const Settings& s) {
                     {"sidebearing_modifier", s.sidebearing_mod},
                     {"grid", s.editor_grid},
                     {"snap", s.editor_snap},
+                    {"align", s.editor_align},
                     {"image", s.editor_image},
                     {"image_tint", s.image_tint},
                     {"image_opacity", s.image_opacity},

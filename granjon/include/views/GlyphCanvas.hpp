@@ -36,12 +36,15 @@
 // The y-up flip lives here and nowhere else (ARCHITECTURE §3): screen x =
 // ox + x * s, screen y = oy - y * s.
 #include "geom/Edit.hpp"
+#include "model/Bounds.hpp"
 #include "views/ViewContext.hpp"
 #include "widgets/Widgets.hpp"
 
 #include <gtkmm/eventcontrollerkey.h>
 #include <gtkmm/gestureclick.h>
 #include <gtkmm/gesturedrag.h>
+#include <gtkmm/popovermenu.h>
+#include <giomm/simpleactiongroup.h>
 
 #include <map>
 #include <optional>
@@ -54,6 +57,7 @@ namespace granjon::views {
 class GlyphCanvas : public widgets::Box {
 public:
     explicit GlyphCanvas(ViewContext& ctx);
+    ~GlyphCanvas() override;   // s09: the context menu popover is unparented here
 
     void refresh();                 // the model changed (or the selection did)
     void fit();                     // the glyph's width and the em, centred
@@ -83,7 +87,7 @@ private:
     std::string context_glyph(const model::Glyph& g) const;   // "H" / "n" or "" if the font lacks it
 
     // ── input ──────────────────────────────────────────────────────────────
-    enum class Mode { None, Points, Sidebearing, Marquee, Pan, Guide, Measure, Pen, Image, Shape };
+    enum class Mode { None, Points, Sidebearing, Marquee, Pan, Guide, Measure, Pen, Image, Shape, Transform };
     int  sidebearing_at(double sx, double sy) const;   // -1 none, 0 left, 1 right
     void on_press(double x, double y);
     void on_drag(double dx, double dy);
@@ -113,6 +117,7 @@ private:
     widgets::ToggleButton m_fill;
     widgets::ToggleButton m_grid;           // the zoom-adaptive grid (a preference)
     widgets::ToggleButton m_snap;           // snapping (a preference)
+    widgets::ToggleButton m_align;          // s09: alignment guides on a node drag (a preference)
     widgets::ToggleButton m_image;          // M13: show the background image (a preference)
     widgets::ToggleButton m_pen;            // M5g: the pen tool (P)
     // M5h: the tool panel down the canvas's left edge -- tools (one at a time)
@@ -139,6 +144,29 @@ private:
     widgets::DrawingArea m_area;
     Glib::RefPtr<Gtk::GestureDrag> m_drag, m_pan;
     Glib::RefPtr<Gtk::GestureClick> m_click;   // double-click a node: corner <-> smooth
+    // s09: the canvas context menu (right-click) -- the path tools in one
+    // place, each item showing its key. Actions "canvas.*", greyed by the pick.
+    Glib::RefPtr<Gtk::GestureClick>        m_menu_click;
+    Glib::RefPtr<Gio::SimpleActionGroup>   m_actions;
+    std::map<std::string, Glib::RefPtr<Gio::SimpleAction>> m_action;
+    Gtk::PopoverMenu*                      m_menu = nullptr;
+    // M15a: the Select tool's transform box -- 8 scale handles (0 top-left,
+    // clockwise to 7 left), rotate zones just outside the corners (8 + corner).
+    int          m_tf_handle = -1;
+    model::Rect  m_tf_box;
+    geom::Points m_tf_pick;
+    std::string  m_tf_label;
+    int  transform_handle_at(double sx, double sy) const;   // -1: none
+    bool transform_box_shown() const;
+    void draw_transform_box(const Cairo::RefPtr<Cairo::Context>& cr);
+    void transform_drag(double dx, double dy);
+    // r6: while the menu is up, a click anywhere in the window closes it --
+    // a fallback for when the compositor's own "click outside" doesn't (Scott,
+    // Fedora / Wayland: "doesn't want to disengage").
+    Glib::RefPtr<Gtk::GestureClick>        m_menu_outside;
+    Gtk::Widget*                           m_menu_root = nullptr;
+    void build_context_menu();
+    void show_context_menu(double x, double y);
 
     double m_s = 0.5, m_ox = 0, m_oy = 0;   // px per unit; the origin on screen
     bool   m_fitted = false;                // fit on the first draw with a size
@@ -163,6 +191,7 @@ private:
     void draw_user_guides(const Cairo::RefPtr<Cairo::Context>& cr, int w, int h, const model::Glyph& g);
     void draw_rulers(const Cairo::RefPtr<Cairo::Context>& cr, int w, int h);
     void draw_directions(const Cairo::RefPtr<Cairo::Context>& cr, const model::Glyph& g, int w);
+    void draw_neighbours(const Cairo::RefPtr<Cairo::Context>& cr, const model::Glyph& g);   // s09: dragging a node -- lines to its neighbours
     void draw_measure(const Cairo::RefPtr<Cairo::Context>& cr, const model::Glyph& g);
     std::optional<ViewContext::GuideRef> guide_at(double sx, double sy) const;
     const model::Guide* picked_guide() const;

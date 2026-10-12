@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
+  <!-- Granjon inspector icon (s09 r2): correct directions (outers counter-clockwise, counters clockwise). Symbolic: currentColor only. -->
+  <path fill="currentColor" fill-rule="evenodd" d="M2.5 8 a5.5 5.5 0 1 0 11 0 a5.5 5.5 0 1 0 -11 0 Z M4 8 a4 4 0 1 0 8 0 a4 4 0 1 0 -8 0 Z"/>
+  <path fill="currentColor" d="M10.5 0.8 L14.8 2.6 L11.6 5.9 Z"/>
+  <path fill="currentColor" d="M5.5 15.2 L1.2 13.4 L4.4 10.1 Z"/>
+</svg>

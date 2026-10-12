@@ -58,6 +58,25 @@ void selftest_presets(const std::function<void(const std::string&, bool, const s
         check(tag + "the whole set is in the font",
               cs && model::missing_from(f, cs->cps).empty(), std::to_string(rep.added) + " added");
         check(tag + "accents built as components", rep.composites > 20, std::to_string(rep.composites));
+        {   // s09: starter parts
+            const bool serif = p.serif > 0 && p.serif_t > 0;
+            const auto* st = f.glyph("_part.stem");
+            const auto* sf = f.glyph("_part.serif");
+            const auto* bw = f.glyph("_part.bowl");
+            check(tag + "starter parts: stem and bowl, serif only on a serif preset, all parts, unmapped",
+                  st && bw && (sf != nullptr) == serif && rep.parts == (serif ? 3 : 2) && st->skip_export && bw->skip_export &&
+                      (!sf || sf->skip_export) && st->unicodes.empty() && bw->unicodes.empty() && !st->contours.empty(),
+                  std::to_string(rep.parts));
+            const auto minx = [](const model::Glyph& g) {
+                double x = 1e9;
+                for (const auto& c : g.contours) for (const auto& n : c.nodes) x = std::min(x, n.x);
+                return x;
+            };
+            const auto* n = f.glyph("n");
+            const auto* o = f.glyph("o");
+            check(tag + "starter parts: the stem starts where n does, the bowl where o does, the serif under the stem",
+                  st && n && bw && o && minx(*st) == minx(*n) && minx(*bw) == minx(*o) && (!sf || minx(*sf) == minx(*st)));
+        }
 
         // Every finding on every glyph: the drawn ones should be clean, the
         // empty ones have nothing to find.
@@ -121,7 +140,8 @@ void selftest_presets(const std::function<void(const std::string&, bool, const s
         const bool ok = granjon::io::save_ufo(f, dir.string(), &err) && granjon::io::load_ufo(dir.string(), g, &err);
         check("presets: origin + guides survive save / load", ok && g.info().origin == f.info().origin &&
               g.info().guides == f.info().guides && g.metrics_keys() == f.metrics_keys(), err);
-        check("presets: '@none' = the control glyphs only", f.glyph_count() == 8, std::to_string(f.glyph_count()));
+        check("presets: '@none' = the control glyphs only (+ .notdef, space and the 3 starter parts)", f.glyph_count() == 11,
+              std::to_string(f.glyph_count()));
         std::filesystem::remove_all(dir);
     }
     {   // a blank font is the old New

@@ -1,4 +1,8 @@
 #include "views/GlyphCanvas.hpp"
+#include "views/PathOps.hpp"
+#include "Log.hpp"
+#include <giomm/menu.h>
+#include <giomm/menuitem.h>
 #include "geom/Shapes.hpp"
 #include "geom/NodeEdit.hpp"
 
@@ -118,6 +122,7 @@ GlyphCanvas::GlyphCanvas(ViewContext& ctx)
       m_fill("editor.fill"),
       m_grid("editor.grid"),
       m_snap("editor.snap"),
+      m_align("editor.align"),
       m_image("editor.image"),
       m_pen("editor.tool_pen"),
       m_tool_select("editor.tool_select"),
@@ -204,7 +209,7 @@ GlyphCanvas::GlyphCanvas(ViewContext& ctx)
                             "Ctrl (fine drag) never snaps.");
     m_bar.append(m_fit_button);
     m_readout.add_css_class("dim");
-    m_readout.set_width_chars(11);
+    m_readout.set_width_chars(16);   // M15a: room for "134.9 x 120.0 %" and "Rotate -30.6°"
     m_readout.set_xalign(1.0f);
     m_bar.append(m_readout);
     m_bar.append(m_zoom);
@@ -224,6 +229,8 @@ GlyphCanvas::GlyphCanvas(ViewContext& ctx)
         update_zoom_label();
     });
     m_snap.signal_toggled().connect([this, remember] { remember(m_ctx.settings.editor_snap, m_snap.get_active()); });
+    m_align.set_active(m_ctx.settings.editor_align);
+    m_align.signal_toggled().connect([this, remember] { remember(m_ctx.settings.editor_align, m_align.get_active()); });
     m_image.set_active(m_ctx.settings.editor_image);
     m_image.signal_toggled().connect([this, remember] {
         if (!m_image.get_active()) m_image_picked = false;
@@ -234,6 +241,7 @@ GlyphCanvas::GlyphCanvas(ViewContext& ctx)
         if (m_fill.get_active() != m_ctx.settings.editor_fill) m_fill.set_active(m_ctx.settings.editor_fill);
         if (m_grid.get_active() != m_ctx.settings.editor_grid) m_grid.set_active(m_ctx.settings.editor_grid);
         if (m_snap.get_active() != m_ctx.settings.editor_snap) m_snap.set_active(m_ctx.settings.editor_snap);
+        if (m_align.get_active() != m_ctx.settings.editor_align) m_align.set_active(m_ctx.settings.editor_align);
         if (m_image.get_active() != m_ctx.settings.editor_image) m_image.set_active(m_ctx.settings.editor_image);
         m_area.queue_draw();   // context names may have changed
     });
@@ -286,7 +294,7 @@ GlyphCanvas::GlyphCanvas(ViewContext& ctx)
     m_tool_line.set_group(m_tool_pick);
     m_tool_measure.set_group(m_tool_pick);
     m_tool_hand.set_group(m_tool_pick);
-    m_tool_pick.set_active(true);
+    m_tool_select.set_active(true);   // s09: the app opens on Select (V)
     for (auto* b : {&m_tool_select, &m_tool_pick, &m_pen, &m_tool_rect, &m_tool_ellipse, &m_tool_line, &m_tool_measure, &m_tool_hand}) {
         b->signal_toggled().connect([this, b] { if (b->get_active()) on_tool_changed(); });
         m_tools.append(*b);
@@ -303,11 +311,14 @@ GlyphCanvas::GlyphCanvas(ViewContext& ctx)
     icon_button(m_snap, "granjon-view-snap-symbolic",
                 "Snap\nDrags snap to the grid (when shown), the metric lines, the sidebearings and the other nodes. "
                 "Ctrl (fine drag) never snaps. Remembered.");
+    icon_button(m_align, "granjon-view-align-symbolic",
+                "Alignment guides\nWhile a node is dragged: dashed lines to the nearest node above, below, left and right "
+                "on any path, with the distances (the Measure tool's tags); solid accent when the node lines up. Remembered.");
     icon_button(m_image, "granjon-view-image-symbolic",
                 "Image\nShow the background image -- a scan or sketch to trace (drop a PNG / JPEG on the canvas, "
                 "or the inspector's IMAGE card). Unlocked, drag it or its corners; locked, clicks go through. "
                 "Remembered.");
-    for (auto* b : {&m_fill, &m_context, &m_grid, &m_snap, &m_image}) m_tools.append(*b);
+    for (auto* b : {&m_fill, &m_context, &m_grid, &m_snap, &m_align, &m_image}) m_tools.append(*b);
     m_work.append(m_tools);
     m_work.append(m_area);
     m_work.set_vexpand(true);
@@ -348,6 +359,8 @@ GlyphCanvas::GlyphCanvas(ViewContext& ctx)
         say_pick();
     });
     m_area.add_controller(m_click);
+    build_context_menu();   // s09: right-click
+    m_ctx.tf_origin_changed.connect([this] { m_area.queue_draw(); });   // M15a r1: the pivot moved
 
     m_pan = Gtk::GestureDrag::create();
     m_pan->set_button(GDK_BUTTON_MIDDLE);
@@ -652,6 +665,18 @@ void GlyphCanvas::on_draw(const Cairo::RefPtr<Cairo::Context>& cr, int w, int h)
     cr->set_source_rgba(r, gr, b, 0.9);
     cr->set_line_width(1.0);
     cr->stroke();
+    {   // s09: with two or more paths picked, the TOP one (the booleans'
+        // operand -- it cuts / keeps) gets an accent outline.
+        const std::set<int> cs = picked_contours(m_ctx);
+        if (cs.size() >= 2) {
+            model::Glyph top;
+            top.contours = {g->contours[static_cast<std::size_t>(*cs.rbegin())]};
+            font_path(top, 0);
+            cr->set_source_rgba(NS[0], NS[1], NS[2], 0.95);
+            cr->set_line_width(2.0);
+            cr->stroke();
+        }
+    }
 
     draw_directions(cr, *g, w);
     draw_overlay(cr, *g);
@@ -677,6 +702,8 @@ void GlyphCanvas::on_draw(const Cairo::RefPtr<Cairo::Context>& cr, int w, int h)
         cr->unset_dash();
     }
 
+    if (m_mode == Mode::Points && m_align.get_active()) draw_neighbours(cr, *g);
+    if (transform_box_shown()) draw_transform_box(cr);
     draw_measure(cr, *g);
     if (m_pen.get_active()) draw_pen(cr, *g);
     if (m_mode == Mode::Shape) draw_shape(cr);
@@ -910,6 +937,100 @@ void GlyphCanvas::draw_rulers(const Cairo::RefPtr<Cairo::Context>& cr, int w, in
     };
     ticks(true);
     ticks(false);
+}
+
+// s09 (Scott: "when moving a node a temp line up to adjacent nodes left/right
+// up/down ... the measure tool kind of info"; then: "take into account all the
+// paths in the view"). While a node is dragged, four guides to nodes on ANY
+// path that stay put: UP / DOWN go to the node above / below that is nearest
+// to plumb (smallest dx), LEFT / RIGHT to the node left / right nearest to
+// level (smallest dy). Each is a dashed amber L leaving the node along its
+// direction -- the long leg labelled with the distance, the short one with the
+// offset still to close; lined up (offset 0) it is one solid accent line. The
+// Alignment guides toggle in the tool panel hides them.
+void GlyphCanvas::draw_neighbours(const Cairo::RefPtr<Cairo::Context>& cr, const model::Glyph& g) {
+    if (m_lead.part != Part::Node || !geom::valid(g, m_lead) || !m_pick.count(m_lead)) return;
+    const auto& ln = g.contours[static_cast<std::size_t>(m_lead.contour)].nodes[static_cast<std::size_t>(m_lead.index)];
+    const geom::Vec2 L{ln.x, ln.y};
+    // up, down, left, right: the best node so far and its score (offset, then distance).
+    std::optional<geom::Vec2> best[4];
+    double score[4][2];
+    for (int ci = 0; ci < static_cast<int>(g.contours.size()); ++ci) {
+        const auto& ns = g.contours[static_cast<std::size_t>(ci)].nodes;
+        for (int ni = 0; ni < static_cast<int>(ns.size()); ++ni) {
+            if (m_pick.count({ci, ni, Part::Node})) continue;   // it moves too: nothing to line up with
+            const geom::Vec2 N{ns[static_cast<std::size_t>(ni)].x, ns[static_cast<std::size_t>(ni)].y};
+            const double dx = N.x - L.x, dy = N.y - L.y;
+            const auto offer = [&](int d, double off, double dist) {
+                if (!best[d] || off < score[d][0] - 1e-9 || (std::abs(off - score[d][0]) < 1e-9 && dist < score[d][1])) {
+                    best[d] = N;
+                    score[d][0] = off;
+                    score[d][1] = dist;
+                }
+            };
+            if (dy > 0.5)  offer(0, std::abs(dx), dy);
+            if (dy < -0.5) offer(1, std::abs(dx), -dy);
+            if (dx < -0.5) offer(2, std::abs(dy), -dx);
+            if (dx > 0.5)  offer(3, std::abs(dy), dx);
+        }
+    }
+    Pango::FontDescription small;
+    small.set_size(8 * PANGO_SCALE);
+    small.set_weight(Pango::Weight::BOLD);
+    const double MC[3] = {0.98, 0.62, 0.20};   // the Measure tool's amber
+    auto tag = [&](const std::string& s, geom::Vec2 at) {
+        auto layout = m_area.create_pango_layout(s);
+        layout->set_font_description(small);
+        int lw = 0, lh = 0;
+        layout->get_pixel_size(lw, lh);
+        at = at - geom::Vec2{lw / 2.0, lh / 2.0};
+        cr->set_source_rgba(0, 0, 0, 0.7);
+        cr->rectangle(at.x - 3, at.y - 2, lw + 6, lh + 4);
+        cr->fill();
+        cr->set_source_rgb(MC[0], MC[1], MC[2]);
+        cr->move_to(at.x, at.y);
+        layout->show_in_cairo_context(cr);
+    };
+    auto leg = [&](geom::Vec2 a, geom::Vec2 b, bool lined_up) {
+        const auto sa = to_screen(a), sb = to_screen(b);
+        if (lined_up) {
+            cr->set_source_rgba(NS[0], NS[1], NS[2], 0.95);
+            cr->set_line_width(1.5);
+        } else {
+            std::vector<double> dash{3.0, 3.0};
+            cr->set_dash(dash, 0);
+            cr->set_source_rgba(MC[0], MC[1], MC[2], 0.9);
+            cr->set_line_width(1.0);
+        }
+        cr->move_to(sa.x, sa.y);
+        cr->line_to(sb.x, sb.y);
+        cr->stroke();
+        cr->unset_dash();
+    };
+    std::vector<geom::Vec2> done;
+    for (int d = 0; d < 4; ++d) {
+        if (!best[d]) continue;
+        const geom::Vec2 N = *best[d];
+        bool seen = false;
+        for (const auto& v : done) seen = seen || (v.x == N.x && v.y == N.y);
+        if (seen) continue;   // one node answering two directions: one guide
+        done.push_back(N);
+        const bool vertical = d < 2;
+        const double off = vertical ? N.x - L.x : N.y - L.y;
+        const bool lined_up = std::abs(off) < 0.5;
+        // The long leg leaves the node along the direction; the short leg closes the offset.
+        const geom::Vec2 corner = vertical ? geom::Vec2{L.x, N.y} : geom::Vec2{N.x, L.y};
+        const geom::Vec2 end = lined_up ? N : corner;
+        leg(L, end, lined_up);
+        if (!lined_up) leg(corner, N, false);
+        const double dist = vertical ? std::abs(N.y - L.y) : std::abs(N.x - L.x);
+        const geom::Vec2 mid = to_screen({(L.x + end.x) / 2, (L.y + end.y) / 2});
+        tag(fmt(std::round(dist)), mid + (vertical ? geom::Vec2{-18, 0} : geom::Vec2{0, -12}));
+        if (!lined_up) {
+            const geom::Vec2 sm = to_screen({(corner.x + N.x) / 2, (corner.y + N.y) / 2});
+            tag(fmt(std::round(std::abs(off))), sm + (vertical ? geom::Vec2{0, d == 0 ? -12.0 : 12.0} : geom::Vec2{d == 2 ? -18.0 : 18.0, 0}));
+        }
+    }
 }
 
 void GlyphCanvas::draw_measure(const Cairo::RefPtr<Cairo::Context>& cr, const model::Glyph&) {
@@ -1344,6 +1465,16 @@ void GlyphCanvas::on_press(double x, double y) {
             return;
         }
     }
+    // M15a: the transform box's handles (Select tool) come before the paths.
+    if (transform_box_shown()) {
+        if (const int th = transform_handle_at(x, y); th >= 0) {
+            m_tf_handle = th;
+            m_tf_box = *pick_box(m_ctx);
+            m_tf_pick = m_pick;
+            m_mode = Mode::Transform;
+            return;
+        }
+    }
     const geom::Hit hit = geom::hit_test(*g, to_font(x, y), kHitPx / m_s);
     m_press_glyph = *g;
     m_image_picked = false;   // re-set below when the press lands on the image
@@ -1386,6 +1517,34 @@ void GlyphCanvas::on_press(double x, double y) {
                 for (int i = 0; i < static_cast<int>(ns.size()); ++i)
                     if (const double d = (geom::Vec2{ns[static_cast<std::size_t>(i)].x, ns[static_cast<std::size_t>(i)].y} - fp).length();
                         d < best) { best = d; lead = i; }
+            }
+        }
+        // s09: a press on / inside a path that is already picked keeps the
+        // pick, even where another path lies there too -- a duplicate sits
+        // exactly on its original, and the drag must take the copy.
+        if (c >= 0 && !shift) {
+            const auto whole = [&](int ci) {
+                const geom::Points pth = geom::whole_contours(*g, {{ci, 0, Part::Node}});
+                return std::all_of(pth.begin(), pth.end(), [&](const PointRef& r) { return m_pick.count(r) > 0; });
+            };
+            if (!whole(c)) {
+                std::set<int> picked;
+                for (const auto& p : m_pick) if (p.contour >= 0) picked.insert(p.contour);
+                for (auto it = picked.rbegin(); it != picked.rend(); ++it) {   // the top one first
+                    if (*it >= static_cast<int>(g->contours.size()) || !whole(*it)) continue;
+                    model::Glyph one;
+                    one.contours = {g->contours[static_cast<std::size_t>(*it)]};
+                    const geom::Hit oh = geom::hit_test(one, fp, kHitPx / m_s, false);
+                    if (oh.kind == K::Node || oh.kind == K::Segment || geom::contour_at(one, fp) == 0) {
+                        c = *it;
+                        double best = 1e18;
+                        const auto& ns = one.contours[0].nodes;
+                        for (int i = 0; i < static_cast<int>(ns.size()); ++i)
+                            if (const double d = (geom::Vec2{ns[static_cast<std::size_t>(i)].x, ns[static_cast<std::size_t>(i)].y} - fp).length();
+                                d < best) { best = d; lead = i; }
+                        break;
+                    }
+                }
             }
         }
         if (c >= 0) {
@@ -1475,6 +1634,7 @@ void GlyphCanvas::on_press(double x, double y) {
 }
 
 void GlyphCanvas::on_drag(double dx, double dy) {
+    if (m_mode == Mode::Transform) { transform_drag(dx, dy); return; }
     if (m_mode == Mode::Shape) {
         const auto st = m_drag->get_current_event_state();
         const bool ctrl = (st & Gdk::ModifierType::CONTROL_MASK) == Gdk::ModifierType::CONTROL_MASK;
@@ -1706,6 +1866,20 @@ void GlyphCanvas::on_drag(double dx, double dy) {
 void GlyphCanvas::on_release(double dx, double dy) {
     const Mode was = m_mode;
     m_mode = Mode::None;
+    if (was == Mode::Transform) {   // M15a
+        const bool began_was = m_began;
+        const int handle_was = m_tf_handle;
+        if (m_began) command::drag_end(m_ctx.doc.journal, m_ctx.doc.font);
+        m_began = false;
+        m_tf_handle = -1;
+        m_readout.set_text("");
+        m_ctx.pick_changed.emit();   // same refs, new places: the inspector follows
+        if (m_ctx.say && !m_tf_label.empty() && began_was) m_ctx.say(m_tf_label + " -- one undo step.", false);
+        else if (m_ctx.say && handle_was == 20) m_ctx.say("Origin set -- rotate, skew and scale now work about it. "
+                                                               "Reset on the TRANSFORM card clears it.", false);
+        m_area.queue_draw();
+        return;
+    }
     if (was == Mode::Shape) {
         const model::Contour c = shape_now();
         const Tool t = tool();
@@ -1825,10 +1999,476 @@ void GlyphCanvas::cancel_drag() {
     m_area.queue_draw();
 }
 
+// ── the transform box (M15a) ───────────────────────────────────────────────
+// Scott: "One tool missing so far is scale/skew/rotate". With the Select tool
+// and something picked, the pick's box shows 8 handles: a corner scales both
+// ways (Shift: uniform), an edge one way (Shift: uniform); Alt: about the
+// centre instead of the opposite side; Ctrl on an edge: skew. Just outside a
+// corner: rotate about the centre (Shift: 15 degree steps). Live, one undo
+// step at the release (drag_begin .. drag_transform .. drag_end).
+
+bool GlyphCanvas::transform_box_shown() const {
+    if (tool() != Tool::Select || m_pick.empty() || m_pen.get_active()) return false;
+    if (m_mode != Mode::None && m_mode != Mode::Transform) return false;
+    const auto b = pick_box(m_ctx);
+    return b && (b->x1 - b->x0 > 0.5 || b->y1 - b->y0 > 0.5);
+}
+
+int GlyphCanvas::transform_handle_at(double sx, double sy) const {
+    const auto b = pick_box(m_ctx);
+    if (!b) return -1;
+    // r1: the pivot (the origin) first -- it may sit on a handle.
+    if (const geom::Vec2 o = to_screen(transform_origin(m_ctx, *b)); std::hypot(sx - o.x, sy - o.y) <= 7) return 20;
+    const geom::Vec2 lo = to_screen({b->x0, b->y1}), hi = to_screen({b->x1, b->y0});   // screen: top-left, bottom-right
+    const double mx = (lo.x + hi.x) / 2, my = (lo.y + hi.y) / 2;
+    const geom::Vec2 pts[8] = {{lo.x, lo.y}, {mx, lo.y}, {hi.x, lo.y}, {hi.x, my},
+                               {hi.x, hi.y}, {mx, hi.y}, {lo.x, hi.y}, {lo.x, my}};
+    const double r = 6;
+    for (int k = 0; k < 8; ++k)
+        if (std::abs(sx - pts[k].x) <= r && std::abs(sy - pts[k].y) <= r) return k;
+    // Rotate: a band just outside each corner.
+    const bool outside = sx < lo.x - 2 || sx > hi.x + 2 || sy < lo.y - 2 || sy > hi.y + 2;
+    if (outside)
+        for (int c = 0; c < 4; ++c) {
+            const geom::Vec2 p = pts[c * 2];
+            const double d = std::hypot(sx - p.x, sy - p.y);
+            if (d >= 4 && d <= 22) return 8 + c;
+        }
+    return -1;
+}
+
+void GlyphCanvas::draw_transform_box(const Cairo::RefPtr<Cairo::Context>& cr) {
+    const auto b = pick_box(m_ctx);
+    if (!b) return;
+    const geom::Vec2 lo = to_screen({b->x0, b->y1}), hi = to_screen({b->x1, b->y0});
+    const double x0 = std::round(lo.x) + 0.5, y0 = std::round(lo.y) + 0.5, x1 = std::round(hi.x) + 0.5, y1 = std::round(hi.y) + 0.5;
+    std::vector<double> dash{4.0, 3.0};
+    cr->set_dash(dash, 0);
+    cr->set_source_rgba(NS[0], NS[1], NS[2], 0.7);
+    cr->set_line_width(1.0);
+    cr->rectangle(x0, y0, x1 - x0, y1 - y0);
+    cr->stroke();
+    cr->unset_dash();
+    const double mx = std::round((x0 + x1) / 2) + 0.5, my = std::round((y0 + y1) / 2) + 0.5;
+    const geom::Vec2 pts[8] = {{x0, y0}, {mx, y0}, {x1, y0}, {x1, my}, {x1, y1}, {mx, y1}, {x0, y1}, {x0, my}};
+    for (const auto& p : pts) {
+        cr->rectangle(p.x - 3.5, p.y - 3.5, 7, 7);
+        cr->set_source_rgb(1, 1, 1);
+        cr->fill_preserve();
+        cr->set_source_rgba(NS[0], NS[1], NS[2], 1.0);
+        cr->set_line_width(1.0);
+        cr->stroke();
+    }
+    // r1: the pivot -- a ring with a cross; filled once an origin is chosen
+    // (dragged here, typed, or picked on the card's grid).
+    const geom::Vec2 o = to_screen(transform_origin(m_ctx, *b));
+    const double ox = std::round(o.x) + 0.5, oy = std::round(o.y) + 0.5;
+    // White under accent, so it reads over nodes, outlines and the fill.
+    const auto arms = [&] {
+        cr->move_to(ox - 14, oy); cr->line_to(ox - 6, oy);
+        cr->move_to(ox + 6, oy);  cr->line_to(ox + 14, oy);
+        cr->move_to(ox, oy - 14); cr->line_to(ox, oy - 6);
+        cr->move_to(ox, oy + 6);  cr->line_to(ox, oy + 14);
+    };
+    cr->set_source_rgb(1, 1, 1);
+    cr->set_line_width(3.0);
+    arms();
+    cr->stroke();
+    cr->set_source_rgba(NS[0], NS[1], NS[2], 1.0);
+    cr->set_line_width(1.0);
+    arms();
+    cr->stroke();
+    cr->arc(ox, oy, 6, 0, 2 * M_PI);
+    cr->set_source_rgb(1, 1, 1);
+    cr->fill_preserve();
+    cr->set_source_rgba(NS[0], NS[1], NS[2], 1.0);
+    cr->set_line_width(1.5);
+    cr->stroke();
+    if (origin_chosen(m_ctx)) {   // chosen: a dot in the ring
+        cr->arc(ox, oy, 2.5, 0, 2 * M_PI);
+        cr->fill();
+    }
+}
+
+void GlyphCanvas::transform_drag(double dx, double dy) {
+    auto& doc = m_ctx.doc;
+    m_mx = m_press_x + dx; m_my = m_press_y + dy;
+    if (m_tf_handle == 20) {
+        // r1: drag the pivot. It snaps to the box's 9 points (then it is
+        // that grid point -- it follows the box), else to a node, else to
+        // whole units. Not an edit: nothing goes in the journal.
+        const auto b = pick_box(m_ctx);
+        const model::Glyph* g = glyph();
+        if (!b || !g) return;
+        int best = -1;
+        double bd = 8;
+        for (int k = 0; k < 9; ++k) {
+            const geom::Vec2 sp = to_screen(box_point(*b, k));
+            if (const double d = std::hypot(sp.x - m_mx, sp.y - m_my); d <= bd) { bd = d; best = k; }
+        }
+        if (best >= 0) {
+            set_origin_point(m_ctx, best);
+        } else {
+            geom::Vec2 p = to_font(m_mx, m_my);
+            const geom::Hit h = geom::hit_test(*g, p, kHitPx / m_s);
+            if (h.kind == geom::Hit::Kind::Node) {
+                const auto& n = g->contours[static_cast<std::size_t>(h.contour)].nodes[static_cast<std::size_t>(h.index)];
+                p = {n.x, n.y};
+            } else {
+                p = {std::round(p.x), std::round(p.y)};
+            }
+            set_custom_origin(m_ctx, p);
+        }
+        const geom::Vec2 o = transform_origin(m_ctx, *b);
+        m_readout.set_text("Origin " + fmt(std::round(o.x * 10) / 10) + ", " + fmt(std::round(o.y * 10) / 10));
+        m_tf_label.clear();
+        m_area.queue_draw();
+        return;
+    }
+    const bool edge = m_tf_handle < 8 && m_tf_handle % 2 == 1;
+    if (!m_began) {
+        if (std::hypot(dx, dy) < kDragPx) return;   // still a click
+        const auto st0 = m_drag->get_current_event_state();
+        const bool ctrl0 = (st0 & Gdk::ModifierType::CONTROL_MASK) == Gdk::ModifierType::CONTROL_MASK;
+        command::drag_begin(doc.journal, doc.font, {m_shown},
+                            m_tf_handle >= 8 ? "Rotate" : (edge && !ctrl0) ? "Skew" : "Scale");
+        m_began = doc.journal.in_gesture();
+        if (!m_began) return;
+    }
+    const auto st = m_drag->get_current_event_state();
+    const bool shift = (st & Gdk::ModifierType::SHIFT_MASK) == Gdk::ModifierType::SHIFT_MASK;
+    const bool alt = (st & Gdk::ModifierType::ALT_MASK) == Gdk::ModifierType::ALT_MASK;
+    const bool ctrl = (st & Gdk::ModifierType::CONTROL_MASK) == Gdk::ModifierType::CONTROL_MASK;
+    const model::Rect& b = m_tf_box;
+    const geom::Vec2 P = to_font(m_mx, m_my), P0 = to_font(m_press_x, m_press_y);
+    const geom::Vec2 C{(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2};
+    // r1: a chosen origin is where everything starts from (Curvz); Alt = the centre.
+    const bool chosen = origin_chosen(m_ctx);
+    const geom::Vec2 O = transform_origin(m_ctx, b);
+    // The handles in font units (y up): 0 top-left .. clockwise.
+    const geom::Vec2 H[8] = {{b.x0, b.y1}, {C.x, b.y1}, {b.x1, b.y1}, {b.x1, C.y},
+                             {b.x1, b.y0}, {C.x, b.y0}, {b.x0, b.y0}, {b.x0, C.y}};
+    geom::Affine m;
+    std::ostringstream o;
+    if (m_tf_handle >= 8) {
+        const geom::Vec2 R = alt ? C : chosen ? O : C;
+        double a = (std::atan2(P.y - R.y, P.x - R.x) - std::atan2(P0.y - R.y, P0.x - R.x)) * 180.0 / M_PI;
+        while (a > 180) a -= 360;
+        while (a < -180) a += 360;
+        if (shift) a = std::round(a / 15.0) * 15.0;
+        m = geom::make_transform(1, 1, a, 0, 0, R);
+        o << "Rotate " << fmt(std::round(a * 100) / 100) << "°";
+        m_tf_label = "Rotate";
+    } else {
+        const int h = m_tf_handle;
+        const geom::Vec2 hp = H[h];
+        const geom::Vec2 A = alt ? C : chosen ? O : H[(h + 4) % 8];   // the fixed point
+        const bool horizontal_edge = h == 1 || h == 5;
+        if (edge && !ctrl) {
+            // Skew (Curvz: the edge middles skew): a top / bottom edge slides
+            // across, a side edge slides up.
+            double deg;
+            if (horizontal_edge) {
+                const double span = hp.y - A.y;
+                deg = std::atan((P.x - P0.x) / (std::abs(span) < 1e-9 ? 1.0 : span)) * 180.0 / M_PI;
+                if (shift) deg = std::round(deg / 5.0) * 5.0;
+                m = geom::make_transform(1, 1, 0, deg, 0, A);
+            } else {
+                const double span = hp.x - A.x;
+                deg = std::atan((P.y - P0.y) / (std::abs(span) < 1e-9 ? 1.0 : span)) * 180.0 / M_PI;
+                if (shift) deg = std::round(deg / 5.0) * 5.0;
+                m = geom::make_transform(1, 1, 0, 0, deg, A);
+            }
+            o << "Skew " << fmt(std::round(deg * 100) / 100) << "°";
+            m_tf_label = "Skew";
+        } else {
+            // Scale: a corner both ways (Shift uniform); Ctrl on an edge, one way.
+            const double ux = hp.x - A.x, uy = hp.y - A.y;
+            double sx = std::abs(ux) < 1e-9 ? 1.0 : (P.x - A.x) / ux;
+            double sy = std::abs(uy) < 1e-9 ? 1.0 : (P.y - A.y) / uy;
+            if (edge) (horizontal_edge ? sx : sy) = 1.0;
+            if (shift) {   // uniform: the axis that moved most leads
+                const double sc = edge ? (horizontal_edge ? sy : sx) : (std::abs(sx - 1) > std::abs(sy - 1) ? sx : sy);
+                sx = sy = sc;
+            }
+            m = geom::make_transform(sx, sy, 0, 0, 0, A);
+            o << fmt(std::round(sx * 1000) / 10) << " % × " << fmt(std::round(sy * 1000) / 10) << " %";
+            m_tf_label = "Scale";
+        }
+    }
+    command::drag_transform(doc.journal, doc.font, m_tf_pick, m);
+    m_readout.set_text(o.str());
+    m_area.queue_draw();
+}
+
+// ── the context menu (s09) ─────────────────────────────────────────────────
+// Scott: "can some of these modifier tools be in a context menu and easy to
+// find". Right-click on the canvas: the path tools, grouped, each with its key
+// shown. Everything calls the same views/PathOps helpers as the inspector and
+// the keys. A right-click on a path that isn't picked picks it first (the file
+// manager's rule), so "right-click a stem -> Duplicate" just works.
+
+GlyphCanvas::~GlyphCanvas() {
+    if (m_menu_root && m_menu_outside) m_menu_root->remove_controller(m_menu_outside);
+    if (m_menu) m_menu->unparent();
+}
+
+void GlyphCanvas::build_context_menu() {
+    m_actions = Gio::SimpleActionGroup::create();
+    const auto act = [this](const std::string& name, std::function<void()> f) {
+        m_action[name] = m_actions->add_action(name, [this, f] {
+            f();
+            m_area.queue_draw();
+        });
+    };
+    using A = command::Align;
+    act("duplicate", [this] { duplicate_picked(m_ctx); });
+    act("clone", [this] { clone_picked(m_ctx); });
+    act("front", [this] { arrange_picked(m_ctx, command::Arrange::Front); });
+    act("forward", [this] { arrange_picked(m_ctx, command::Arrange::Forward); });
+    act("backward", [this] { arrange_picked(m_ctx, command::Arrange::Backward); });
+    act("back", [this] { arrange_picked(m_ctx, command::Arrange::Back); });
+    act("align-left", [this] { align_picked(m_ctx, A::Left); });
+    act("align-centre", [this] { align_picked(m_ctx, A::HCenter); });
+    act("align-right", [this] { align_picked(m_ctx, A::Right); });
+    act("align-top", [this] { align_picked(m_ctx, A::Top); });
+    act("align-middle", [this] { align_picked(m_ctx, A::VMiddle); });
+    act("align-bottom", [this] { align_picked(m_ctx, A::Bottom); });
+    act("distribute-h", [this] { align_picked(m_ctx, A::DistributeH); });
+    act("distribute-v", [this] { align_picked(m_ctx, A::DistributeV); });
+    act("flip-h", [this] { flip_picked(m_ctx, true); });
+    act("flip-v", [this] { flip_picked(m_ctx, false); });
+    act("rotate-left", [this] { rotate_picked(m_ctx, 90); });
+    act("rotate-right", [this] { rotate_picked(m_ctx, -90); });
+    act("rotate-180", [this] { rotate_picked(m_ctx, 180); });
+    act("union", [this] { boolean_picked(m_ctx, geom::BoolOp::Union); });
+    act("subtract", [this] { boolean_picked(m_ctx, geom::BoolOp::Subtract); });
+    act("intersect", [this] { boolean_picked(m_ctx, geom::BoolOp::Intersect); });
+    act("overlaps", [this] { remove_overlaps_here(m_ctx); });
+    act("reverse", [this] { reverse_picked(m_ctx); });
+    act("directions", [this] { correct_directions_here(m_ctx); });
+    const auto segs = [this](bool curve) {
+        std::string why;
+        if (command::set_segments(m_ctx.doc.journal, m_ctx.doc.font, m_shown, m_pick, curve, &why)) say_pick();
+        else if (m_ctx.say) m_ctx.say(why.empty() ? std::string("Pick two neighbouring nodes.") : why, false);
+    };
+    act("lines", [segs] { segs(false); });
+    act("curves", [segs] { segs(true); });
+    const auto type = [this](model::Node::Type t) {
+        command::set_node_type(m_ctx.doc.journal, m_ctx.doc.font, m_shown, m_pick, t);
+        m_ctx.pick_changed.emit();
+    };
+    act("corner", [type] { type(model::Node::Type::Corner); });
+    act("smooth", [type] { type(model::Node::Type::Smooth); });
+    act("symmetric", [type] { type(model::Node::Type::Symmetric); });
+    act("cusp", [type] { type(model::Node::Type::Cusp); });
+    act("select-all", [this] { on_key(GDK_KEY_a, 0, Gdk::ModifierType::CONTROL_MASK); });
+    m_area.insert_action_group("canvas", m_actions);
+
+    const auto item = [](const Glib::RefPtr<Gio::Menu>& m, const char* label, const char* action, const char* accel = nullptr) {
+        auto it = Gio::MenuItem::create(label, std::string("canvas.") + action);
+        if (accel) it->set_attribute_value("accel", Glib::Variant<Glib::ustring>::create(accel));
+        m->append_item(it);
+    };
+    auto menu = Gio::Menu::create();
+    {
+        auto s = Gio::Menu::create();
+        item(s, "Duplicate", "duplicate", "<Control>d");
+        item(s, "Clone (offset copy)", "clone", "<Alt>d");
+        menu->append_section(s);
+    }
+    {
+        auto s = Gio::Menu::create();
+        auto arrange = Gio::Menu::create();
+        item(arrange, "Bring to Front", "front", "<Control><Shift>bracketright");
+        item(arrange, "Bring Forward", "forward", "<Control>bracketright");
+        item(arrange, "Send Backward", "backward", "<Control>bracketleft");
+        item(arrange, "Send to Back", "back", "<Control><Shift>bracketleft");
+        s->append_submenu("Arrange", arrange);
+        auto align = Gio::Menu::create();
+        auto a1 = Gio::Menu::create();
+        item(a1, "Left", "align-left");
+        item(a1, "Centre", "align-centre");
+        item(a1, "Right", "align-right");
+        align->append_section(a1);
+        auto a2 = Gio::Menu::create();
+        item(a2, "Top", "align-top");
+        item(a2, "Middle", "align-middle");
+        item(a2, "Bottom", "align-bottom");
+        align->append_section(a2);
+        auto a3 = Gio::Menu::create();
+        item(a3, "Distribute Across", "distribute-h");
+        item(a3, "Distribute Up", "distribute-v");
+        align->append_section(a3);
+        s->append_submenu("Align", align);
+        auto tfm = Gio::Menu::create();
+        auto t1 = Gio::Menu::create();
+        item(t1, "Flip Horizontal", "flip-h");
+        item(t1, "Flip Vertical", "flip-v");
+        tfm->append_section(t1);
+        auto t2 = Gio::Menu::create();
+        item(t2, "Rotate 90\u00B0 Left", "rotate-left");
+        item(t2, "Rotate 90\u00B0 Right", "rotate-right");
+        item(t2, "Rotate 180\u00B0", "rotate-180");
+        tfm->append_section(t2);
+        s->append_submenu("Transform", tfm);
+        auto comb = Gio::Menu::create();
+        auto c1 = Gio::Menu::create();
+        item(c1, "Union", "union");
+        item(c1, "Subtract (top path cuts)", "subtract");
+        item(c1, "Intersect (top path keeps)", "intersect");
+        comb->append_section(c1);
+        auto c2 = Gio::Menu::create();
+        item(c2, "Remove Overlaps (whole glyph)", "overlaps");
+        comb->append_section(c2);
+        s->append_submenu("Combine", comb);
+        menu->append_section(s);
+    }
+    {
+        auto s = Gio::Menu::create();
+        auto nodes = Gio::Menu::create();
+        auto n1 = Gio::Menu::create();
+        item(n1, "Make Lines", "lines", "l");
+        item(n1, "Make Curves", "curves", "c");
+        nodes->append_section(n1);
+        auto n2 = Gio::Menu::create();
+        item(n2, "Corner", "corner");
+        item(n2, "Smooth", "smooth");
+        item(n2, "Symmetric", "symmetric");
+        item(n2, "Cusp", "cusp");
+        nodes->append_section(n2);
+        s->append_submenu("Nodes", nodes);
+        auto dir = Gio::Menu::create();
+        item(dir, "Reverse Picked Paths", "reverse");
+        item(dir, "Correct Directions (whole glyph)", "directions");
+        s->append_submenu("Direction", dir);
+        menu->append_section(s);
+    }
+    {
+        auto s = Gio::Menu::create();
+        item(s, "Pick All", "select-all", "<Control>a");
+        menu->append_section(s);
+    }
+    m_menu = Gtk::make_managed<Gtk::PopoverMenu>(menu, Gtk::PopoverMenu::Flags::NESTED);
+    m_menu->set_parent(m_area);
+    m_menu->set_has_arrow(false);
+    m_menu->set_halign(Gtk::Align::START);
+    m_menu->set_autohide(true);
+    m_menu->signal_closed().connect([this] {
+        // Off the window after this event is done (it may be the one firing).
+        Glib::signal_idle().connect_once([this] {
+            if (m_menu && m_menu->get_visible()) return;   // shown again meanwhile
+            if (m_menu_root && m_menu_outside) m_menu_root->remove_controller(m_menu_outside);
+            m_menu_root = nullptr;
+        });
+        focus_canvas();   // keys go back to the canvas
+    });
+    // The fallback: a capture-phase click on the window (any button) while
+    // the menu shows pops it down. Clicks on the menu itself never reach it
+    // (the menu is its own surface).
+    m_menu_outside = Gtk::GestureClick::create();
+    m_menu_outside->set_button(0);
+    m_menu_outside->set_propagation_phase(Gtk::PropagationPhase::CAPTURE);
+    m_menu_outside->signal_pressed().connect([this](int, double, double) {
+        if (!m_menu || !m_menu->get_visible()) return;
+        m_menu->popdown();
+        m_menu_outside->set_state(Gtk::EventSequenceState::CLAIMED);   // the click only closes the menu
+    });
+
+    m_menu_click = Gtk::GestureClick::create();
+    m_menu_click->set_button(GDK_BUTTON_SECONDARY);
+    m_menu_click->signal_pressed().connect([this](int, double x, double y) {
+        // Claim the press: no other gesture holds the sequence while the
+        // menu takes its grab (a held sequence can keep a popup from closing).
+        m_menu_click->set_state(Gtk::EventSequenceState::CLAIMED);
+        show_context_menu(x, y);
+    });
+    m_area.add_controller(m_menu_click);
+}
+
+void GlyphCanvas::show_context_menu(double x, double y) {
+    const model::Glyph* g = glyph();
+    if (!g || m_mode != Mode::None) return;
+    // A path under the pointer that has nothing picked: pick it whole.
+    const geom::Vec2 fp = to_font(x, y);
+    const geom::Hit h = geom::hit_test(*g, fp, kHitPx / m_s, false);
+    int c = (h.kind == geom::Hit::Kind::Node || h.kind == geom::Hit::Kind::Segment) ? h.contour : -1;
+    if (c < 0) c = geom::contour_at(*g, fp);
+    if (c >= 0 && !picked_contours(m_ctx).count(c)) {
+        m_ctx.guide_pick.reset();
+        m_pick = geom::whole_contours(*g, {{c, 0, Part::Node}});
+        m_ctx.pick_changed.emit();
+        say_pick();
+    }
+    const std::set<int> cs = picked_contours(m_ctx);
+    const int n = static_cast<int>(g->contours.size());
+    const bool any = !cs.empty(), two = cs.size() >= 2;
+    std::size_t nodes = 0;
+    for (const auto& p : m_pick) nodes += p.part == Part::Node;
+    const bool top_block = any && *cs.begin() == n - static_cast<int>(cs.size());
+    const bool bottom_block = any && *cs.rbegin() == static_cast<int>(cs.size()) - 1;
+    const bool whole = whole_paths_picked(m_ctx);
+    const auto on = [this](const char* a, bool v) { m_action[a]->set_enabled(v); };
+    on("duplicate", any);
+    on("clone", any);
+    on("front", any && !top_block);
+    on("forward", any && !top_block);
+    on("backward", any && !bottom_block);
+    on("back", any && !bottom_block);
+    const bool can_align = whole ? any : nodes >= 2;
+    for (const char* a : {"align-left", "align-centre", "align-right", "align-top", "align-middle", "align-bottom"}) on(a, can_align);
+    const bool can_dist = whole ? cs.size() >= 3 : nodes >= 3;
+    on("distribute-h", can_dist);
+    on("distribute-v", can_dist);
+    const bool drawn = n > 0 || !g->components.empty();   // nothing picked: the whole glyph
+    for (const char* a : {"flip-h", "flip-v", "rotate-left", "rotate-right", "rotate-180"}) on(a, drawn);
+    on("union", two);
+    on("subtract", two);
+    on("intersect", two);
+    on("overlaps", n >= 2);
+    on("reverse", any);
+    on("directions", n >= 1);
+    on("lines", nodes >= 2);
+    on("curves", nodes >= 2);
+    for (const char* a : {"corner", "smooth", "symmetric", "cusp"}) on(a, nodes >= 1);
+    on("select-all", n > 0 || !g->anchors.empty() || !g->components.empty());
+    Gdk::Rectangle r(static_cast<int>(x), static_cast<int>(y), 1, 1);
+    m_menu->set_pointing_to(r);
+    if (!m_menu_root) {
+        if (auto* root = dynamic_cast<Gtk::Widget*>(get_root())) {
+            m_menu_root = root;
+            root->add_controller(m_menu_outside);
+        }
+    }
+    m_menu->popup();
+}
+
 bool GlyphCanvas::on_key(guint keyval, guint, Gdk::ModifierType state) {
     const bool ctrl  = (state & Gdk::ModifierType::CONTROL_MASK) == Gdk::ModifierType::CONTROL_MASK;
     const bool shift = (state & Gdk::ModifierType::SHIFT_MASK) == Gdk::ModifierType::SHIFT_MASK;
     const model::Glyph* g = glyph();
+
+    // s09: Clone -- an offset copy (Alt+D).
+    if ((state & Gdk::ModifierType::ALT_MASK) == Gdk::ModifierType::ALT_MASK && !ctrl && m_mode == Mode::None &&
+        (keyval == GDK_KEY_d || keyval == GDK_KEY_D)) {
+        clone_picked(m_ctx);
+        return true;
+    }
+    // s09: Duplicate the picked paths in place (Ctrl+D).
+    if (ctrl && !shift && m_mode == Mode::None && (keyval == GDK_KEY_d || keyval == GDK_KEY_D)) {
+        duplicate_picked(m_ctx);
+        return true;
+    }
+    // s09: arrange the picked paths (Illustrator's keys). Shift+] arrives as
+    // braceright on a US layout.
+    if (ctrl && m_mode == Mode::None &&
+        (keyval == GDK_KEY_bracketright || keyval == GDK_KEY_braceright ||
+         keyval == GDK_KEY_bracketleft || keyval == GDK_KEY_braceleft)) {
+        const bool up = keyval == GDK_KEY_bracketright || keyval == GDK_KEY_braceright;
+        arrange_picked(m_ctx, up ? (shift ? command::Arrange::Front : command::Arrange::Forward)
+                                 : (shift ? command::Arrange::Back : command::Arrange::Backward));
+        return true;
+    }
 
     if ((keyval == GDK_KEY_p || keyval == GDK_KEY_P) && !ctrl && m_mode == Mode::None) {
         set_pen(!m_pen.get_active());
@@ -2010,6 +2650,16 @@ void GlyphCanvas::on_motion(double x, double y) {
     }
     if (m_mode == Mode::Marquee || m_mode == Mode::Points) return;
     if (m_measure && !m_space) { m_area.set_cursor("crosshair"); return; }
+    if (m_mode == Mode::Transform) return;
+    if (m_mode == Mode::None && !m_space && transform_box_shown()) {   // M15a: say what a press here does
+        // Corners scale; an edge's middle skews (it slides along the edge).
+        static const char* cursors[] = {"nwse-resize", "ew-resize", "nesw-resize", "ns-resize",
+                                        "nwse-resize", "ew-resize", "nesw-resize", "ns-resize"};
+        if (const int th = transform_handle_at(x, y); th >= 0) {
+            m_area.set_cursor(th == 20 ? "move" : th < 8 ? cursors[th] : "grab");
+            return;
+        }
+    }
     const int side = m_mode == Mode::None ? sidebearing_at(x, y) : m_side;
     if (m_space) {
         m_area.set_cursor(m_mode == Mode::Pan ? "grabbing" : "grab");

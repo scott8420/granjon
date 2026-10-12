@@ -7,6 +7,8 @@
 #include "geom/NodeEdit.hpp"
 #include "geom/Overlap.hpp"
 #include "geom/Shapes.hpp"
+#include "model/Bounds.hpp"
+#include "unicode/UcdTable.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -423,6 +425,40 @@ void drag_sidebearing(FontJournal& j, Font& f, Side side, double dx, bool move_o
         }
         f.put(d.names[0], Record{g});
     });
+}
+
+void drag_transform(FontJournal& j, Font& f, const geom::Points& pts, const geom::Affine& m) {
+    Drag& d = drag();
+    if (!j.in_gesture() || d.names.empty()) return;
+    j.run("Transform", {d.names[0]}, [&] {
+        Glyph g;
+        geom::transform_points(g, d.at_press[0], pts, m);
+        f.put(d.names[0], Record{g});
+    });
+}
+
+bool transform_from(FontJournal& j, Font& f, const std::string& glyph, const model::Glyph& base,
+                    const geom::Points& pts, const geom::Affine& m, const std::string& label,
+                    const std::string& merge_key) {
+    if (!f.glyph(glyph)) return false;
+    return j.run(label, {glyph}, [&] {
+        Glyph g;
+        geom::transform_points(g, base, pts, m);
+        g.snap();
+        f.put(glyph, Record{g});
+    }, merge_key);
+}
+
+bool transform_points(FontJournal& j, Font& f, const std::string& glyph, const geom::Points& pts,
+                      const geom::Affine& m, const std::string& label, const std::string& merge_key) {
+    if (!f.glyph(glyph) || m.identity()) return false;
+    return j.run(label, {glyph}, [&] {
+        const Glyph was = glyph_copy(f, glyph);
+        Glyph g;
+        geom::transform_points(g, was, pts, m);
+        g.snap();
+        f.put(glyph, Record{g});
+    }, merge_key);   // r1: a run of step presses can fold into one step
 }
 
 bool nudge(FontJournal& j, Font& f, const std::string& glyph, const geom::Points& pts,
@@ -982,22 +1018,25 @@ bool boolean_contours(FontJournal& j, Font& f, const std::string& glyph, const s
         if (pk.size() < 2) return refuse("Union: pick two or more contours (a node or a segment of each).");
         subj.assign(pk.begin(), pk.end());
     } else {
-        if (pk.empty()) return refuse(std::string(name) + ": pick the contour(s) that cut -- the rest of the glyph is what they work on.");
-        int closed = 0;
-        for (const auto& c : was->contours) closed += c.closed && c.nodes.size() >= 2;
-        if (static_cast<int>(pk.size()) == closed)
-            return refuse(std::string(name) + ": every contour is picked -- pick only the one(s) that cut.");
+        // s09 (Scott: "the top path determines the boolean action"): the TOP
+        // picked path -- last in contour order, see arrange_contours -- works
+        // on the other picked paths. Unpicked paths take no part.
+        if (pk.size() < 2)
+            return refuse(std::string(name) + ": pick two or more paths -- the top one " +
+                          (op == geom::BoolOp::Subtract ? "cuts the others." : "keeps what the others share with it."));
+        const int top = *pk.rbegin();
         Bx cut;
-        for (int i : pk) grow(cut, was->contours[static_cast<std::size_t>(i)]);
-        for (int i = 0; i < n; ++i) {
-            const auto& c = was->contours[static_cast<std::size_t>(i)];
-            if (pk.count(i) || !c.closed || c.nodes.size() < 2) continue;
+        grow(cut, was->contours[static_cast<std::size_t>(top)]);
+        bool any = false;
+        for (int i : pk) {
+            if (i == top) continue;
+            subj.push_back(i);
             Bx b;
-            grow(b, c);
-            if (meets(b, cut)) subj.push_back(i);
+            grow(b, was->contours[static_cast<std::size_t>(i)]);
+            any = any || meets(b, cut);
         }
-        if (subj.empty()) return refuse(std::string(name) + ": the picked contours don't meet the rest of the glyph.");
-        clip.assign(pk.begin(), pk.end());
+        if (!any) return refuse(std::string(name) + ": the top path doesn't meet the other picked paths.");
+        clip = {top};
     }
     auto gather = [&](const std::vector<int>& ix) {
         std::vector<model::Contour> cs;
@@ -1027,6 +1066,61 @@ bool boolean_contours(FontJournal& j, Font& f, const std::string& glyph, const s
     }
     if (out == was->contours) return refuse(std::string(name) + ": nothing to change.");
     const bool ok = j.run(name, {glyph}, [&] {
+        Glyph g = glyph_copy(f, glyph);
+        g.contours = out;
+        f.put(glyph, Record{g});
+    });
+    if (ok && result) *result = at;
+    return ok;
+}
+
+// ── arrange (s09): the paths' order, bottom (0) to top (last) ───────────────
+
+bool arrange_contours(FontJournal& j, Font& f, const std::string& glyph, const std::vector<int>& picked,
+                      Arrange how, std::vector<int>* result, std::string* why) {
+    auto refuse = [&](const std::string& r) { if (why) *why = r; return false; };
+    const Glyph* was = f.glyph(glyph);
+    if (!was) return refuse("No glyph.");
+    const int n = static_cast<int>(was->contours.size());
+    std::vector<char> pk(static_cast<std::size_t>(n), 0);
+    int count = 0;
+    for (int i : picked)
+        if (i >= 0 && i < n && !pk[static_cast<std::size_t>(i)]) { pk[static_cast<std::size_t>(i)] = 1; ++count; }
+    if (count == 0) return refuse("Arrange: pick a path first.");
+    // order[k] = the old index of the path that ends up at k.
+    std::vector<int> order(static_cast<std::size_t>(n));
+    for (int i = 0; i < n; ++i) order[static_cast<std::size_t>(i)] = i;
+    const auto picked_at = [&](int k) { return pk[static_cast<std::size_t>(order[static_cast<std::size_t>(k)])] != 0; };
+    switch (how) {
+    case Arrange::Front:
+    case Arrange::Back: {
+        std::stable_partition(order.begin(), order.end(), [&](int i) {
+            return (pk[static_cast<std::size_t>(i)] != 0) == (how == Arrange::Back);
+        });
+        break;
+    }
+    case Arrange::Forward:   // each picked path steps over the unpicked one above it
+        for (int k = n - 2; k >= 0; --k)
+            if (picked_at(k) && !picked_at(k + 1)) std::swap(order[static_cast<std::size_t>(k)], order[static_cast<std::size_t>(k + 1)]);
+        break;
+    case Arrange::Backward:
+        for (int k = 1; k < n; ++k)
+            if (picked_at(k) && !picked_at(k - 1)) std::swap(order[static_cast<std::size_t>(k)], order[static_cast<std::size_t>(k - 1)]);
+        break;
+    }
+    const char* label = how == Arrange::Front ? "Bring to front" : how == Arrange::Back ? "Send to back"
+                      : how == Arrange::Forward ? "Bring forward" : "Send backward";
+    bool same = true;
+    for (int k = 0; k < n; ++k) same = same && order[static_cast<std::size_t>(k)] == k;
+    if (same)
+        return refuse(how == Arrange::Front || how == Arrange::Forward ? "Already on top." : "Already at the bottom.");
+    std::vector<int> at;
+    std::vector<model::Contour> out;
+    for (int k = 0; k < n; ++k) {
+        out.push_back(was->contours[static_cast<std::size_t>(order[static_cast<std::size_t>(k)])]);
+        if (picked_at(k)) at.push_back(k);
+    }
+    const bool ok = j.run(label, {glyph}, [&] {
         Glyph g = glyph_copy(f, glyph);
         g.contours = out;
         f.put(glyph, Record{g});
@@ -1167,6 +1261,130 @@ bool add_shape(FontJournal& j, Font& f, const std::string& glyph, const model::C
         f.put(glyph, Record{g});
     });
     if (index) *index = at;
+    return ok;
+}
+
+// s09: whole paths aligned / distributed as rigid shapes, by their exact
+// bounds. Two or more: to the paths' joint bounds. One: to the glyph's box --
+// 0 .. width across, baseline .. x-height up (cap height on a capital).
+bool align_contours(FontJournal& j, Font& f, const std::string& glyph, const std::vector<int>& contours, Align how,
+                    std::string* why) {
+    auto refuse = [&](const std::string& r) { if (why) *why = r; return false; };
+    const Glyph* was = f.glyph(glyph);
+    if (!was) return refuse("No glyph.");
+    std::vector<int> cs;
+    for (int i : contours)
+        if (i >= 0 && i < static_cast<int>(was->contours.size()) &&
+            std::find(cs.begin(), cs.end(), i) == cs.end())
+            cs.push_back(i);
+    std::sort(cs.begin(), cs.end());
+    if (cs.empty()) return refuse("Align: pick a path first.");
+    const bool dist = how == Align::DistributeH || how == Align::DistributeV;
+    if (dist && cs.size() < 3) return refuse("Distribute: pick three or more paths.");
+    std::vector<model::Rect> box;
+    for (int i : cs) {
+        Glyph one;
+        one.contours = {was->contours[static_cast<std::size_t>(i)]};
+        const auto b = model::bounds(f, one);
+        if (!b) return refuse("Align: a path draws nothing.");
+        box.push_back(*b);
+    }
+    model::Rect to;   // what they align to
+    if (cs.size() == 1) {
+        const auto& m = f.metrics();
+        bool cap = false;
+        for (char32_t u : was->unicodes) cap = cap || unicode::category(u) == "Lu";
+        to = {0, 0, was->advance, double(cap ? m.cap_height : m.x_height)};
+    } else {
+        to = box[0];
+        for (const auto& b : box) {
+            to.x0 = std::min(to.x0, b.x0); to.x1 = std::max(to.x1, b.x1);
+            to.y0 = std::min(to.y0, b.y0); to.y1 = std::max(to.y1, b.y1);
+        }
+    }
+    std::vector<geom::Vec2> d(cs.size());
+    if (dist) {
+        // Equal GAPS between neighbours (the outermost two stay put).
+        const bool h = how == Align::DistributeH;
+        std::vector<std::size_t> order(cs.size());
+        for (std::size_t k = 0; k < order.size(); ++k) order[k] = k;
+        std::stable_sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b) {
+            return h ? box[a].x0 + box[a].x1 < box[b].x0 + box[b].x1 : box[a].y0 + box[a].y1 < box[b].y0 + box[b].y1;
+        });
+        double total = 0;
+        for (const auto& b : box) total += h ? b.x1 - b.x0 : b.y1 - b.y0;
+        const double span = h ? to.x1 - to.x0 : to.y1 - to.y0;
+        const double gap = (span - total) / static_cast<double>(cs.size() - 1);
+        double at = h ? to.x0 : to.y0;
+        for (std::size_t k : order) {
+            const double lo = h ? box[k].x0 : box[k].y0;
+            (h ? d[k].x : d[k].y) = at - lo;
+            at += (h ? box[k].x1 - box[k].x0 : box[k].y1 - box[k].y0) + gap;
+        }
+    } else {
+        for (std::size_t k = 0; k < cs.size(); ++k) {
+            const auto& b = box[k];
+            switch (how) {
+                case Align::Left:    d[k].x = to.x0 - b.x0; break;
+                case Align::HCenter: d[k].x = (to.x0 + to.x1) / 2 - (b.x0 + b.x1) / 2; break;
+                case Align::Right:   d[k].x = to.x1 - b.x1; break;
+                case Align::Top:     d[k].y = to.y1 - b.y1; break;
+                case Align::VMiddle: d[k].y = (to.y0 + to.y1) / 2 - (b.y0 + b.y1) / 2; break;
+                case Align::Bottom:  d[k].y = to.y0 - b.y0; break;
+                default: break;
+            }
+        }
+    }
+    bool moves = false;
+    for (auto& v : d) {
+        v = {std::round(v.x), std::round(v.y)};   // whole units: the shapes stay on the grid
+        moves = moves || v.x != 0 || v.y != 0;
+    }
+    if (!moves) return refuse("Already lined up.");
+    static const char* names[] = {"Align left", "Align centre", "Align right", "Align top", "Align middle",
+                                  "Align bottom", "Distribute across", "Distribute up"};
+    return j.run(names[static_cast<int>(how)], {glyph}, [&] {
+        Glyph g = glyph_copy(f, glyph);
+        for (std::size_t k = 0; k < cs.size(); ++k)
+            for (auto& n : g.contours[static_cast<std::size_t>(cs[k])].nodes) {
+                n.x += d[k].x; n.y += d[k].y;
+                n.cx1 += d[k].x; n.cy1 += d[k].y;
+                n.cx2 += d[k].x; n.cy2 += d[k].y;
+            }
+        f.put(glyph, Record{g});
+    });
+}
+
+// s09: copies of the picked paths, on top (appended, in their order), moved
+// by (dx, dy) -- (0, 0) = in place, the copies picked so a drag places them.
+bool duplicate_contours(FontJournal& j, Font& f, const std::string& glyph, const std::vector<int>& contours,
+                        double dx, double dy, std::vector<int>* result, std::string* why) {
+    auto refuse = [&](const char* r) { if (why) *why = r; return false; };
+    const Glyph* was = f.glyph(glyph);
+    if (!was) return refuse("No glyph.");
+    std::set<int> pk;
+    for (int i : contours)
+        if (i >= 0 && i < static_cast<int>(was->contours.size())) pk.insert(i);
+    if (pk.empty()) return refuse("Duplicate: pick a path first.");
+    std::vector<int> at;
+    const bool clone = dx != 0 || dy != 0;   // s09: an offset copy is a Clone
+    const std::string label = std::string(clone ? "Clone" : "Duplicate") + (pk.size() == 1 ? " path" : " paths");
+    const bool ok = j.run(label, {glyph}, [&] {
+        Glyph g = glyph_copy(f, glyph);
+        for (int i : pk) {
+            model::Contour c = g.contours[static_cast<std::size_t>(i)];
+            for (auto& n : c.nodes) {
+                n.x += dx; n.y += dy;
+                n.cx1 += dx; n.cy1 += dy;
+                n.cx2 += dx; n.cy2 += dy;
+            }
+            at.push_back(static_cast<int>(g.contours.size()));
+            g.contours.push_back(std::move(c));
+        }
+        g.snap();
+        f.put(glyph, Record{g});
+    });
+    if (ok && result) *result = at;
     return ok;
 }
 
@@ -1443,6 +1661,13 @@ const std::vector<Verb>& verbs() {
         {"add_shape", [](FontJournal& j, Font& f) {
              add_shape(j, f, "n", geom::shape_ellipse({{600.3, 100}, {800, 299.6}}), "Ellipse"); }},
         {"boolean_contours", [](FontJournal& j, Font& f) { boolean_contours(j, f, "H", {0, 2}, geom::BoolOp::Union); }},
+        {"transform_points", [](FontJournal& j, Font& f) {
+             transform_points(j, f, "H", {}, geom::make_transform(1.2, 1, 10, 5, 0, {300, 350}), "Transform"); }},
+        {"transform_from", [](FontJournal& j, Font& f) {
+             transform_from(j, f, "H", *f.glyph("H"), {}, geom::make_transform(1, 1, 3, 0, 0, {300, 350}), "Rotate", "t"); }},
+        {"align_contours", [](FontJournal& j, Font& f) { align_contours(j, f, "H", {0, 2}, Align::Left); }},
+        {"duplicate_contours", [](FontJournal& j, Font& f) { duplicate_contours(j, f, "H", {0}, 0, 0); }},
+        {"arrange_contours", [](FontJournal& j, Font& f) { arrange_contours(j, f, "H", {0}, Arrange::Front); }},
         {"make_part", [](FontJournal& j, Font& f) { make_part(j, f, "n", {0}, "_part.stem"); }},
         {"set_part", [](FontJournal& j, Font& f) { set_part(j, f, {"o"}, true); }},
         {"place_part", [](FontJournal& j, Font& f) { place_part(j, f, "H", "_part.serif", false, 0, -10); }},

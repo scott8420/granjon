@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
+  <!-- Granjon inspector icon (s09 r2): node type Corner (a square, as on the canvas). Symbolic: currentColor only. -->
+  <path fill="currentColor" opacity="0.45" d="M0.5 7.4 H15.5 V8.6 H0.5 Z"/>
+  <path fill="currentColor" d="M4 4 H12 V12 H4 Z"/>
+</svg>

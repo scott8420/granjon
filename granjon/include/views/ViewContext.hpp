@@ -34,6 +34,19 @@ struct ViewContext {
     // a single picked point. Cleared when the selected glyph changes.
     geom::Points          pick;
     sigc::signal<void()>  pick_changed;
+    // M15a r1: where a transform starts from -- shared by the canvas pivot
+    // and the inspector's TRANSFORM card. Not chosen (tf_explicit false): the
+    // handles scale / skew from the opposite side and rotate about the centre,
+    // the card's Apply uses the centre. Chosen: everything works about it --
+    // a point of the pick's box (tf_origin 0 top-left .. 8 bottom-right) or a
+    // custom point (tf_origin -1, tf_custom in font units), dragged on the
+    // canvas or typed. A custom point belongs to the pick it was set for
+    // (tf_for); a new pick falls back to the box's centre.
+    int                  tf_origin = 4;
+    bool                 tf_explicit = false;
+    geom::Vec2           tf_custom{};
+    std::string          tf_for;
+    sigc::signal<void()> tf_origin_changed;
     // A picked guide (M5c), instead of points: owner "" = font-wide.
     struct GuideRef { std::string owner; int index = -1; };
     std::optional<GuideRef> guide_pick;   // emits pick_changed too

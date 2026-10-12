@@ -304,6 +304,7 @@ void Shell::on_undo() {  // handler: take the last step back
     const auto r = m_doc.journal.undo();
     if (!r.done) return;
     m_ctx.select(r.selection.empty() ? std::string{} : r.selection.front());
+    restore_pick(r.detail);
     say("Undid: " + r.label, false);
     if (auto lg = log::get(log::Area::Shell)) lg->info("undo: {}", r.label);
 }
@@ -312,8 +313,24 @@ void Shell::on_redo() {  // handler: put the undone step back
     const auto r = m_doc.journal.redo();
     if (!r.done) return;
     m_ctx.select(r.selection.empty() ? std::string{} : r.selection.front());
+    restore_pick(r.detail);
     say("Redid: " + r.label, false);
     if (auto lg = log::get(log::Area::Shell)) lg->info("redo: {}", r.label);
+}
+
+// s09: put back the pick a step recorded -- only on the glyph it was made in,
+// and only the points that still exist.
+void Shell::restore_pick(const std::string& detail) {
+    std::string glyph;
+    geom::Points pts = geom::pick_from_text(detail, &glyph);
+    if (detail.empty() || glyph != m_ctx.selected) return;
+    const model::Glyph* g = m_doc.font.glyph(glyph);
+    if (!g) return;
+    for (auto it = pts.begin(); it != pts.end();)
+        it = geom::valid(*g, *it) ? std::next(it) : pts.erase(it);
+    if (pts == m_ctx.pick) return;
+    m_ctx.pick = std::move(pts);
+    m_ctx.pick_changed.emit();
 }
 
 void Shell::on_other_case() {  // handler: case navigation, A <-> a

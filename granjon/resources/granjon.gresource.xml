@@ -25,6 +25,34 @@
     <file preprocess="xml-stripblanks" alias="granjon-view-context-symbolic.svg">icons/scalable/apps/granjon-view-context-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="granjon-view-grid-symbolic.svg">icons/scalable/apps/granjon-view-grid-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="granjon-view-snap-symbolic.svg">icons/scalable/apps/granjon-view-snap-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="granjon-view-align-symbolic.svg">icons/scalable/apps/granjon-view-align-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="granjon-node-corner-symbolic.svg">icons/scalable/apps/granjon-node-corner-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="granjon-node-smooth-symbolic.svg">icons/scalable/apps/granjon-node-smooth-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="granjon-node-symmetric-symbolic.svg">icons/scalable/apps/granjon-node-symmetric-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="granjon-node-cusp-symbolic.svg">icons/scalable/apps/granjon-node-cusp-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="granjon-align-left-symbolic.svg">icons/scalable/apps/granjon-align-left-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="granjon-align-hcenter-symbolic.svg">icons/scalable/apps/granjon-align-hcenter-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="granjon-align-right-symbolic.svg">icons/scalable/apps/granjon-align-right-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="granjon-align-top-symbolic.svg">icons/scalable/apps/granjon-align-top-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="granjon-align-vmiddle-symbolic.svg">icons/scalable/apps/granjon-align-vmiddle-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="granjon-align-bottom-symbolic.svg">icons/scalable/apps/granjon-align-bottom-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="granjon-distribute-h-symbolic.svg">icons/scalable/apps/granjon-distribute-h-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="granjon-distribute-v-symbolic.svg">icons/scalable/apps/granjon-distribute-v-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="granjon-tf-scale-symbolic.svg">icons/scalable/apps/granjon-tf-scale-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="granjon-tf-rotate-symbolic.svg">icons/scalable/apps/granjon-tf-rotate-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="granjon-tf-skew-symbolic.svg">icons/scalable/apps/granjon-tf-skew-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="granjon-tf-origin-symbolic.svg">icons/scalable/apps/granjon-tf-origin-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="granjon-tf-link-symbolic.svg">icons/scalable/apps/granjon-tf-link-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="granjon-tf-apply-symbolic.svg">icons/scalable/apps/granjon-tf-apply-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="granjon-tf-reset-symbolic.svg">icons/scalable/apps/granjon-tf-reset-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="granjon-path-directions-symbolic.svg">icons/scalable/apps/granjon-path-directions-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="granjon-path-reverse-symbolic.svg">icons/scalable/apps/granjon-path-reverse-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="granjon-path-overlaps-symbolic.svg">icons/scalable/apps/granjon-path-overlaps-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="granjon-bool-union-symbolic.svg">icons/scalable/apps/granjon-bool-union-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="granjon-bool-subtract-symbolic.svg">icons/scalable/apps/granjon-bool-subtract-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="granjon-bool-intersect-symbolic.svg">icons/scalable/apps/granjon-bool-intersect-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="granjon-duplicate-symbolic.svg">icons/scalable/apps/granjon-duplicate-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="granjon-clone-symbolic.svg">icons/scalable/apps/granjon-clone-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="granjon-view-image-symbolic.svg">icons/scalable/apps/granjon-view-image-symbolic.svg</file>
   </gresource>
   <gresource prefix="/io/github/granjon/Granjon">

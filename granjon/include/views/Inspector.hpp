@@ -156,6 +156,28 @@ private:
     widgets::Button      m_subtract;
     widgets::Button      m_intersect;
     widgets::Button      m_reverse;
+    // M15a: TRANSFORM -- scale / rotate / skew about a 3 x 3 origin, flips, quarter turns.
+    widgets::Label       m_tf_info;
+    widgets::SpinButton  m_tf_sx;
+    widgets::SpinButton  m_tf_sy;
+    widgets::ToggleButton m_tf_uniform;   // r2: a chain-link toggle
+    widgets::SpinButton  m_tf_rot;
+    widgets::SpinButton  m_tf_skx;
+    widgets::SpinButton  m_tf_sky;
+    widgets::Button      m_tf_apply;
+    widgets::Button      m_tf_reset;
+    widgets::SpinButton  m_tf_ox;           // r1: the origin, typed (font units)
+    widgets::SpinButton  m_tf_oy;
+    std::vector<Gtk::Button*> m_tf_cells;   // the 3 x 3 origin grid; a dot on the chosen point
+    bool                 m_tf_quiet = false;   // refreshing the origin fields: not a user edit
+    void refresh_transform();
+    widgets::Button      m_duplicate;     // s09: Duplicate the picked paths (Ctrl+D)
+    widgets::Button      m_clone;         // s09: Clone -- an offset copy (Alt+D)
+    widgets::Button      m_arr_front;     // s09: arrange the picked paths (the top one is the booleans' operand)
+    widgets::Button      m_arr_forward;
+    widgets::Button      m_arr_backward;
+    widgets::Button      m_arr_back;
+    widgets::Label       m_bool_hint;     // s09: which path is on top
     widgets::Button      m_make_first;   // M5e: the picked node leads its contour
     // image (M13): the background image -- place / replace, where, how strong, lock
     widgets::Label       m_image_info{"inspector.image_info"};

@@ -59,6 +59,12 @@ PresetFile parse_presets(std::string_view text, std::vector<std::string>* errors
 // The control glyphs drawn for `p` (unicodes, advance, status Drafted),
 // integral. `notes` gets a line for any part merge that fell back.
 std::vector<Glyph> starter_glyphs(const Preset& p, std::vector<std::string>* notes = nullptr);
+// s09: the preset's starter PARTS (M14c parts, left out of the compile), from
+// the same pieces as the control glyphs: _part.stem (a lowercase stem with its
+// serifs), _part.serif (the foot slab; serif presets only), _part.bowl (o's
+// ring). Placed where n's stem / o's bowl sit, so a linked placement lands on
+// the stem position.
+std::vector<Glyph> starter_parts(const Preset& p, std::vector<std::string>* notes = nullptr);
 
 struct NewFontOptions {
     std::string preset;          // an id; "" or unknown = a blank font (make_new_font)
@@ -67,7 +73,7 @@ struct NewFontOptions {
     bool        create_set = true;   // add the set's glyphs (empty / composites)
 };
 struct NewFontReport {
-    int drawn = 0, added = 0, composites = 0, keys = 0;
+    int drawn = 0, added = 0, composites = 0, keys = 0, parts = 0;
     std::vector<std::string> notes;
 };
 void make_preset_font(Font& f, const NewFontOptions& o, NewFontReport* rep = nullptr);

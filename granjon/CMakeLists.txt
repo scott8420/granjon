@@ -212,6 +212,7 @@ add_executable(granjon
     src/views/Navigator.cpp
     src/views/GlyphSearch.cpp
     src/views/Inspector.cpp
+    src/views/PathOps.cpp      # s09: the path operations (arrange, duplicate / clone, align, booleans) shared by the inspector, keys and the context menu
     src/views/ImagePlace.cpp   # M13: a scan from disk behind a glyph
     src/views/OverviewGrid.cpp
     src/views/GlyphCanvas.cpp

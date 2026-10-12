@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
+  <!-- Granjon inspector icon (s09 r2): node type Cusp (a triangle). Symbolic: currentColor only. -->
+  <path fill="currentColor" opacity="0.45" d="M0.5 7.4 H15.5 V8.6 H0.5 Z"/>
+  <path fill="currentColor" d="M8 3 L13.2 12.5 H2.8 Z"/>
+</svg>

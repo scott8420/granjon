@@ -1,4 +1,5 @@
 #include "Shell.hpp"
+#include <glibmm/main.h>
 #include "Log.hpp"
 #include "core/Recents.hpp"
 
@@ -81,9 +82,23 @@ void Shell::bind_actions() {  // bindings: actions + recents group
     // journal tells the UI when Undo / Redo change, and reads the selection
     // so a step hands it back on undo / redo.
     m_doc.font.set_on_change([this](const std::string& id) { m_dirty.insert(id); queue_repaint(); });
-    m_doc.journal.set_on_change([this] { update_undo_ui(); });
+    m_doc.journal.set_on_change([this] {
+        update_undo_ui();
+        if (!m_pick_amend) {
+            m_pick_amend = true;
+            Glib::signal_idle().connect_once([this] { m_pick_amend = false; });
+        }
+    });
     m_doc.journal.set_selection_source([this] {
         return m_ctx.selected.empty() ? std::vector<std::string>{} : std::vector<std::string>{m_ctx.selected};
+    });
+    // s09: the editor's pick rides each step too, so undo hands it back. A
+    // verb's caller picks its result right after the verb (Subtract picks what
+    // it made): a pick change in the same main-loop turn as a new step amends
+    // that step's "after" pick; the idle callback closes the window.
+    m_doc.journal.set_detail_source([this] { return geom::pick_to_text(m_ctx.selected, m_ctx.pick); });
+    m_ctx.pick_changed.connect([this] {
+        if (m_pick_amend) m_doc.journal.redetail(geom::pick_to_text(m_ctx.selected, m_ctx.pick));
     });
     m_ctx.say       = [this](const std::string& s, bool warn) { say(s, warn); };
     m_ctx.show_view = [this](const std::string& id) {

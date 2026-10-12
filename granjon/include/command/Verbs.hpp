@@ -67,6 +67,16 @@ enum class Side { Left, Right };
 void drag_points(FontJournal& j, Font& f, const geom::Points& pts, double dx, double dy,
                  bool free_handles = false);   // Alt on a handle: it moves alone, its node turns Corner
 void drag_sidebearing(FontJournal& j, Font& f, Side side, double dx, bool move_outline);
+// M15a: the transform handles -- the press's picked part under m (geom::
+// transform_points), live inside the gesture; drag_end snaps + commits.
+void drag_transform(FontJournal& j, Font& f, const geom::Points& pts, const geom::Affine& m);
+// r1: a run of transform STEPS (the TRANSFORM card's step buttons): `base`
+// is the glyph before the run, m the steps so far composed -- written from
+// the base each time and snapped once, so twenty 1-degree turns round once,
+// not twenty times. Merges under merge_key (one undo step for the run).
+bool transform_from(FontJournal& j, Font& f, const std::string& glyph, const model::Glyph& base,
+                    const geom::Points& pts, const geom::Affine& m, const std::string& label,
+                    const std::string& merge_key);
 bool drag_end(FontJournal& j, Font& f);    // snaps to integer units, then commits
 void drag_cancel(FontJournal& j);
 
@@ -121,6 +131,17 @@ enum class Align { Left, HCenter, Right, Top, VMiddle, Bottom, DistributeH, Dist
 // The picked nodes (with their handles) and anchors, to the pick's bounds;
 // distribute spaces them evenly between the outermost two. ONE step.
 bool align_points(FontJournal& j, Font& f, const std::string& glyph, const geom::Points& pts, Align how);
+// M15a: scale / rotate / skew / flip the picked part of a glyph (empty pick =
+// the whole glyph) by m, snapped to units. ONE step named `label`; refused
+// (false) for an identity map or no glyph.
+bool transform_points(FontJournal& j, Font& f, const std::string& glyph, const geom::Points& pts,
+                      const geom::Affine& m, const std::string& label, const std::string& merge_key = {});
+// s09: WHOLE paths, moved as rigid shapes by their exact bounds (whole units).
+// Two or more: to their joint bounds; one: to the glyph's box (0 .. width,
+// baseline .. x-height, cap height on a capital). Distribute (three or more):
+// equal gaps, the outermost two stay. ONE step; refused when nothing moves.
+bool align_contours(FontJournal& j, Font& f, const std::string& glyph, const std::vector<int>& contours, Align how,
+                    std::string* why = nullptr);
 
 // ── direction (M5d) ────────────────────────────────────────────────────────
 // Reverse these contours (start nodes kept). ONE step.
@@ -142,10 +163,11 @@ bool remove_overlaps(FontJournal& j, Font& f, const std::vector<std::string>& gl
 // exact, crossings corners, snapped). `picked` = the contours with a picked
 // node or handle (as Reverse picked).
 //   Union      the picked contours become one outline (two or more picked).
-//   Subtract   the picked contours CUT the rest: every unpicked contour whose
-//              box meets theirs loses what they cover; the cutters go.
-//   Intersect  the unpicked contours whose box meets the picked ones keep
-//              only what the picked ones cover; the picked ones go.
+//   Subtract   (s09) the TOP picked contour -- the last in contour order --
+//              cuts the other picked contours, then goes.
+//   Intersect  the other picked contours keep only what the top one covers;
+//              the top one goes. Unpicked contours take no part (two or
+//              more picked; refused when the top one meets none of them).
 // Contours not involved stay as they are, in their order; the result takes
 // the place of the first contour involved. ONE step, named for the op.
 // Refused (no step, `why` says): too few picked, nothing to cut, a contour
@@ -154,6 +176,20 @@ bool remove_overlaps(FontJournal& j, Font& f, const std::vector<std::string>& gl
 // gets the new contours' indices (the canvas picks them).
 bool boolean_contours(FontJournal& j, Font& f, const std::string& glyph, const std::vector<int>& picked,
                       geom::BoolOp op, std::vector<int>* result = nullptr, std::string* why = nullptr);
+// s09: the paths' stacking order (contour order: 0 at the bottom, the last on
+// top -- the top picked path is the booleans' operand). Front / Back move
+// the picked paths to the end / start, keeping their own order; Forward /
+// Backward step each over the unpicked neighbour above / below. ONE step;
+// refused when nothing moves. `result` = the picked paths' new indices.
+// s09: Duplicate -- copies of the picked paths appended on top (their order
+// kept), moved by (dx, dy); ONE step. `result` = the copies' indices.
+// (0, 0) is Duplicate (exact placement); an offset is Clone (s09, Scott:
+// "clone is slightly offset copy") -- the step is named for which.
+bool duplicate_contours(FontJournal& j, Font& f, const std::string& glyph, const std::vector<int>& contours,
+                        double dx = 0, double dy = 0, std::vector<int>* result = nullptr, std::string* why = nullptr);
+enum class Arrange { Front, Forward, Backward, Back };
+bool arrange_contours(FontJournal& j, Font& f, const std::string& glyph, const std::vector<int>& picked,
+                      Arrange how, std::vector<int>* result = nullptr, std::string* why = nullptr);
 // ── parts (M14c): glyphs left out of the compile (public.skipExportGlyphs) ──
 // A free part name from a stem: "_part.serif", then "_part.serif.1", ...
 std::string free_part_name(const Font& f, const std::string& stem);

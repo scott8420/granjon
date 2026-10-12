@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
+  <!-- Granjon inspector icon (s09 r2): align middles up. Symbolic: currentColor only. -->
+  <path fill="currentColor" opacity="0.55" d="M1 7.2 H15 V8.8 H1 Z"/>
+  <path fill="currentColor" d="M3 2 H6.5 V14 H3 Z"/>
+  <path fill="currentColor" d="M9.5 4.5 H13 V11.5 H9.5 Z"/>
+</svg>

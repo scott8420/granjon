@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <sstream>
 
 namespace granjon::geom {
 
@@ -195,6 +196,84 @@ bool valid(const model::Glyph& g, const PointRef& p) {
         return p.index >= 0 && p.index < static_cast<int>(g.components.size());
     return p.contour >= 0 && p.contour < static_cast<int>(g.contours.size()) && p.index >= 0 &&
            p.index < static_cast<int>(g.contours[p.contour].nodes.size());
+}
+
+std::string pick_to_text(const std::string& glyph, const Points& pts) {
+    std::string out = glyph + "\n";
+    for (const auto& p : pts)
+        out += std::to_string(p.contour) + " " + std::to_string(p.index) + " " +
+               std::to_string(static_cast<int>(p.part)) + ";";
+    return out;
+}
+
+Points pick_from_text(const std::string& text, std::string* glyph) {
+    Points out;
+    const auto nl = text.find('\n');
+    if (glyph) *glyph = text.substr(0, nl);
+    if (nl == std::string::npos) return out;
+    std::istringstream in(text.substr(nl + 1));
+    std::string item;
+    while (std::getline(in, item, ';')) {
+        std::istringstream one(item);
+        int c = 0, i = 0, part = 0;
+        if (!(one >> c >> i >> part) || part < 0 || part > static_cast<int>(PointRef::Part::Component)) continue;
+        out.insert({c, i, static_cast<PointRef::Part>(part)});
+    }
+    return out;
+}
+
+Affine compose(const Affine& o, const Affine& i) {
+    return {o.xx * i.xx + o.yx * i.xy, o.xy * i.xx + o.yy * i.xy,
+            o.xx * i.yx + o.yx * i.yy, o.xy * i.yx + o.yy * i.yy,
+            o.xx * i.dx + o.yx * i.dy + o.dx, o.xy * i.dx + o.yy * i.dy + o.dy};
+}
+
+Affine make_transform(double sx, double sy, double rotate_deg, double skew_x_deg, double skew_y_deg, Vec2 origin) {
+    const double k = M_PI / 180.0;
+    const Affine to0{1, 0, 0, 1, -origin.x, -origin.y};
+    const Affine scale{sx, 0, 0, sy, 0, 0};
+    const Affine skew{1, std::tan(skew_y_deg * k), std::tan(skew_x_deg * k), 1, 0, 0};
+    const double c = std::cos(rotate_deg * k), s = std::sin(rotate_deg * k);
+    const Affine rot{c, s, -s, c, 0, 0};
+    const Affine back{1, 0, 0, 1, origin.x, origin.y};
+    return compose(back, compose(rot, compose(skew, compose(scale, to0))));
+}
+
+void transform_points(model::Glyph& g, const model::Glyph& at_press, const Points& pts, const Affine& m) {
+    using P = PointRef::Part;
+    g = at_press;
+    const bool all = pts.empty();
+    const auto picked = [&](int c, int i, P part) { return all || pts.count({c, i, part}) > 0; };
+    for (int ci = 0; ci < static_cast<int>(g.contours.size()); ++ci) {
+        auto& c = g.contours[static_cast<std::size_t>(ci)];
+        bool whole = true;
+        for (int i = 0; i < static_cast<int>(c.nodes.size()); ++i) {
+            auto& n = c.nodes[static_cast<std::size_t>(i)];
+            const bool node = picked(ci, i, P::Node);
+            whole = whole && node;
+            if (node) {
+                const Vec2 a = m.apply({n.x, n.y}), h1 = m.apply({n.cx1, n.cy1}), h2 = m.apply({n.cx2, n.cy2});
+                n.x = a.x; n.y = a.y; n.cx1 = h1.x; n.cy1 = h1.y; n.cx2 = h2.x; n.cy2 = h2.y;
+                continue;
+            }
+            if (picked(ci, i, P::In))  { const Vec2 h = m.apply({n.cx1, n.cy1}); n.cx1 = h.x; n.cy1 = h.y; }
+            if (picked(ci, i, P::Out)) { const Vec2 h = m.apply({n.cx2, n.cy2}); n.cx2 = h.x; n.cy2 = h.y; }
+        }
+        if (whole && !c.nodes.empty() && m.det() < 0) reverse(c);
+    }
+    for (int i = 0; i < static_cast<int>(g.anchors.size()); ++i)
+        if (picked(-1, i, P::Anchor)) {
+            auto& an = g.anchors[static_cast<std::size_t>(i)];
+            const Vec2 v = m.apply({an.x, an.y});
+            an.x = v.x; an.y = v.y;
+        }
+    for (int i = 0; i < static_cast<int>(g.components.size()); ++i)
+        if (picked(-1, i, P::Component)) {
+            auto& k = g.components[static_cast<std::size_t>(i)];
+            const Affine own{k.xx, k.xy, k.yx, k.yy, k.dx, k.dy};
+            const Affine r = compose(m, own);
+            k.xx = r.xx; k.xy = r.xy; k.yx = r.yx; k.yy = r.yy; k.dx = r.dx; k.dy = r.dy;
+        }
 }
 
 Vec2 position(const model::Glyph& g, const PointRef& p) {

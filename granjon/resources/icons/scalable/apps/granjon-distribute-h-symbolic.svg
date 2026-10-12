@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
+  <!-- Granjon inspector icon (s09 r2): distribute across (equal gaps). Symbolic: currentColor only. -->
+  <path fill="currentColor" d="M1 4 H3.5 V12 H1 Z"/>
+  <path fill="currentColor" d="M6.75 2 H9.25 V14 H6.75 Z"/>
+  <path fill="currentColor" d="M12.5 5 H15 V11 H12.5 Z"/>
+  <path fill="currentColor" opacity="0.45" d="M3.5 7.5 H6.75 V8.5 H3.5 Z"/>
+  <path fill="currentColor" opacity="0.45" d="M9.25 7.5 H12.5 V8.5 H9.25 Z"/>
+</svg>

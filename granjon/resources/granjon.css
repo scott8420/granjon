@@ -354,6 +354,9 @@ popover.checklist-popover .badge { margin-left: 4px; }
 .inspector .node-types > button { padding: 2px 4px; min-width: 0; }
 .inspector .node-types > button:checked { background-color: var(--accent); background-image: none; color: var(--accent-fg); }
 .inspector button.toggle:checked { background-color: var(--accent); background-image: none; color: var(--accent-fg); }
+/* s09 r2: icons for words -- compact origin grid, field icons dimmed like labels. */
+.inspector button.origin-cell { min-width: 16px; min-height: 16px; padding: 0; font-size: 9px; }
+.inspector image.field-icon { opacity: 0.7; margin-right: 2px; }
 
 /* Navigator (M5b+): section headers are rows of their own that fold. */
 .navigator row.section-row,

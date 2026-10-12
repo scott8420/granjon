@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
+  <!-- Granjon inspector icon (s09 r2): the origin (pivot). Symbolic: currentColor only. -->
+  <path fill="currentColor" fill-rule="evenodd" d="M4 8 a4 4 0 1 0 8 0 a4 4 0 1 0 -8 0 Z M5.4 8 a2.6 2.6 0 1 0 5.2 0 a2.6 2.6 0 1 0 -5.2 0 Z"/>
+  <path fill="currentColor" d="M6.6 8 a1.4 1.4 0 1 0 2.8 0 a1.4 1.4 0 1 0 -2.8 0 Z"/>
+  <path fill="currentColor" d="M7.3 0.5 H8.7 V3.5 H7.3 Z"/>
+  <path fill="currentColor" d="M7.3 12.5 H8.7 V15.5 H7.3 Z"/>
+  <path fill="currentColor" d="M0.5 7.3 H3.5 V8.7 H0.5 Z"/>
+  <path fill="currentColor" d="M12.5 7.3 H15.5 V8.7 H12.5 Z"/>
+</svg>

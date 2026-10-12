@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
+  <!-- Granjon view icon (s09): alignment guides: a node with dashed lines out to its neighbours. Symbolic: currentColor only. -->
+  <rect fill="currentColor" x="6" y="6" width="4" height="4"/>
+  <g fill="currentColor" opacity="0.6">
+    <rect x="7.25" y="0.5" width="1.5" height="2"/><rect x="7.25" y="3.5" width="1.5" height="1.5"/>
+    <rect x="7.25" y="11" width="1.5" height="1.5"/><rect x="7.25" y="13.5" width="1.5" height="2"/>
+    <rect x="0.5" y="7.25" width="2" height="1.5"/><rect x="3.5" y="7.25" width="1.5" height="1.5"/>
+    <rect x="11" y="7.25" width="1.5" height="1.5"/><rect x="13.5" y="7.25" width="2" height="1.5"/>
+  </g>
+  <rect fill="currentColor" x="0.5" y="0.5" width="2.5" height="2.5" opacity="0.85"/>
+  <rect fill="currentColor" x="13" y="13" width="2.5" height="2.5" opacity="0.85"/>
+</svg>

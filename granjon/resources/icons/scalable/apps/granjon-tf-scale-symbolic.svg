@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
+  <!-- Granjon inspector icon (s09 r2): scale. Symbolic: currentColor only. -->
+  <path fill="currentColor" fill-rule="evenodd" d="M1 1 H15 V15 H1 Z M2.4 2.4 H13.6 V13.6 H2.4 Z"/>
+  <path fill="currentColor" opacity="0.5" d="M1 9 H7 V15 H1 Z"/>
+  <path fill="currentColor" d="M8 8 L12.5 3.5 H9.5 V2.2 H13.8 V6.5 H12.5 V4.5 L9 8 Z"/>
+</svg>

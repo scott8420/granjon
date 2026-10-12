@@ -1,12 +1,98 @@
-# Granjon handoff — s08 -> s09
+# Granjon handoff — s09 -> s10
 
-# s09_m15_transform_corners
+# s10_m15b_corners
 
 ## Files to upload
-- `s08_m14_drawing_kit_final.zip` (the s08 ship -- the one zip to install: r3's code + this handoff. Earlier s08 zips are superseded. Or a fresh `scripts/granjon_backup.sh -o s09_m15_transform_corners`)
+- `s09_m15a_transform_r2.zip` (the one zip to install -- M15a + r1 steps / pivot + r2 icons; everything in s09: the "first" items, arrange, guides, Duplicate / Clone, path align, the context menu, M15a transform. Earlier s09 zips are superseded. Or a fresh `scripts/granjon_backup.sh -o s10_m15b_corners`)
 - `RULES.md`, `HANDOFF.md`, `ARCHITECTURE.md`, `ARC.md`, `CANON.md`
 
 ---
+
+## Status — s09
+- **M15a r2 -- icons for words: crc** (Scott: "crc. pls give git push" -- s09 closed here). (`s09_m15a_transform_r2.zip`; Scott, on r1 with a shot of PICK + TRANSFORM: "great! can we reclain real estate by using icons with hints instead of words"). Selftest 1126 / 0. No new package.
+  - 27 new symbolic icons (currentColor, 16 px, in the gresource): node types (`granjon-node-corner / smooth / symmetric / cusp` -- the canvas's own node shapes on a handle line), align / distribute (`granjon-align-left / hcenter / right / top / vmiddle / bottom`, `granjon-distribute-h / v`), transform (`granjon-tf-scale / rotate / skew / origin / link / apply / reset`), outline (`granjon-path-directions / reverse / overlaps`, `granjon-bool-union / subtract / intersect`, `granjon-duplicate`, `granjon-clone`). Every button's hint now starts with its name.
+  - PICK: node types one icon row; align + distribute ONE row of 8 icons (was two rows of words).
+  - TRANSFORM: the info line is just "1 path . 80 x 500" (the how-to moved into its hint); row labels are icons (Card::icon_field); Uniform is a chain-link toggle between the two scale fields; the origin grid's cells are 16 px; Apply / Reset + flips / quarter turns share one icon row; number fields 4 chars wide.
+  - OUTLINE: one row of two linked groups -- correct directions / reverse / remove overlaps | union / subtract / intersect; one row -- duplicate / clone | the four arrange buttons (the "Arrange" label row is gone).
+  - CSS: `.origin-cell` (compact), `.field-icon` (dimmed like a label).
+  - Icons are mine -- say which don't read.
+- **M15a r1 -- steps, pivot, Curvz handle roles** (`s09_m15a_transform_r1.zip`; Scott: "Incremental rotate/skew/scale should be allowed with precision in the panel or a floating panel. Also, like curvz we could modify the action by setting where the rotation/skew/scale starts from and a point outside the corners changes to rotate. Around the inner 90/180 degree midpoint does skew and scale on bounding box corners."). Sandbox green, not crc. Selftest **1126 / 0** (6 new). No new warnings, no new package.
+  - **Step buttons** on each TRANSFORM row apply that row's amount at once, either way: Scale % (default 101: grow / shrink = the exact inverse), Rotate (default 1.00 deg, hundredths: turn left / right), Skew (default 1.00 deg: back / on). A run of presses on the same pick within 1.5 s is ONE undo step and is written from the shape before the run with the steps composed, rounded ONCE (verb `transform_from`, merge key `tfstep:<glyph>:<kind>`; selftest: 90 x 1 deg on a circle keeps its nodes on the circle). "Apply all" does the rows together, once.
+  - **The origin (pivot)**, shared by canvas and card (`ViewContext::tf_origin / tf_explicit / tf_custom / tf_for`, `PathOps` `transform_origin / origin_chosen / set_origin_point / set_custom_origin / clear_origin`): a ring with a cross on the canvas -- hollow at the box centre by default, a dot once chosen. Drag it (snaps to the box's 9 points -- then it follows the box -- else to a node, else whole units; not an undo step), click a cell of the card's 3 x 3 grid, or type Origin x / y. Chosen: rotate, skew and scale all work about it (Curvz). Not chosen: handles scale / skew from the opposite side and rotate about the centre; the buttons use the centre. A custom point belongs to its pick; Reset clears it.
+  - **Handle roles (Curvz)**: corners scale (Shift uniform); an **edge's middle skews** (no modifier; Shift: 5-degree steps); Ctrl on an edge scales one way; just outside a corner rotates (Shift: 15 degrees). Alt: about the centre. Cursors follow (edges show the slide direction).
+  - Note: the TRANSFORM card's rows (two fields + steppers) make the inspector ~470 px wide in the sandbox -- check on Scott's screen.
+  - Shots: hollow pivot at the stem's centre; dragged to the bottom-left corner (dot); rotate from outside the top-right -> turns about that corner; top edge's middle dragged -> skew, bottom fixed; 5 presses of turn-right -> 5 deg, one Ctrl+Z -> "Undid: Rotate", back as drawn.
+- **M15a transform: sandbox green, not crc** (`s09_m15a_transform.zip`; Scott, after r6 crc: "One tool missing so far is scale/skew/rotate"). Selftest **1120 / 0** (16 new). No new warnings, no new package. (`s09_m15a_transform_wip.zip` was the core-only checkpoint.)
+  - geom: `Affine` (UFO component order), `compose`, `make_transform(sx, sy, rotate, skew_x, skew_y, origin)` -- scale, then skew, then rotate, about the origin; rotate positive = counter-clockwise, skew-x positive slants right as it rises. `transform_points(g, at_press, pts, m)`: picked nodes carry both handles, a lone picked handle moves alone, anchors move, picked components compose m onto their matrix; an EMPTY pick = the whole glyph; a whole contour under a mirroring map (det < 0) is reversed so it still runs the right way.
+  - Verbs: `transform_points` (one step, snapped, identity refused; in the verb table) and `drag_transform` (live inside a drag gesture; drag_end snaps + commits).
+  - **Canvas, Select tool**: the pick's box with 8 handles (dashed accent frame). Corner = scale both ways (Shift uniform), edge = one way (Shift uniform), Alt = about the centre instead of the opposite side, **Ctrl on an edge = skew**; **just outside a corner = rotate** about the centre (Shift: 15-degree steps). Cursors say which. Live, one undo step at release; readout "134.9 % x 120.0 %" / "Rotate -20.6 deg" / "Skew 13.1 deg" (readout widened to 16 chars).
+  - **Inspector TRANSFORM card** (glyph page, before OUTLINE): "Applies to 1 path -- 80 x 500" (or N paths / N points / the whole glyph), Scale % x / y with Uniform, Rotate, Skew x / y, Origin (3 x 3 grid, dot on the chosen point; default centre), Apply (values stay -- Apply again repeats) / Reset, and Flip horizontal / Flip vertical / Rotate 90 left / right (about the centre).
+  - **Context menu**: Transform > Flip horizontal / vertical, Rotate 90 left / right, Rotate 180.
+  - `views/PathOps`: `pick_box` (exact curve bounds of whole picked paths + positions of other picked points; whole glyph when nothing is picked), `pick_subject`, `box_point`, `transform_picked`, `flip_picked`, `rotate_picked`.
+  - r6's "canvas menu" log lines removed (Scott: crc).
+  - Caught in the shots: my first test drags missed the handles because the new card widened the inspector and moved the canvas 20 px -- not a code fault (logged, then the log taken out).
+  - Shots (n's right stem, Select): corner drag -> 194.5 % x 120.9 %, from the opposite corner; outside the corner -> rotated about the centre; Ctrl + top edge -> skewed, the bottom fixed; the TRANSFORM card.
+- **r6: crc** (Scott: "crc. Thx.").
+- **r6 -- context menu won't close** (`s09_first_r6.zip`; Scott on r5: "the context menu doesn't want to disengage when clicking outside to dismiss without continuing"). Sandbox green, not crc. Selftest 1104 / 0.
+  - Not reproducible in the sandbox (X11: GTK's own click-outside closes it) -- Scott's Fedora is Wayland, where the compositor does that. Three changes: the right-click press is CLAIMED (no other gesture holds the sequence while the popup takes its grab); autohide set explicitly; and a FALLBACK -- while the menu shows, a capture-phase click controller on the window (any button) pops it down and eats that click (removed on idle after close). Escape is the popover's own. Focus returns to the canvas on close.
+  - **Log lines in (log mode, App area)**: "canvas menu: popup at x, y", "canvas menu: click outside -> popdown" (the fallback fired), "canvas menu: closed". If it still sticks, the terminal log says which path ran. Take them out once Scott confirms.
+- **r5 -- align paths + the canvas context menu** (`s09_first_r5.zip`; Scott on r4: "excellent. we also then need align tools. also can some of these modifier tools be in a context menu and easy to find."). Sandbox green, not crc. Selftest **1104 / 0** (12 new). No new warnings, no new package.
+  - **Align / distribute whole paths**: verb `align_contours` (in the verb table) moves paths as rigid shapes by their exact bounds, whole units. Two or more paths: to their joint bounds (Left / Centre / Right / Top / Middle / Bottom). ONE path: to the glyph's box -- 0 .. width across, baseline .. x-height up (cap height on a capital, by Unicode category Lu). Distribute across / up (three or more): equal GAPS, the outer two stay. "Already lined up." refused, no step.
+  - The PICK card's existing align row now routes: whole paths picked (Select's pick) -> paths; loose nodes / anchors -> the M5c node align as before. Tooltips say so.
+  - **Right-click on the canvas: a context menu** -- Duplicate (Ctrl+D), Clone (Alt+D); Arrange >, Align > (Left / Centre / Right, Top / Middle / Bottom, Distribute across / up), Combine > (Union, Subtract (top path cuts), Intersect (top path keeps), Remove overlaps); Nodes > (Make lines L, Make curves C, Corner / Smooth / Symmetric / Cusp), Direction > (Reverse picked, Correct directions); Pick all (Ctrl+A). Keys shown beside the items; items grey by the pick. A right-click on a path with nothing picked on it picks the whole path first.
+  - One code path for every surface: `views/PathOps` (was `views/Arrange`) now holds arrange, duplicate / clone, align, booleans, overlaps, directions, reverse; the inspector's buttons, the keys and the menu all call it.
+  - Shots: right-click the right stem of n -> the menu, stem picked; Align > Centre -> the stem centred in the 560 width, "Align centre -- 1 path, to the glyph's box."
+- **r4 -- Clone, guides on every path, guides toggle** (`s09_first_r4.zip`; Scott: "duplicate is a copy exact placement and clone is slightly offset copy. when seeing the left/right up/down guides it should take into account all the paths in the view. also we should be able to hide/show the guides."). Sandbox green, not crc. Selftest 1092 / 0 (the clone test reworked).
+  - **Clone (Alt+D)** / OUTLINE card **Clone** (beside Duplicate): copies of the picked paths offset right and down by 2 % of the em (20 at 1000 UPM), on top, picked. Same verb as Duplicate with an offset; the step is named "Clone path(s)".
+  - **Alignment guides** now look at every path in the glyph: UP / DOWN go to the node above / below nearest to plumb (smallest dx), LEFT / RIGHT to the node left / right nearest to level (smallest dy); picked (moving) nodes ignored; one node answering two directions draws once. Each guide: a dashed amber L out of the dragged node, the long leg labelled with the distance, the short one with the offset still to close; lined up = one solid accent line. Replaces r2's path-neighbour reading.
+  - **Tool panel toggle "Alignment guides"** (new icon `granjon-view-align-symbolic.svg`, under Snap): hides / shows them; remembered (`editor.align` in settings.json, default on).
+  - Seen in the clone shot (not new): an overlapping copy can make the Checks call the original "wrong way" (overlap read as a counter). Asked.
+  - Shots: n, the left stem's corner dragged -> guides to both stems; over x = 380 -> solid accent plumb; V, right stem, Alt+D -> the clone offset 20 / 20, "Cloned 1 path, offset 20 right and down".
+- **r3 -- Duplicate** (`s09_first_r3.zip`; Scott: "We should have a clone and a duplicate selected path(s) process."). Sandbox green, not crc. Selftest **1092 / 0** (7 new).
+  - **Duplicate (Ctrl+D)** / OUTLINE card **Duplicate** button: copies of the picked paths, IN PLACE, appended on top (their order kept), the copies picked -- drag or nudge them. One step ("Duplicate path(s)"), verb `duplicate_contours` (in the verb table; takes an offset for later use, the UI passes 0, 0).
+  - **Ctrl+D was the Cairn "Dump widget registry" diagnostic -- moved to Ctrl+Shift+D** (☰ Diagnostics still has it).
+  - Select fix found by the shot: a press on / inside a path that is already picked keeps the pick even where another path lies there too (the copy sits exactly on its original; the drag took the original before).
+  - **Clone: NOT built** -- asked Scott what it should mean (see Still open).
+  - Shot: n, Select the left stem, Ctrl+D, drag -> the copy moved up-right, the original in place, "1 path picked, contour 3 of 3".
+- **r2 -- neighbour lines on a node drag** (`s09_first_r2.zip`; Scott: "when moving a node a temp line up to adjacent nodes left/right up/down could help line up the node when placing. the measure tool kind of info"). Sandbox green, not crc. Selftest 1085 / 0 (canvas only, no core change).
+  - While a node is dragged (Pick), a dashed amber L runs to each of its neighbours on the path that stays put: horizontal leg labelled with dx, vertical with dy (the Measure tool's tags). The previous neighbour's L leaves sideways, the next one's up / down, so legs and labels don't pile up. Level with a neighbour or plumb over it: that leg becomes a solid accent line. Neighbours that move with it (picked) get none, so a whole-path drag (Select) is clean. `GlyphCanvas::draw_neighbours`.
+  - Reading taken: "adjacent" = the node's neighbours along the path. If Scott meant the nearest nodes in space left / right / above / below (any contour), that's a second pass (the snap already draws a dashed line when it aligns to any node).
+  - Sandbox shot (sample n, the left stem's top-right corner dragged up-right): 68 / 109 and 148 / 609 apart; dragged back over x = 150: solid accent vertical.
+- **s09 first, all four items + arrange: sandbox green, not crc** (`s09_first.zip`). Selftest **1085 / 0** (14 more over the wip). No new warnings, no new package.
+- **Item 1 -- booleans by the top path + arrange** (Scott: "we should have a way of arranging paths up/down and the top path determines the boolean action"):
+  - Path order = contour order, 0 at the bottom, last on top. Verb `arrange_contours` (in the verb table): **Bring to front / Bring forward / Send backward / Send to back** on the picked paths (Illustrator's semantics: front / back keep the picked paths' own order; forward / backward step each over the unpicked neighbour). One step each; "Already on top." / "Already at the bottom." refused, no step. The pick follows the paths.
+  - Inspector OUTLINE card: an **Arrange** row (go-top / up / down / bottom icons), greyed when nothing would move. Editor keys **Ctrl+] / Ctrl+[ / Ctrl+Shift+] / Ctrl+Shift+[** (in the Shortcuts window). Shared helper `views/Arrange`.
+  - **Subtract / Intersect**: the TOP picked path is the operand -- Subtract cuts it out of the other PICKED paths, Intersect keeps their overlap with it; the top one goes. Unpicked paths take no part. Two or more picked (buttons grey otherwise); refused when the top path meets none of the others. Union unchanged. The "every contour is picked" refusal is gone.
+  - Canvas: with 2+ paths picked, the top one gets an accent outline; the OUTLINE card says "Top: path N of M".
+  - A freshly drawn shape is appended, so it is on top: draw, Shift+click the paths to cut (Select, V), Subtract.
+- (wip) **s09 first, items 2-4: sandbox green, not crc** (`s09_first_wip.zip`). Selftest **1071 / 0** (13 new). Ubuntu 24.04, g++ 13.3, gtkmm 4.10 / GTK 4.14, RelWithDebInfo; no new warnings (the known fmt/GCC 13 memmove x3 in Shell_bindings). **No new package.** Xvfb launch smoke: runs.
+- **Item 4 -- opens on Select (V)**: the tool panel starts on the solid arrow.
+- **Item 3 -- undo restores the pick**: `core::Journal` gained a DETAIL channel beside the selection (an opaque string; `set_detail_source`, Step `detail_before / after`, `Result::detail`, `redetail()` like `reselect()`). The Shell feeds it the editor's pick as text (`geom::pick_to_text / pick_from_text`: "glyph\n" + "c i part;" per point). A pick change in the same main-loop turn as a new step amends that step's "after" (so Subtract's picked result is what redo hands back); an idle callback closes that window. Undo / redo put the pick back only on the glyph it was made in, only points that still exist (`Shell::restore_pick`). Fixes s08's "Known: the pick is not part of undo" (stale in-range refs after Ctrl+Z).
+- **Item 2 -- preset fonts start with parts**: `model::starter_parts` -- `_part.stem` (lowercase stem, head serif + foot slab on serif presets), `_part.serif` (the foot slab; Serif only), `_part.bowl` (o's ring), from the preset's own Kit pieces. Each starts where its glyph starts (stem / serif at n's left edge, bowl at o's -- Mono too), unmapped, `skip_export`. Added even with "@none" (control glyphs only). Presets selftest: whole Checks report still empty on every preset.
+
+## What to look at in M15a (r1)
+- TRANSFORM card: press turn-right a few times (1 deg each) -> Ctrl+Z once takes the run back. Grow / shrink at 101 %. Type 0.25 in Rotate for fine turns.
+- Canvas: drag the round pivot onto a corner or a node; rotate / skew / scale now work about it. The card's grid and x / y follow. Reset clears it.
+- Edge middles now skew without Ctrl (Ctrl scales one way).
+
+## What to look at in M15a
+- V, click a path: the box with 8 handles. Drag a corner (Shift, Alt); an edge; Ctrl + an edge (skew); just outside a corner (rotate, Shift for 15 degrees). Ctrl+Z after each: one step.
+- Inspector TRANSFORM: type 120 % / rotate 15 / skew 12, pick an origin, Apply (and Apply again). Flip / quarter-turn buttons. Nothing picked: the whole glyph.
+- Right-click > Transform.
+- A flipped path should still say "all running the right way" (OUTLINE card).
+
+## What to look at in s09 first
+- Right-click a path: the menu. Try Align > Centre on one path (centres in the width), then V + Shift+click three paths -> Align > Top, Distribute across.
+- PICK card's align row with whole paths picked: shapes move intact (it used to flatten them -- node align).
+- V, click a stem, Alt+D: a copy 20 right / down, picked. Drag a node: guides to the nearest nodes on any path; toggle them off with the new panel button.
+- V, click a stem, Ctrl+D, drag: the copy moves, the original stays. Ctrl+Z once: the copy's move; twice: the copy gone.
+- A (Pick), drag a corner of a stem: amber Ls with dx / dy to the two neighbours; line it up level or plumb -> solid accent.
+- n: draw an ellipse across both stems; V, Shift+click both stems (three picked -- the ellipse has the accent outline) -> Subtract: both stems notched. Ctrl+Z, pick only the left stem + ellipse -> Subtract: the right stem untouched.
+- Pick the ellipse alone -> Ctrl+Shift+[ (Send to back); Shift+click a stem -> the stem now carries the accent -> Subtract: the stem cuts the ellipse.
+- The Arrange row's four buttons; Ctrl+] / Ctrl+[ step by step; the "Top: path N of M" line follows.
+- Launch: the solid arrow (Select) is on.
+- n: draw an ellipse across a stem -> Subtract -> Ctrl+Z: the ellipse is picked again (not the stems). Ctrl+Shift+Z: the pieces picked.
+- Ctrl+N -> Serif: PARTS shows _part.bowl, _part.serif, _part.stem. Sans: stem + bowl. Place linked _part.stem in an empty glyph: it lands on n's stem position.
 
 ## s09 first -- Scott's answers at the s08 close (do these before M15, one small ship)
 1. **Booleans: "top selection dictates."** Read as: the TOPMOST picked path (last in contour order = drawn last, on top) is the operand -- Subtract cuts it out of the other PICKED paths, Intersect keeps their overlap with it; Union unchanged. Unpicked paths no longer take part. (Illustrator's Minus Front.) Confirm the reading with Scott in one line before building -- it reverses s08's "picked cuts the rest".
@@ -85,6 +171,12 @@ Then M15 (transform + corners).
 - Draw an ellipse over a stem and OUTLINE -> Remove overlaps: one outline (the M10c engine).
 - Whether the three icons read; whether Shift-square should grow from the larger side (now) or the horizontal one.
 
+## Decisions made in s09
+- Stacking order is the contour order itself (no separate z field): nothing to save, UFO keeps it, a new shape is on top by being appended.
+- Booleans: the top picked path is the operand (Scott); unpicked paths are never touched by Subtract / Intersect. Intersect on several picked paths treats them together (nonzero), so a counter picked with its outer works as expected.
+- Undo's pick: an opaque detail string in the journal (the journal stays GTK-free and generic), amended in the same main-loop turn as the step.
+- Starter parts are added even with "control glyphs only".
+
 ## Decisions made in s08
 - Primitives are added on RELEASE (one verb call), not built live in the model like the pen -- the preview is the canvas's own drawing, so a cancelled drag never touched the journal.
 - Each shape is a NEW contour, never merged on drawing (overlaps are kept while drawing, as everywhere else; Remove overlaps / the booleans merge).
@@ -136,6 +228,8 @@ Primitives (rectangle, ellipse -- Shift square / circle, Alt from centre; line =
 Then: M15 transform panel + corner tools + extreme points + offset stroke; M16 mark positioning, features editor, italic angle / font info. Later: print proof, ttfautohint, weight masters (v3).
 
 ## Still open
+- M15 remainder (s10): **M15b** round corner + ink trap, add extreme points, offset / expand stroke. Transform follow-ons: Transform Each (each path about its own centre), a remembered origin, a free-transform 'perspective' (no -- fonts don't), handles in Pick mode for a node selection (now Select only).
+- **Overlap vs direction check (s09 r4)**: a duplicate / clone overlapping its original can flag the original "runs the wrong way". Options asked: leave (Remove overlaps / Union resolves it), or have the direction check ignore partial overlaps.
 - M14 questions (s08): answered at the close -- see "s09 first" at the top.
 - Not done in M14 (follow-ons): booleans on components (decompose first today); a parts preview strip (the list is names only); drag a part from the navigator onto the canvas; rounded rectangle / polygon primitives.
 - **Font-wide image sheet** (M13): wanted? (one scan of an alphabet, sliced per glyph). Asked in s07, no answer yet.

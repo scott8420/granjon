@@ -303,11 +303,12 @@ struct Kit {
     }
 };
 
+// `key`: whose spacing numbers place it ("" = the glyph's own name); cp 0 = unmapped.
 Glyph finish(const Preset& p, const std::string& name, char32_t cp, std::vector<Contour> parts,
-             std::vector<std::string>* notes) {
+             std::vector<std::string>* notes, const std::string& key = {}) {
     Glyph g;
     g.name = name;
-    g.unicodes = {cp};
+    if (cp) g.unicodes = {cp};
     g.status = GlyphStatus::Drafted;
     const auto merged = geom::remove_overlaps(parts);
     if (merged.fallback && notes) notes->push_back(name + ": parts kept as drawn (" + merged.why + ")");
@@ -316,7 +317,7 @@ Glyph finish(const Preset& p, const std::string& name, char32_t cp, std::vector<
     double x0 = 1e9, x1 = -1e9;
     for (const auto& c : g.contours)
         for (const auto& n : c.nodes) { x0 = std::min(x0, n.x); x1 = std::max(x1, n.x); }
-    const auto it = p.shapes.find(name);
+    const auto it = p.shapes.find(key.empty() ? name : key);
     const Preset::Shape s = it != p.shapes.end() ? it->second : Preset::Shape{};
     double shift = 0;
     if (p.mono > 0) {
@@ -348,6 +349,42 @@ std::vector<Glyph> starter_glyphs(const Preset& p, std::vector<std::string>* not
     out.push_back(finish(p, "O", U'O', k.ring(w("O"), m.cap_height, p.cap_stem_v, p.cap_stem_h), notes));
     out.push_back(finish(p, "p", U'p', k.pp(w("p")), notes));
     out.push_back(finish(p, "v", U'v', k.v(w("v")), notes));
+    return out;
+}
+
+std::vector<Glyph> starter_parts(const Preset& p, std::vector<std::string>* notes) {
+    const Metrics& m = p.metrics;
+    Kit k{p, double(m.x_height), double(m.cap_height), double(m.descender), double(m.overshoot),
+          double(p.serif), double(p.serif_t)};
+    const auto w = [&](const std::string& n) {
+        const auto it = p.shapes.find(n);
+        return double(it != p.shapes.end() && it->second.width > 0 ? it->second.width : 500);
+    };
+    // Each part starts where its glyph starts (n for the stem and serif, o for
+    // the bowl) -- also in Mono, where the cells centre each glyph on its own.
+    const auto left = [](const Glyph& g) {
+        double x = 1e9;
+        for (const auto& c : g.contours) for (const auto& n : c.nodes) x = std::min(x, n.x);
+        return x;
+    };
+    const double n_x = left(finish(p, "n", U'n', k.n(w("n")), nullptr));
+    const double o_x = left(finish(p, "o", U'o', k.ring(w("o"), m.x_height, p.stem_v, p.stem_h), nullptr));
+    const auto part = [&](Glyph g, double at) {
+        geom::shift_x(g, at - left(g));
+        g.snap();
+        g.skip_export = true;
+        return g;
+    };
+    std::vector<Glyph> out;
+    // The stem placed by n's numbers: its left edge (or its serif's) on n's.
+    std::vector<Contour> stem;
+    k.stem(stem, p.stem_v, 0, k.X, true, true);
+    out.push_back(part(finish(p, "_part.stem", 0, stem, notes, "n"), n_x));
+    if (k.serif()) {
+        // The foot slab alone, where it sits under n's left stem (both start at -sl).
+        out.push_back(part(finish(p, "_part.serif", 0, {rect(-k.sl, 0, p.stem_v + k.sl, k.st)}, notes, "n"), n_x));
+    }
+    out.push_back(part(finish(p, "_part.bowl", 0, k.ring(w("o"), m.x_height, p.stem_v, p.stem_h), notes, "o"), o_x));
     return out;
 }
 
@@ -405,6 +442,13 @@ void make_preset_font(Font& f, const NewFontOptions& o, NewFontReport* rep) {
         if (g.name == "H") H_adv = g.advance;
         f.put(g.name, Record{g});
         ++r.drawn;
+    }
+
+    // s09: the starter parts (Scott: "sounds like a good start").
+    for (Glyph g : starter_parts(*p, &r.notes)) {
+        g.order = double(cps.size()) + 3 + r.parts;   // (the navigator lists parts first anyway)
+        f.put(g.name, Record{g});
+        ++r.parts;
     }
 
     // The rest of the set: plain glyphs first, so the accented ones can be

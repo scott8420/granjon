@@ -108,7 +108,7 @@ const std::vector<ShortcutSpec>& shortcut_registry() {
     // carries one doc-only row so that half of the paradigm is exercised too.
     static const std::vector<ShortcutSpec> kReg = {
         // ── Diagnostics ───────────────────────────────────────────────────────
-        {"Diagnostics", "win.dump-registry", {"<Ctrl>d"}, "",
+        {"Diagnostics", "win.dump-registry", {"<Ctrl><Shift>d"}, "",
          "Dump the widget registry to the log"},
 
         // ── Edit (s046) ───────────────────────────────────────────────────────
@@ -146,6 +146,10 @@ const std::vector<ShortcutSpec>& shortcut_registry() {
         {"Editor", "", {}, "Double-click a segment", "Add a node there (the shape does not change)"},
         {"Editor", "", {}, "L  /  C", "Make the segments between picked nodes lines / curves"},
         {"Editor", "", {}, "Ctrl+A", "Pick every node, anchor and component"},
+        {"Editor", "", {}, "Ctrl+D", "Duplicate the picked paths in place, on top -- the copies come picked (drag or nudge them)"},
+        {"Editor", "", {}, "Alt+D", "Clone the picked paths: copies offset right and down (2 % of the em), on top, picked"},
+        {"Editor", "", {}, "Ctrl+]  /  Ctrl+[", "Bring forward / send backward the picked paths (the top picked path is the one Subtract and Intersect use)"},
+        {"Editor", "", {}, "Ctrl+Shift+]  /  Ctrl+Shift+[", "Bring to front / send to back the picked paths"},
         {"Editor", "", {}, "Tab  /  Shift+Tab", "Next / previous node along the contour (nothing picked: the first start)"},
         {"Editor", "", {}, "Ctrl+Tab  /  Ctrl+Shift+Tab", "Next / previous contour's start node"},
         {"Editor", "", {}, "`  /  Shift+`", "Next / previous point, handles included"},

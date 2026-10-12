@@ -1,4 +1,5 @@
 #pragma once
+#include <string>
 // geom::Edit -- Curvz's BezierPath editing rules, lifted GTK-free and run
 // straight on model::Contour (the model already IS Curvz's node shape, so no
 // conversion layer): segments, node / handle moves under the node-type
@@ -55,6 +56,12 @@ using Points = std::set<PointRef>;
 Vec2 position(const model::Glyph& g, const PointRef& p);   // {0,0} if stale
 bool valid(const model::Glyph& g, const PointRef& p);
 
+// The pick as text, for the undo journal's detail channel (s09: undo restores
+// the pick). "glyph\n" then "contour index part;" per point. Parsing returns
+// the glyph name and the points; junk lines are skipped.
+std::string pick_to_text(const std::string& glyph, const Points& pts);
+Points      pick_from_text(const std::string& text, std::string* glyph);
+
 // Move the picked points by d, starting from `at_press` (so a live drag is
 // always "press + d", never cumulative). Picked nodes carry their handles; a
 // picked handle whose node is not picked moves under its node's type rule;
@@ -109,6 +116,27 @@ double signed_area(const model::Contour& c);
 // Reverse the travel direction (Curvz BezierPath::reverse: handles swap, the
 // node order flips) KEEPING the start node where it is.
 void reverse(model::Contour& c);
+
+// ── transform (M15a) ───────────────────────────────────────────────────────
+// An affine map in UFO's component order: x' = xx*x + yx*y + dx,
+// y' = xy*x + yy*y + dy.
+struct Affine {
+    double xx = 1, xy = 0, yx = 0, yy = 1, dx = 0, dy = 0;
+    Vec2   apply(Vec2 p) const { return {xx * p.x + yx * p.y + dx, xy * p.x + yy * p.y + dy}; }
+    double det() const { return xx * yy - xy * yx; }
+    bool   identity() const { return xx == 1 && xy == 0 && yx == 0 && yy == 1 && dx == 0 && dy == 0; }
+};
+Affine compose(const Affine& outer, const Affine& inner);   // outer after inner
+// Scale (sx, sy as factors), then skew (degrees: horizontal slants right as y
+// rises, vertical tilts up as x grows), then rotate (degrees, counter-
+// clockwise), all about `origin`.
+Affine make_transform(double sx, double sy, double rotate_deg, double skew_x_deg, double skew_y_deg, Vec2 origin);
+// Apply m to the picked part of `at_press`, writing into g: picked nodes carry
+// both handles; a picked handle alone moves alone; picked anchors move;
+// picked components get m composed onto their own matrix. An EMPTY pick =
+// the whole glyph (contours, anchors, components). A whole contour under a
+// mirroring map (det < 0) is reversed so it keeps running the right way.
+void transform_points(model::Glyph& g, const model::Glyph& at_press, const Points& pts, const Affine& m);
 // Make node `index` the contour's start (M5e): a rotation, so every node
 // keeps its handles and the travel direction holds. Closed contours only (an
 // open one starts at its loose end); false when there is nothing to do.
