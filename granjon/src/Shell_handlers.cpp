@@ -262,7 +262,7 @@ void Shell::on_dump_registry() {  // handler: print the live widget tree
     registry::dump();
 }
 
-void Shell::on_font_directions() {  // handler: the menu's "Correct contour directions in every glyph"
+void Shell::on_font_directions() {  // handler: the menu's Every glyph > "Correct contour directions"
     std::size_t n = 0;
     if (command::correct_directions(m_doc.journal, m_doc.font, m_doc.font.glyph_order(), &n))
         say(m_doc.journal.undo_label() + ". Ctrl+Z takes it back.", false);
@@ -318,7 +318,7 @@ void Shell::on_proof_print() {  // handler: Ctrl+P (s10)
     }
 }
 
-void Shell::on_font_extremes() {  // handler: the menu's "Add extreme points in every glyph" (s10)
+void Shell::on_font_extremes() {  // handler: the menu's Every glyph > "Add extreme points" (s10)
     std::size_t n = 0;
     if (command::fix_check_everywhere(m_doc.journal, m_doc.font, model::CheckId::Extremes, &n))
         say(m_doc.journal.undo_label() + " -- extreme points on " + std::to_string(n) + " contour(s). Ctrl+Z takes it back.", false);
@@ -336,7 +336,7 @@ void Shell::on_font_inktraps() {  // handler: the menu's "Ink traps at every tig
         say("No crotch tighter than 60 degrees without a trap (skipped findings left alone).", false);
 }
 
-void Shell::on_font_overlaps() {  // handler: the menu's "Remove overlaps in every glyph" (M10c)
+void Shell::on_font_overlaps() {  // handler: the menu's Every glyph > "Remove overlaps" (M10c)
     std::size_t n = 0, fb = 0, ww = 0;
     const bool did = command::remove_overlaps(m_doc.journal, m_doc.font, m_doc.font.glyph_order(), &n, &fb, &ww);
     std::string tail = fb ? " " + std::to_string(fb) + " glyph(s) could not be merged cleanly and were left as drawn." : "";
@@ -348,7 +348,7 @@ void Shell::on_font_overlaps() {  // handler: the menu's "Remove overlaps in eve
         say((fb ? std::string("No overlaps removed.") : std::string("No glyph has overlaps.")) + tail, fb > 0);
 }
 
-void Shell::on_font_metrics_keys() {  // handler: the menu's "Apply metrics keys in every glyph" (M6)
+void Shell::on_font_metrics_keys() {  // handler: the menu's Every glyph > "Apply metrics keys" (M6)
     std::size_t n = 0;
     std::vector<std::string> cyclic;
     model::key_order(m_doc.font, &cyclic);

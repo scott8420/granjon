@@ -373,6 +373,7 @@ Newest session at the bottom.
 
 - r6 (s10): import reads contextual lookups of every format (glyph / class / coverage); copies for lookups both chained and in a feature. DejaVu Sans now round-trips whole (Arabic and Syriac shaping identical).
 - r7 (s10): lookupflag in the feature syntax, GSUB and import; GDEF marks from combining code points; import keeps default-language feature records only (DejaVu Serif's Sami Eng.alt had become a default). Four real fonts shape identically after a round trip.
+- r8 (s10): hamburger menu grouped into Export / Proof / Every glyph / Help submenus (30 rows -> 17).
 
 ## Backlog notes (s10)
 - Proof: an options dialog (pages, sizes, paper), a glyph-selection proof, granjon-cli proof.

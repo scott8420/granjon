@@ -3,7 +3,7 @@
 # s11_loose_ends
 
 ## Files to upload
-- `s10_r7_lookupflag.zip` (the one zip to install -- everything in s10: overlaps flag, M15b, r1 ink-trap warning, M16, print proof, r2 GSUB import + ttfautohint, r3 the aarch64 note, r4 stem / sidebearing warnings, r5 contextual substitution, r6 every contextual format on import, r7 lookupflag + default-language import. Earlier s10 zips are superseded. Or a fresh `scripts/granjon_backup.sh -o s11_loose_ends`)
+- `s10_r8_menu.zip` (the one zip to install -- everything in s10: overlaps flag, M15b, r1 ink-trap warning, M16, print proof, r2 GSUB import + ttfautohint, r3 the aarch64 note, r4 stem / sidebearing warnings, r5 contextual substitution, r6 every contextual format on import, r7 lookupflag + default-language import, r8 hamburger submenus. Earlier s10 zips are superseded. Or a fresh `scripts/granjon_backup.sh -o s11_loose_ends`)
 - `RULES.md`, `HANDOFF.md`, `ARCHITECTURE.md`, `ARC.md`, `CANON.md`
 
 ---
@@ -18,6 +18,7 @@
 - **r4: crc** (Scott).
 - **r5: crc** (Scott).
 - **r6: crc** (Scott).
+- **r8 -- hamburger submenus: sandbox green, not crc** (`s10_r8_menu.zip`; Scott on r7: "the hamburger menu could be shortened by adding sub menus"). Selftest 1295 / 0. 30 rows -> 17: **Export >** (OTF, TTF, WOFF2 | glyph SVG, Spacing text SVG), **Proof >** (Print, Export as PDF), **Every glyph >** (the six font-wide passes, labels shortened), **Help >** (Primer, Keyboard shortcuts, Dump registry). New / Open / Open recent / Import, Save, Undo / Redo, Navigator / Inspector, Preferences / About / Quit stay at the top. Accelerators unchanged. Checked on screen (Xvfb).
 - **r7 -- lookupflag, both ways: sandbox green, not crc** (`s10_r7_lookupflag.zip`). Selftest **1295 / 0** (4 new). No new warnings, no new package.
   - Feature syntax: `lookupflag RightToLeft / IgnoreBaseGlyphs / IgnoreLigatures / IgnoreMarks;` (or a number), in force to the end of the block; a change mid-feature starts a new lookup. `MarkAttachmentType` / `UseMarkFilteringSet` warn and are skipped. GSUB writes the flag.
   - GDEF: a glyph with combining code points and no anchors now counts as a mark too, so IgnoreMarks works for fonts with no ANCHORS.

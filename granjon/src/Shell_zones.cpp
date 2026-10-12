@@ -160,17 +160,25 @@ Glib::RefPtr<Gio::Menu> Shell::build_menu() {  // zone: hamburger model
     save->append("Save", "win.save");
     save->append("Save as…", "win.save-as");
     menu->append_section(save);
+    // Grouped into submenus (s10 r8, Scott: "the hamburger menu could be
+    // shortened by adding sub menus"): Export, Proof, Every glyph, Help.
+    auto out = Gio::Menu::create();
     auto exp = Gio::Menu::create();
-    exp->append("Export OTF…", "win.export-otf");
-    exp->append("Export TTF…", "win.export-ttf");
-    exp->append("Export WOFF2 (web font)…", "win.export-woff2");
-    exp->append("Export glyph as SVG…", "win.export-svg-glyph");
-    exp->append("Export Spacing text as SVG…", "win.export-svg-text");
-    menu->append_section(exp);
+    auto fonts = Gio::Menu::create();
+    fonts->append("OTF…", "win.export-otf");
+    fonts->append("TTF…", "win.export-ttf");
+    fonts->append("WOFF2 (web font)…", "win.export-woff2");
+    exp->append_section(fonts);
+    auto svg = Gio::Menu::create();
+    svg->append("Glyph as SVG…", "win.export-svg-glyph");
+    svg->append("Spacing text as SVG…", "win.export-svg-text");
+    exp->append_section(svg);
+    out->append_submenu("Export", exp);
     auto proof = Gio::Menu::create();
-    proof->append("Print proof…", "win.proof-print");
-    proof->append("Export proof as PDF…", "win.proof-pdf");
-    menu->append_section(proof);
+    proof->append("Print…", "win.proof-print");
+    proof->append("Export as PDF…", "win.proof-pdf");
+    out->append_submenu("Proof", proof);
+    menu->append_section(out);
 
     // Undo / Redo, re-labelled live and greyed when there is nothing to do --
     // update_undo_ui() owns this section.
@@ -180,12 +188,14 @@ Glib::RefPtr<Gio::Menu> Shell::build_menu() {  // zone: hamburger model
     menu->append_section(m_edit_menu);
 
     auto fontm = Gio::Menu::create();
-    fontm->append("Add default anchors to every letter and mark", "win.font-anchors");
-    fontm->append("Correct contour directions in every glyph", "win.font-directions");
-    fontm->append("Remove overlaps in every glyph", "win.font-overlaps");
-    fontm->append("Add extreme points in every glyph", "win.font-extremes");
-    fontm->append("Ink traps at every tight crotch", "win.font-inktraps");
-    fontm->append("Apply metrics keys in every glyph", "win.font-metrics-keys");
+    auto every = Gio::Menu::create();
+    every->append("Add default anchors (letters and marks)", "win.font-anchors");
+    every->append("Correct contour directions", "win.font-directions");
+    every->append("Remove overlaps", "win.font-overlaps");
+    every->append("Add extreme points", "win.font-extremes");
+    every->append("Ink traps at tight crotches", "win.font-inktraps");
+    every->append("Apply metrics keys", "win.font-metrics-keys");
+    fontm->append_submenu("Every glyph", every);
     menu->append_section(fontm);
 
     auto view = Gio::Menu::create();
@@ -193,13 +203,12 @@ Glib::RefPtr<Gio::Menu> Shell::build_menu() {  // zone: hamburger model
     view->append("Inspector", "win.show-inspector");
     menu->append_section(view);
 
-    auto diag = Gio::Menu::create();
-    diag->append("Primer: drawing type", "win.primer");
-    diag->append("Keyboard shortcuts", "win.shortcuts");
-    diag->append("Dump registry", "win.dump-registry");
-    menu->append_section(diag);
-
     auto app = Gio::Menu::create();
+    auto help = Gio::Menu::create();
+    help->append("Primer: drawing type", "win.primer");
+    help->append("Keyboard shortcuts", "win.shortcuts");
+    help->append("Dump registry", "win.dump-registry");
+    app->append_submenu("Help", help);
     app->append("Preferences…", "win.preferences");
     app->append("About Granjon", "win.about");
     app->append("Quit", "win.quit");
