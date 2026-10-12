@@ -318,7 +318,9 @@ int ProofPrinter::run(cairo_t* cr, double W, double H, int only) {
                 for (const auto& con : geom::all_contours(m_font, *g)) {
                     const int n = geom::segment_count(con);
                     if (n == 0) continue;
-                    const auto P = [&](geom::Vec2 p) { return std::pair{gx + p.x * s, base - p.y * s}; };
+                    // a plain struct, not std::pair: GCC on aarch64 notes pair's C++17 ABI change (as Presets / Overlap)
+                    struct XY { double x, y; };
+                    const auto P = [&](geom::Vec2 p) { return XY{gx + p.x * s, base - p.y * s}; };
                     auto [mx, my] = P({con.nodes[0].x, con.nodes[0].y});
                     cairo_move_to(cr, mx, my);
                     for (int k = 0; k < n; ++k) {

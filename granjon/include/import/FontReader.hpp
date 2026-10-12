@@ -19,7 +19,8 @@
 //   kerning      GPOS 'kern' PairPos: glyph pairs -> pairs, class pairs ->
 //                public.kern1 / kern2 groups + group pairs, subtable order
 //                kept as UFO precedence; else the old 'kern' table
-// Not read (named in the report): hints, other OpenType features, WOFF /
+// s10: GSUB is read into the feature file (contextual lookups excepted).
+// Not read (named in the report): hints, contextual substitutions, WOFF /
 // WOFF2 (compressed), CFF2 / variable fonts, collections beyond font 0.
 #include "model/Font.hpp"
 

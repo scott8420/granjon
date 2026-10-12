@@ -1,4 +1,6 @@
 #include "PreferencesWindow.hpp"
+#include <glibmm/miscutils.h>
+#include <glibmm/spawn.h>
 
 #include "unicode/CharSet.hpp"
 
@@ -59,6 +61,8 @@ PreferencesWindow::PreferencesWindow(Gtk::Window& parent, views::ViewContext& ct
       m_scroll("prefs.scroll"),
       m_root("prefs.root", Gtk::Orientation::VERTICAL, 12),
       m_reopen("prefs.reopen"),
+      m_autohint("prefs.autohint"),
+      m_paper("prefs.proof_paper"),
       m_fill("prefs.fill"),
       m_context("prefs.context"),
       m_upper("prefs.context_upper"),
@@ -116,6 +120,15 @@ PreferencesWindow::PreferencesWindow(Gtk::Window& parent, views::ViewContext& ct
     }
     row(*overview, "Coverage set", m_charset, "The overview's Coverage menu.");
 
+    // ── Export (s10) ───────────────────────────────────────────────────────
+    auto* exp = card(m_root, "EXPORT");
+    const bool have = !Glib::find_program_in_path("ttfautohint").empty();
+    row(*exp, "Hint TTF with ttfautohint", m_autohint,
+        have ? "Export TTF runs ttfautohint on the font it writes (sharper on Windows at small sizes). OTF and WOFF2 are not hinted."
+             : "ttfautohint is not installed (Fedora: sudo dnf install ttfautohint). Until it is, TTF export is unhinted.");
+    m_paper.set_model(Gtk::StringList::create({"Letter", "A4"}));
+    row(*exp, "Proof paper", m_paper, "Export proof as PDF (Print proof uses the printer's paper).");
+
     // ── footer ─────────────────────────────────────────────────────────────
     auto foot = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::HORIZONTAL, 12);
     m_file.add_css_class("hint");
@@ -135,6 +148,8 @@ PreferencesWindow::PreferencesWindow(Gtk::Window& parent, views::ViewContext& ct
 
     // ── wiring: every control writes through ───────────────────────────────
     m_reopen.property_active().signal_changed().connect([this] { commit(); });
+    m_autohint.property_active().signal_changed().connect([this] { commit(); });
+    m_paper.property_selected().signal_changed().connect([this] { commit(); });
     m_fill.property_active().signal_changed().connect([this] { commit(); });
     m_context.property_active().signal_changed().connect([this] { commit(); });
     m_upper.signal_changed().connect([this] { commit(); });
@@ -162,6 +177,8 @@ void PreferencesWindow::sync() {
     m_syncing = true;
     const auto& s = m_ctx.settings;
     if (m_reopen.get_active() != s.reopen_last) m_reopen.set_active(s.reopen_last);
+    if (m_autohint.get_active() != s.export_autohint) m_autohint.set_active(s.export_autohint);
+    if (m_paper.get_selected() != (s.proof_paper == "a4" ? 1u : 0u)) m_paper.set_selected(s.proof_paper == "a4" ? 1u : 0u);
     if (m_fill.get_active() != s.editor_fill) m_fill.set_active(s.editor_fill);
     if (m_context.get_active() != s.editor_context) m_context.set_active(s.editor_context);
     // An entry being typed in keeps its text: only re-set it when it differs.
@@ -189,6 +206,8 @@ void PreferencesWindow::commit() {
     if (m_syncing) return;
     core::Settings s = m_ctx.settings;
     s.reopen_last    = m_reopen.get_active();
+    s.export_autohint = m_autohint.get_active();
+    s.proof_paper    = m_paper.get_selected() == 1 ? "a4" : "letter";
     s.editor_fill    = m_fill.get_active();
     s.editor_context = m_context.get_active();
     // An emptied box means "back to the default", not "no context".

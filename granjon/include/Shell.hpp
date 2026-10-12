@@ -103,6 +103,7 @@ private:
     void on_primer_link(const std::string& target);   // category: handler: a Primer "Try it" link, done in this window
     void on_about();                             // category: handler: open the About window (dialog-lifetime exemplar)
     void on_font_metrics_keys();                 // category: handler: apply metrics keys font-wide (one step, M6)
+    std::string autohint(const std::filesystem::path& ttf);   // s10: ttfautohint on an exported TTF
     void on_proof_pdf();                         // s10: the print proof as a PDF
     void on_proof_print();                       // s10: the print proof to a printer (Ctrl+P)
     void on_font_extremes();                     // s10: add extreme points font-wide (one step)

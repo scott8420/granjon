@@ -33,6 +33,8 @@ private:
     widgets::ScrolledWindow    m_scroll;
     widgets::Box               m_root;
     widgets::Named<Gtk::Switch> m_reopen;
+    widgets::Named<Gtk::Switch> m_autohint;     // s10
+    widgets::Named<Gtk::DropDown> m_paper;      // s10: proof paper
     widgets::Named<Gtk::Switch> m_fill;
     widgets::Named<Gtk::Switch> m_context;
     widgets::Entry             m_upper;

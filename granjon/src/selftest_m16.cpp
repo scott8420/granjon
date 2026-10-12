@@ -10,6 +10,8 @@
 #include "model/Presets.hpp"
 #include "model/Fea.hpp"
 #include "model/Proof.hpp"
+#include "model/Checks.hpp"
+#include "model/Bounds.hpp"
 
 #include <cmath>
 #include <filesystem>
@@ -276,5 +278,76 @@ void selftest_m16(const std::function<void(const std::string&, bool, const std::
                   std::find(p.glyphs.begin(), p.glyphs.end(), "_part.stem") == p.glyphs.end(),
               std::to_string(p.glyphs.size()));
         check("proof: what the font lacks is named", p.missing.find('Q') != std::string::npos && p.missing.find('n') == std::string::npos);
+    }
+
+    std::cout << "s10 GSUB import\n";
+    {
+        command::Document d;
+        model::make_preset_font(d.font, {"sans", "Gsub", "", true});
+        auto& f = d.font;
+        auto& j = d.journal;
+        for (const char* n : {"f_i", "f_f_i", "a.sc", "b.sc", "a.ss01", "g.alt", "g.alt2"}) command::add_glyph(j, f, n, {});
+        command::set_features(j, f, model::generate_fea(f) + "feature ccmp { sub f_i by f i; } ccmp;\n", "g", false);
+        for (int ttf = 0; ttf < 2; ++ttf) {
+            const auto b = ttf ? otf::compile_ttf(f) : otf::compile_otf(f);
+            model::Font back;
+            reader::ImportReport rep;
+            std::string why;
+            const bool ok = reader::import_font(b, back, &rep, &why);
+            const std::string& t = back.features().text;
+            const auto doc = model::parse_fea(t, [&](const std::string& n) { return back.glyph(n) != nullptr; });
+            const std::string tag = ttf ? "TTF" : "OTF";
+            check("gsub import (" + tag + "): read into the feature file, and it parses", ok && !t.empty() && doc.ok(),
+                  doc.errors.empty() ? why : doc.errors[0].text);
+            check("gsub import (" + tag + "): ligature, single, alternate, multiple rules back",
+                  t.find("sub f f i by f_f_i;") != std::string::npos && t.find("sub a by a.sc;") != std::string::npos &&
+                      t.find("sub g from [g.alt g.alt2];") != std::string::npos && t.find("sub f_i by f i;") != std::string::npos);
+            const auto b2 = otf::compile_otf(back);
+            check("gsub import (" + tag + "): compiles again to the same features",
+                  feature_tags(table(b2, "GSUB")) == feature_tags(table(otf::compile_otf(f), "GSUB")));
+        }
+    }
+
+    std::cout << "s10 stem and sidebearing warnings\n";
+    {
+        command::Document d;
+        model::make_preset_font(d.font, {"sans", "Drift", "", true});
+        auto& f = d.font;
+        auto& j = d.journal;
+        auto count = [&](const std::string& g, model::CheckId id) {
+            int n = 0;
+            for (const auto& x : model::check_glyph(f, g)) n += x.check == id;
+            return n;
+        };
+        int clean = 0;
+        for (const char* g : {"n", "o", "H", "O", "p", "v"})
+            clean += count(g, model::CheckId::Stems) + count(g, model::CheckId::Sidebearings);
+        check("drift: a fresh preset has none", clean == 0, std::to_string(clean));
+        // f (no metrics key in the presets): a stem 86 wide (the font's 88) at x 62 (n's left side is 64)
+        int at = -1;
+        command::add_shape(j, f, "f", granjon::geom::shape_rect({{62, 0}, {148, 760}}), "R", &at);
+        command::set_advance(j, f, "f", 208);   // right side 60 (n's 58)
+        const auto xs = model::check_glyph(f, "f");
+        int stems = 0, sides = 0;
+        std::vector<model::Finding> fix;
+        for (const auto& x : xs) {
+            if (x.check == model::CheckId::Stems) { ++stems; fix.push_back(x); }
+            if (x.check == model::CheckId::Sidebearings) { ++sides; fix.push_back(x); }
+        }
+        check("drift: f's 86 stem and its left side are flagged (warnings)", stems == 1 && sides >= 1 &&
+                                                                             model::check_info(model::CheckId::Stems).warning,
+              std::to_string(stems) + " / " + std::to_string(sides));
+        command::fix_findings(j, f, fix);
+        const auto sb = model::sidebearings(f, *f.glyph("f"));
+        const auto nsb = model::sidebearings(f, *f.glyph("n"));
+        check("drift: Fix -- the stem 88, the sides n's", count("f", model::CheckId::Stems) == 0 &&
+                                                              count("f", model::CheckId::Sidebearings) == 0 && sb && nsb &&
+                                                              std::abs(sb->left - nsb->left) < 0.5,
+              sb ? std::to_string(sb->left) + " / " + std::to_string(sb->right) : "");
+        // far off is intent, not drift
+        command::add_shape(j, f, "i", granjon::geom::shape_rect({{64, 0}, {124, 500}}), "R", &at);
+        check("drift: a stem far from the font's (60 vs 88) is left alone", count("i", model::CheckId::Stems) == 0);
+        command::add_shape(j, f, "l", granjon::geom::shape_rect({{62, 0}, {150, 760}}), "R", &at);
+        check("drift: a glyph with a metrics key (l) is the Keys check's, not this one's", count("l", model::CheckId::Sidebearings) == 0);
     }
 }

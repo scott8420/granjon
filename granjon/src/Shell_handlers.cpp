@@ -1,5 +1,7 @@
 #include "Shell.hpp"
 #include "views/PathOps.hpp"
+#include <glibmm/spawn.h>
+#include <glibmm/miscutils.h>
 #include "views/ProofPrinter.hpp"
 #include "model/Proof.hpp"
 #include <gtkmm/printoperation.h>
@@ -160,6 +162,33 @@ void Shell::on_save_as() { save_as({}); }  // handler: Ctrl+Shift+S
 void Shell::on_export_otf() { export_font(".otf"); }  // handler: Ctrl+E
 void Shell::on_export_ttf() { export_font(".ttf"); }  // handler: Ctrl+Shift+E
 
+// s10: ttfautohint on an exported TTF, in place. Returns a note for the
+// status line ("" when it wasn't asked for). The unhinted file stays when
+// ttfautohint is missing or fails.
+std::string Shell::autohint(const std::filesystem::path& ttf) {  // helper
+    const std::string exe = Glib::find_program_in_path("ttfautohint");
+    if (exe.empty()) return " -- not hinted: ttfautohint is not installed";
+    const auto tmp = ttf.string() + ".hinting";
+    std::string out, err;
+    int status = 0;
+    try {
+        Glib::spawn_sync("", std::vector<std::string>{exe, "--no-info", ttf.string(), tmp}, Glib::SpawnFlags::DEFAULT, {},
+                         &out, &err, &status);
+    } catch (const Glib::Error& e) {
+        return std::string(" -- not hinted: ") + e.what();
+    }
+    std::error_code ec;
+    if (status != 0 || !std::filesystem::exists(tmp, ec)) {
+        std::filesystem::remove(tmp, ec);
+        if (auto lg = log::get(log::Area::Io)) lg->warn("ttfautohint failed ({}): {}", status, err);
+        const auto nl = err.find('\n');
+        return " -- not hinted: ttfautohint said \"" + err.substr(0, nl) + "\"";
+    }
+    std::filesystem::rename(tmp, ttf, ec);
+    if (ec) return " -- not hinted: " + ec.message();
+    return ", hinted by ttfautohint";
+}
+
 void Shell::export_font(const std::string& ext) {  // helper
     const bool ttf = ext == ".ttf";
     auto dialog = Gtk::FileDialog::create();
@@ -185,11 +214,13 @@ void Shell::export_font(const std::string& ext) {  // helper
             if (auto lg = log::get(log::Area::Io)) lg->warn("export '{}': {}", p.string(), err);
             return;
         }
+        std::string hinted;
+        if (ttf && m_settings.export_autohint) hinted = autohint(p);   // s10
         m_settings.export_folder = p.parent_path().string();
         save_settings();
         char buf[200];
         std::snprintf(buf, sizeof buf, " \u2014 %d glyphs, %.0f KB, %.0f ms", rep.glyphs, rep.bytes / 1024.0, rep.ms);
-        std::string line = "Exported " + p.filename().string() + buf;
+        std::string line = "Exported " + p.filename().string() + buf + hinted;
         if (!rep.notes.empty()) line += ". " + rep.notes.front() + (rep.notes.size() > 1 ? " (more in the log)" : "");
         say(line, false);
         if (auto lg = log::get(log::Area::Io)) {

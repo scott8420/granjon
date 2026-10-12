@@ -145,6 +145,7 @@ add_library(granjon_core STATIC
     src/import/CffRead.cpp
     src/import/GlyfRead.cpp
     src/import/GposRead.cpp
+    src/import/GsubRead.cpp   # s10: GSUB -> features.fea
     src/import/FontReader.cpp
 )
 target_include_directories(granjon_core PUBLIC include)

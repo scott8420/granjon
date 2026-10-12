@@ -16,7 +16,12 @@
 //   Extremes     (M15b) a curve bulging past its nodes with no node at its
 //                horizontal / vertical extreme -> add it
 //   InkTraps     (s10, a WARNING) a crotch tighter than 60 degrees with no
-//                trap -> cut one (1.5 % / 2.5 % of the em)
+//                trap, in a letter or figure (or an unencoded x.suffix) -> cut one
+//   Stems        (s10, a WARNING) a straight vertical stem within 2.5 % of the
+//                font's stem but not on it (lowercase: n / the preset's; capitals: H) -> its
+//                right edge moved to match
+//   Sidebearings (s10, a WARNING) a straight / round (bowl) side within 5 %
+//                (3 units at least) of its control's (n o, H O) on a glyph with no metrics key -> match it
 //   Zones        a flat node a unit or three off a metric line -> snap to it
 //   Overshoot    a round top / bottom with no overshoot, or one off the font's
 //                overshoot -> move the extreme to the overshoot line
@@ -30,7 +35,7 @@
 
 namespace granjon::model {
 
-enum class CheckId { Direction, Open, Zones, Overshoot, Origin, Keys, Overlap, Extremes, InkTraps };
+enum class CheckId { Direction, Open, Zones, Overshoot, Origin, Keys, Overlap, Extremes, InkTraps, Stems, Sidebearings };
 
 struct CheckInfo {
     CheckId     id;

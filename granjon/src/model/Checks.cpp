@@ -50,6 +50,90 @@ int round_extreme(const Contour& c, int i) {
 
 std::string spot(int c, int i) { return std::to_string(c) + "." + std::to_string(i); }
 
+
+// ── s10: stems and sides ───────────────────────────────────────────────────
+// A straight vertical edge: a line segment (no handles) with |dx| under half
+// a unit, at least `min_len` long. `ink_right`: the ink lies to its right
+// (a left edge of a stem) -- going down on a contour running the right way.
+struct VEdge { int c = -1, s = -1; double x = 0, y0 = 0, y1 = 0; bool ink_right = false; };
+
+std::vector<VEdge> vertical_edges(const Glyph& g, double min_len) {
+    std::vector<VEdge> out;
+    const auto wrong = geom::wrong_way(g.contours);
+    for (int c = 0; c < static_cast<int>(g.contours.size()); ++c) {
+        const auto& con = g.contours[c];
+        if (!con.closed) continue;
+        const bool flip = std::find(wrong.begin(), wrong.end(), c) != wrong.end();
+        const int n = static_cast<int>(con.nodes.size());
+        for (int s = 0; s < n; ++s) {
+            const Node& a = con.nodes[s];
+            const Node& b = con.nodes[(s + 1) % n];
+            if (a.has_out() || b.has_in() || std::abs(a.x - b.x) >= 0.5 || std::abs(b.y - a.y) < min_len) continue;
+            VEdge e;
+            e.c = c;
+            e.s = s;
+            e.x = (a.x + b.x) / 2;
+            e.y0 = std::min(a.y, b.y);
+            e.y1 = std::max(a.y, b.y);
+            e.ink_right = (b.y < a.y) != flip;
+            out.push_back(e);
+        }
+    }
+    return out;
+}
+
+struct Stem { VEdge l, r; double w; };
+std::vector<Stem> stems_of(const Glyph& g, double min_len) {
+    const auto es = vertical_edges(g, min_len);
+    std::vector<Stem> out;
+    for (const auto& l : es) {
+        if (!l.ink_right) continue;
+        const VEdge* best = nullptr;
+        for (const auto& r : es) {
+            if (r.ink_right || r.x <= l.x + 1) continue;
+            const double ov = std::min(l.y1, r.y1) - std::max(l.y0, r.y0);
+            if (ov < 0.5 * std::min(l.y1 - l.y0, r.y1 - r.y0)) continue;
+            if (!best || r.x < best->x) best = &r;
+        }
+        if (best) out.push_back({l, *best, best->x - l.x});
+    }
+    return out;
+}
+
+// 'L' / 'R': the kind of a glyph's left or right side -- 's' straight (a long
+// vertical edge at the extreme), 'r' round (a curve node at the extreme), 0 neither.
+char side_kind(const Glyph& g, bool left, double min_len) {
+    if (g.contours.empty()) return 0;
+    double ext = left ? 1e18 : -1e18;
+    for (const auto& c : g.contours)
+        for (const auto& p : c.nodes) ext = left ? std::min(ext, p.x) : std::max(ext, p.x);
+    for (const auto& e : vertical_edges(g, min_len))
+        if (std::abs(e.x - ext) < 0.5 && e.ink_right == left) return 's';
+    // round: a bowl's extreme -- a smooth node, both handles plumb above / below it
+    for (const auto& c : g.contours)
+        for (const auto& p : c.nodes)
+            if (std::abs(p.x - ext) < 0.5 && p.has_in() && p.has_out() && std::abs(p.cx1 - p.x) < 0.5 &&
+                std::abs(p.cx2 - p.x) < 0.5)
+                return 'r';
+    return 0;
+}
+
+bool is_case(const Glyph& g, const char* cat) {
+    return !g.unicodes.empty() && unicode::category(g.unicodes.front()) == cat;
+}
+
+// The font's stem: the preset's record, else the control glyph's widest-agreed stem.
+double ref_stem(const Font& f, bool caps) {
+    const auto& o = f.info().origin;
+    if (caps && o.cap_stem_v > 0) return o.cap_stem_v;
+    if (!caps && o.stem_v > 0) return o.stem_v;
+    const Glyph* ctl = f.glyph(caps ? "H" : "n");
+    if (!ctl) return 0;
+    const auto& m = f.metrics();
+    const auto st = stems_of(*ctl, 0.3 * (caps ? m.cap_height : m.x_height));
+    return st.empty() ? 0 : std::round(st.front().w);
+}
+
 }  // namespace
 
 const std::vector<CheckInfo>& checks() {
@@ -71,6 +155,14 @@ const std::vector<CheckInfo>& checks() {
          "Where two strokes meet at a tight angle -- p's bowl into its stem, inside v's point, n's shoulder -- "
          "ink spreads into the narrow white and fills it at small sizes or on soft paper. A trap (a small notch "
          "cut into the ink) keeps the join open. Advice, not a defect: skip it for display sizes.", true},
+        {CheckId::Stems, "stems", "Stem weights (warning)",
+         "A vertical stem a unit or a few off the font's stem reads as uneven colour in text -- the eye catches "
+         "a 2 % difference across a line. Fix moves the stem's right edge to the font's weight; skip a stem "
+         "that is meant to differ (a lighter r or t).", true},
+        {CheckId::Sidebearings, "sidebearings", "Sidebearings (warning)",
+         "Letters with the same kind of side -- straight like n and H, round like o and O -- usually share its "
+         "sidebearing. A unit or a few off is drift, not intent. Fix sets it to the control's; a metrics key "
+         "keeps it there for good.", true},
         {CheckId::Zones, "zones", "Near the metric lines",
          "A flat top or bottom a unit or three off the baseline, x-height or cap height reads as a mistake "
          "at text sizes and breaks hinting's alignment zones. Snap it to the line."},
@@ -148,8 +240,14 @@ std::vector<Finding> check_glyph(const Font& f, const std::string& name) {
                 "Contour " + std::to_string(c + 1) + " lacks " + std::to_string(k) + (k == 1 ? " extreme point" : " extreme points"),
                 std::to_string(c), true, c);
 
-    // Ink traps (s10, a warning): tight crotches without a trap.
-    {
+    // Ink traps (s10, a warning): tight crotches without a trap -- letters and
+    // figures only (a symbol's crotch is its own business).
+    bool lettered = false;
+    for (char32_t cp : g->unicodes) {
+        const auto cat = unicode::category(cp);
+        lettered = lettered || cat.starts_with("L") || cat.starts_with("N");
+    }
+    if (lettered || (g->unicodes.empty() && g->name.find('.') != std::string::npos)) {
         const auto wrong = geom::wrong_way(g->contours);
         const double em = std::max(16, f.info().units_per_em);
         for (int c = 0; c < static_cast<int>(g->contours.size()); ++c) {
@@ -164,6 +262,44 @@ std::vector<Finding> check_glyph(const Font& f, const std::string& name) {
                         std::to_string(static_cast<int>(std::lround(a))) + "-degree crotch, no trap",
                     spot(c, i), true, c, i);
             }
+        }
+    }
+
+    // Stems and sides (s10, warnings): lower- and uppercase letters only.
+    {
+        const bool lower = is_case(*g, "Ll"), upper = is_case(*g, "Lu");
+        if ((lower || upper) && !g->contours.empty()) {
+            const double min_len = 0.3 * (upper ? m.cap_height : m.x_height);
+            if (const double ref = ref_stem(f, upper); ref > 0)
+                for (const auto& st : stems_of(*g, min_len)) {
+                    const double d = ref - st.w;
+                    if (std::abs(d) < 1 || std::abs(d) > 0.025 * ref) continue;   // drift, not design
+                    add(CheckId::Stems,
+                        "The stem at x " + num(std::round(st.l.x)) + " is " + num(st.w) + " wide; the font's " +
+                            (upper ? "capital" : "lowercase") + " stem is " + num(ref),
+                        std::to_string(st.r.c) + "." + std::to_string(st.r.s), true, st.r.c, st.r.s, d);
+                }
+            const bool keyed = check_key(f, name).has_key;
+            const auto sb = sidebearings(f, *g);
+            if (!keyed && sb)
+                for (int side = 0; side < 2; ++side) {
+                    const bool left = side == 0;
+                    const char k = side_kind(*g, left, 1.7 * min_len);   // a straight side: half the height or more
+                    if (!k) continue;
+                    const char* ctl_name = upper ? (k == 's' ? "H" : "O") : (k == 's' ? "n" : "o");
+                    if (name == ctl_name) continue;
+                    const Glyph* ctl = f.glyph(ctl_name);
+                    if (!ctl || side_kind(*ctl, left, 1.7 * min_len) != k) continue;
+                    const auto csb = sidebearings(f, *ctl);
+                    if (!csb) continue;
+                    const double want = std::round(left ? csb->left : csb->right), have = left ? sb->left : sb->right;
+                    const double d = want - have;
+                    if (std::abs(d) < 1 || std::abs(d) > std::max(3.0, 0.05 * std::abs(want))) continue;
+                    add(CheckId::Sidebearings,
+                        std::string(left ? "Left" : "Right") + " side " + num(std::round(have)) + " -- " + ctl_name + "'s " +
+                            (k == 's' ? "straight" : "round") + " side is " + num(want),
+                        left ? "L" : "R", true, -1, -1, want);
+                }
         }
     }
 
@@ -253,6 +389,15 @@ std::optional<Glyph> fix_glyph(const Font& f, const std::string& name, const std
         const double dy = x.target - g.contours[x.contour].nodes[x.index].y;
         geom::move_points(g, at, {{x.contour, x.index, geom::PointRef::Part::Node}}, {0, dy});
     }
+    // 1b. stems (s10): the right edge's two nodes across by the difference
+    for (const auto& x : xs) {
+        if (x.glyph != name || x.check != CheckId::Stems || x.contour < 0 || x.contour >= static_cast<int>(g.contours.size())) continue;
+        const int n = static_cast<int>(g.contours[x.contour].nodes.size());
+        if (x.index < 0 || x.index >= n) continue;
+        const Glyph at = g;
+        geom::move_points(g, at, {{x.contour, x.index, geom::PointRef::Part::Node}, {x.contour, (x.index + 1) % n, geom::PointRef::Part::Node}},
+                          {x.target, 0});
+    }
     // 2. the grid
     for (const auto& x : xs)
         if (x.glyph == name && x.check == CheckId::Origin && x.fixable) { g.snap(); break; }
@@ -315,6 +460,20 @@ std::optional<Glyph> fix_glyph(const Font& f, const std::string& name, const std
             g.contours = std::move(t.contours);
         }
     }
+    // 6. sidebearings (s10): left first (the drawing moves, the right side kept), then right
+    for (const char* which : {"L", "R"})
+        for (const auto& x : xs) {
+            if (x.glyph != name || x.check != CheckId::Sidebearings || x.detail != which) continue;
+            const auto sb = sidebearings(f, g);
+            if (!sb) continue;
+            if (x.detail == "L") {
+                const double d = x.target - sb->left;
+                geom::shift_x(g, d);
+                g.advance += d;
+            } else {
+                g.advance += x.target - sb->right;
+            }
+        }
     if (g == *was) return std::nullopt;
     return g;
 }

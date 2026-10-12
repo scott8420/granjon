@@ -72,4 +72,8 @@ void infer_smooth(model::Contour& c);
 // GPOS 'kern' (or the old 'kern' table) into a model Kerning, given names by gid.
 model::Kerning read_kerning(Span gpos, Span kern, const std::vector<std::string>& names, std::vector<std::string>& notes);
 
+// s10: GSUB back into feature-file text (named lookups in the font's order,
+// features listing them); "" when there is nothing it can read.
+std::string read_gsub(Span gsub, const std::vector<std::string>& names, std::vector<std::string>& notes);
+
 }  // namespace granjon::reader

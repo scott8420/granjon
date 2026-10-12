@@ -300,7 +300,8 @@ bool import_font(const std::vector<std::uint8_t>& data, model::Font& into, Impor
         const model::Kerning kerning = read_kerning(sf.get("GPOS"), sf.get("kern"), names, rep.notes);
         rep.kern_pairs = static_cast<int>(kerning.pairs.size());
         rep.kern_groups = static_cast<int>(kerning.groups.size());
-        if (!sf.get("GSUB").empty()) rep.notes.push_back("OpenType features other than kerning (GSUB: ligatures, small caps ...) were not read.");
+        model::Features features;
+        features.text = read_gsub(sf.get("GSUB"), names, rep.notes);   // s10
         if (!sf.get("fpgm").empty() || !sf.get("prep").empty()) rep.notes.push_back("TrueType hints were dropped.");
 
         rep.glyphs = count;
@@ -314,7 +315,7 @@ bool import_font(const std::vector<std::uint8_t>& data, model::Font& into, Impor
         into.put(model::Font::kKerning, model::Record{kerning});
         into.put(model::Font::kMetricsKeys, model::Record{model::MetricsKeys{}});
         into.put(model::Font::kSkips, model::Record{model::CheckSkips{}});
-        into.put(model::Font::kFeatures, model::Record{model::Features{}});
+        into.put(model::Font::kFeatures, model::Record{features});
         for (auto& [n, gl] : glyphs) into.put(n, model::Record{gl});
     } catch (const BadFont& e) {
         if (why) *why = std::string("Can't read this font: ") + e.what() + ".";

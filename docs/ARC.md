@@ -365,6 +365,10 @@ Newest session at the bottom.
 
 - Print proof (s10): model::proof_plan + views::ProofPrinter -- waterfall, text, spacing, kerning, features off / on, every drawn glyph; through the compiled font; Ctrl+P (GtkPrintOperation) and Export proof as PDF.
 
+- r2 (s10): GSUB import -> features.fea (named lookups in the font's order; contextual skipped and counted) -- round trips verified with HarfBuzz on DejaVu Sans, Carlito, GFS Baskerville; the ttfautohint hook on TTF export (Preferences, EXPORT).
+
+- r4 (s10): two more warnings -- stem weights (within 2.5 % of the font's stem) and sidebearings (straight / bowl sides within 5 % of n o / H O, unkeyed glyphs); the ink-trap warning narrowed to letters and figures. Tuned on DejaVu Sans and Carlito.
+
 ## Backlog notes (s10)
 - Proof: an options dialog (pages, sizes, paper), a glyph-selection proof, granjon-cli proof.
 - Features: contextual substitution (calt, frac, ignore), GSUB import -> features.fea, glyph rename rewriting the feature text, aalt, a syntax-aware editor (line numbers).
