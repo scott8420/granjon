@@ -9,6 +9,7 @@
 #include "views/SpacingStrip.hpp"
 #include "views/ReportList.hpp"
 #include "views/FeatureView.hpp"
+#include "model/Proof.hpp"
 #include "views/PreviewPane.hpp"
 #include "views/ViewContext.hpp"
 
@@ -105,6 +106,7 @@ private:
     void on_font_metrics_keys();                 // category: handler: apply metrics keys font-wide (one step, M6)
     std::string autohint(const std::filesystem::path& ttf);   // s10: ttfautohint on an exported TTF
     void on_proof_pdf();                         // s10: the print proof as a PDF
+    model::ProofPlan proof_plan_now();           // r9: the plan per Preferences, PROOF (says so when empty)
     void on_proof_print();                       // s10: the print proof to a printer (Ctrl+P)
     void on_font_extremes();                     // s10: add extreme points font-wide (one step)
     void on_font_inktraps();                     // s10: ink traps at every tight crotch (one step)

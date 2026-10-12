@@ -16,6 +16,7 @@
 #include <gtkmm/colordialogbutton.h>
 #include <gtkmm/dropdown.h>
 #include <gtkmm/switch.h>
+#include <gtkmm/checkbutton.h>
 #include <gtkmm/window.h>
 
 namespace granjon {
@@ -35,6 +36,11 @@ private:
     widgets::Named<Gtk::Switch> m_reopen;
     widgets::Named<Gtk::Switch> m_autohint;     // s10
     widgets::Named<Gtk::DropDown> m_paper;      // s10: proof paper
+    // r9: PROOF card -- the pages, the waterfall sizes, glyph size, which glyphs
+    widgets::CheckButton       m_pg_waterfall, m_pg_text, m_pg_spacing, m_pg_kerning, m_pg_features, m_pg_glyphs;
+    widgets::Entry             m_sizes;
+    widgets::DropDown          m_cells;
+    widgets::DropDown          m_scope;
     widgets::Named<Gtk::Switch> m_fill;
     widgets::Named<Gtk::Switch> m_context;
     widgets::Entry             m_upper;

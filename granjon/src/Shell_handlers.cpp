@@ -4,6 +4,7 @@
 #include <glibmm/miscutils.h>
 #include "views/ProofPrinter.hpp"
 #include "model/Proof.hpp"
+#include <algorithm>
 #include <gtkmm/printoperation.h>
 #include "model/Spacing.hpp"
 
@@ -270,6 +271,31 @@ void Shell::on_font_directions() {  // handler: the menu's Every glyph > "Correc
         say("Every contour already runs the right way.", false);
 }
 
+namespace {
+// r9: Preferences, PROOF -> what the proof puts in. The glyph pages follow
+// the navigator's selection when that is set and there is one.
+model::ProofOptions proof_options(const core::Settings& st, const views::ViewContext& ctx) {
+    model::ProofOptions o;
+    auto has = [&](const char* p) { return std::find(st.proof_pages.begin(), st.proof_pages.end(), p) != st.proof_pages.end(); };
+    o.waterfall = has("waterfall");
+    o.text = has("text");
+    o.spacing = has("spacing");
+    o.kerning = has("kerning");
+    o.features = has("features");
+    o.glyphs = has("glyphs");
+    o.sizes = model::parse_proof_sizes(st.proof_sizes);
+    o.glyph_columns = st.proof_cells == "large" ? 5 : st.proof_cells == "small" ? 12 : 8;
+    if (st.proof_glyphs == "selection" && ctx.scope && !ctx.scope->empty()) o.only = &*ctx.scope;
+    return o;
+}
+}  // namespace
+
+model::ProofPlan Shell::proof_plan_now() {
+    model::ProofPlan p = model::proof_plan(m_doc.font, m_settings.preview_text, proof_options(m_settings, m_ctx));
+    if (p.empty()) say("Nothing to proof: every page is off, or has nothing in it (Preferences, PROOF).", true);
+    return p;
+}
+
 void Shell::on_proof_pdf() {  // handler: the menu's "Export proof as PDF…" (s10)
     auto dialog = Gtk::FileDialog::create();
     dialog->set_title("Export proof as PDF");
@@ -283,7 +309,10 @@ void Shell::on_proof_pdf() {  // handler: the menu's "Export proof as PDF…" (s
         if (!file) return;
         std::filesystem::path p = file->get_path();
         if (p.extension() != ".pdf") p += ".pdf";
-        views::ProofPrinter pr(m_doc.font, model::proof_plan(m_doc.font, m_settings.preview_text), m_settings.preview_kern);
+        model::ProofPlan plan = proof_plan_now();
+        if (plan.empty()) return;
+        const std::string subset = plan.glyph_subset ? ", glyphs: the selection (" + std::to_string(plan.glyphs.size()) + ")" : "";
+        views::ProofPrinter pr(m_doc.font, std::move(plan), m_settings.preview_kern);
         int pages = 0;
         if (!pr.ok() || !pr.write_pdf(p.string(), m_settings.proof_paper, &pages)) {
             say("Could not write the proof: " + pr.why(), true);
@@ -292,13 +321,14 @@ void Shell::on_proof_pdf() {  // handler: the menu's "Export proof as PDF…" (s
         m_settings.export_folder = p.parent_path().string();
         save_settings();
         say("Proof: " + p.filename().string() + " -- " + std::to_string(pages) + (pages == 1 ? " page" : " pages") +
-                (m_settings.proof_paper == "a4" ? ", A4." : ", Letter."), false);
+                (m_settings.proof_paper == "a4" ? ", A4" : ", Letter") + subset + ".", false);
     });
 }
 
 void Shell::on_proof_print() {  // handler: Ctrl+P (s10)
-    auto pr = std::make_shared<views::ProofPrinter>(m_doc.font, model::proof_plan(m_doc.font, m_settings.preview_text),
-                                                    m_settings.preview_kern);
+    model::ProofPlan plan = proof_plan_now();
+    if (plan.empty()) return;
+    auto pr = std::make_shared<views::ProofPrinter>(m_doc.font, std::move(plan), m_settings.preview_kern);
     if (!pr->ok()) { say("Could not set the proof: " + pr->why(), true); return; }
     auto op = Gtk::PrintOperation::create();
     op->set_job_name(m_doc.font.info().family + " " + m_doc.font.info().style + " proof");

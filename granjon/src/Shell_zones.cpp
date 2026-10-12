@@ -177,6 +177,7 @@ Glib::RefPtr<Gio::Menu> Shell::build_menu() {  // zone: hamburger model
     auto proof = Gio::Menu::create();
     proof->append("Print…", "win.proof-print");
     proof->append("Export as PDF…", "win.proof-pdf");
+    proof->append("Options…", "win.preferences");   // r9: the PROOF card
     out->append_submenu("Proof", proof);
     menu->append_section(out);
 

@@ -56,7 +56,15 @@ Settings load_settings(const std::string& file) {
         get(pv, "kern", s.preview_kern);
         get(pv, "invert", s.preview_invert);
     }
-    if (const json pr = j.value("proof", json::object()); pr.is_object()) get(pr, "paper", s.proof_paper);
+    if (const json pr = j.value("proof", json::object()); pr.is_object()) {
+        get(pr, "paper", s.proof_paper);
+        get(pr, "pages", s.proof_pages);
+        get(pr, "sizes", s.proof_sizes);
+        get(pr, "cells", s.proof_cells);
+        get(pr, "glyphs", s.proof_glyphs);
+    }
+    if (s.proof_cells != "large" && s.proof_cells != "medium" && s.proof_cells != "small") s.proof_cells = Settings{}.proof_cells;
+    if (s.proof_glyphs != "selection" && s.proof_glyphs != "all") s.proof_glyphs = Settings{}.proof_glyphs;
     if (s.proof_paper != "letter" && s.proof_paper != "a4") s.proof_paper = Settings{}.proof_paper;
     const json ex = j.value("export", json::object());
     if (ex.is_object()) { get(ex, "folder", s.export_folder); get(ex, "autohint", s.export_autohint); }
@@ -146,7 +154,8 @@ bool save_settings(const std::string& file, const Settings& s) {
         {"navigator", {{"open", s.navigator_open}}},
         {"spacing", {{"text", s.spacing_text}, {"size", s.spacing_size}}},
         {"preview", {{"text", s.preview_text}, {"kern", s.preview_kern}, {"invert", s.preview_invert}}},
-        {"proof", {{"paper", s.proof_paper}}},
+        {"proof", {{"paper", s.proof_paper}, {"pages", s.proof_pages}, {"sizes", s.proof_sizes},
+                   {"cells", s.proof_cells}, {"glyphs", s.proof_glyphs}}},
         {"export", {{"folder", s.export_folder}, {"autohint", s.export_autohint}}},
         {"inspector", {{"code_format", s.code_format}}},
         {"new_font", {{"preset", s.new_preset}, {"create_set", s.new_create_set}}},

@@ -13,6 +13,7 @@
 #include <unistd.h>
 
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <ctime>
 #include <filesystem>
@@ -209,13 +210,17 @@ int ProofPrinter::run(cairo_t* cr, double W, double H, int only) {
         pango_cairo_show_layout(cr, n);
         g_object_unref(n);
     };
+    bool fresh = true;   // nothing on this page yet (r9: a page turned off leaves no blank one)
     auto new_page = [&] {
+        if (fresh) return;
         ++page;
         y = top;
+        fresh = true;
         header();
     };
-    auto need = [&](double h) { if (y + h > bottom && y > top) new_page(); };
+    auto need = [&](double h) { if (y + h > bottom && y > top) new_page(); fresh = false; };   // what calls it draws
     auto section = [&](const std::string& t) {
+        fresh = false;
         need(40);
         y += label(t, left, y, 10, 0.2, true) + 8;
     };
@@ -241,10 +246,12 @@ int ProofPrinter::run(cairo_t* cr, double W, double H, int only) {
     header();
 
     // 1 waterfall + paragraphs
-    section("Waterfall");
-    for (double pt : m_plan.waterfall) line(m_plan.sample, pt);
-    y += 10;
-    section("Text");
+    if (!m_plan.waterfall.empty()) {
+        section("Waterfall");
+        for (double pt : m_plan.waterfall) line(m_plan.sample, pt);
+        y += 10;
+    }
+    if (!m_plan.text_sizes.empty()) section("Text");
     for (double pt : m_plan.text_sizes) {
         const int wrap = static_cast<int>(std::min(width - 44, pt * 36));
         PangoLayout* l = font_layout(m_plan.paragraph, pt, wrap);
@@ -263,6 +270,7 @@ int ProofPrinter::run(cairo_t* cr, double W, double H, int only) {
         y += hh + 14;
     }
     if (!m_plan.missing.empty()) {
+        fresh = false;
         y += label("Not in the font (shown as boxes): " + m_plan.missing, left, y, 7) + 6;
     }
 
@@ -294,11 +302,11 @@ int ProofPrinter::run(cairo_t* cr, double W, double H, int only) {
     // 5 glyphs: outlines from the model, 8 to a row
     if (!m_plan.glyphs.empty()) {
         new_page();
-        section("Glyphs -- " + std::to_string(m_plan.glyphs.size()));
+        section("Glyphs -- " + std::to_string(m_plan.glyphs.size()) + (m_plan.glyph_subset ? " (the selection)" : ""));
         const auto& m = m_font.metrics();
         const double asc = std::max(m.ascender, m.cap_height), desc = std::min(m.descender, 0);
-        const int cols = 8;
-        const double cw = width / cols, art = 44, ch = art + 26;
+        const int cols = std::max(1, m_plan.glyph_columns);   // r9: Preferences, PROOF -- glyph size
+        const double cw = width / cols, art = std::round(cw * 0.68), ch = art + 26;
         const double s = art / std::max(1.0, asc - desc);
         int c = 0;
         for (const auto& name : m_plan.glyphs) {

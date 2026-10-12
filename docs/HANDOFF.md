@@ -3,7 +3,7 @@
 # s11_loose_ends
 
 ## Files to upload
-- `s10_r8_menu.zip` (the one zip to install -- everything in s10: overlaps flag, M15b, r1 ink-trap warning, M16, print proof, r2 GSUB import + ttfautohint, r3 the aarch64 note, r4 stem / sidebearing warnings, r5 contextual substitution, r6 every contextual format on import, r7 lookupflag + default-language import, r8 hamburger submenus. Earlier s10 zips are superseded. Or a fresh `scripts/granjon_backup.sh -o s11_loose_ends`)
+- `s10_r9_proof_options.zip` (the one zip to install -- everything in s10: overlaps flag, M15b, r1 ink-trap warning, M16, print proof, r2 GSUB import + ttfautohint, r3 the aarch64 note, r4 stem / sidebearing warnings, r5 contextual substitution, r6 every contextual format on import, r7 lookupflag + default-language import, r8 hamburger submenus, r9 proof options. Earlier s10 zips are superseded. Or a fresh `scripts/granjon_backup.sh -o s11_loose_ends`)
 - `RULES.md`, `HANDOFF.md`, `ARCHITECTURE.md`, `ARC.md`, `CANON.md`
 
 ---
@@ -18,7 +18,14 @@
 - **r4: crc** (Scott).
 - **r5: crc** (Scott).
 - **r6: crc** (Scott).
-- **r8 -- hamburger submenus: sandbox green, not crc** (`s10_r8_menu.zip`; Scott on r7: "the hamburger menu could be shortened by adding sub menus"). Selftest 1295 / 0. 30 rows -> 17: **Export >** (OTF, TTF, WOFF2 | glyph SVG, Spacing text SVG), **Proof >** (Print, Export as PDF), **Every glyph >** (the six font-wide passes, labels shortened), **Help >** (Primer, Keyboard shortcuts, Dump registry). New / Open / Open recent / Import, Save, Undo / Redo, Navigator / Inspector, Preferences / About / Quit stay at the top. Accelerators unchanged. Checked on screen (Xvfb).
+- **r8: crc** (Scott: "thx much better").
+- **r9 -- proof options: sandbox green, not crc** (`s10_r9_proof_options.zip`). Selftest **1300 / 0** (5 new + settings round-trip). No new warnings, no new package.
+  - Preferences gains a **PROOF** card (paper moved there from EXPORT): **Pages** -- six checkboxes (Waterfall, Text, Spacing, Kerning, Features, Glyphs); **Waterfall sizes** -- points typed as a list ("72 48 36 ..."; repeats, junk and sizes outside 4-300 dropped, nothing usable = the default); **Glyph size** -- Large (5 a row) / Medium (8) / Small (12); **Glyph pages show** -- the navigator's selection (when there is one, else every glyph; the default) / every glyph; **Paper**.
+  - ☰ Proof > **Options…** opens Preferences.
+  - `model::ProofOptions` + `parse_proof_sizes`; `proof_plan(font, sample, options)` leaves a page's lists empty when it is off. ProofPrinter no longer leaves a blank page for a page turned off; the glyph section says "(the selection)". Every page off: the status line says so and nothing prints.
+  - Settings `proof.pages / sizes / cells / glyphs`.
+  - Checked: PDFs with waterfall + text off and the selection n o H O at 5 a row (2 pages, no blank), and a 48 / 24 / 12 waterfall with 12 a row (3 pages); the card on screen.
+- **r8 -- hamburger submenus: sandbox green, crc** (`s10_r8_menu.zip`; Scott on r7: "the hamburger menu could be shortened by adding sub menus"). Selftest 1295 / 0. 30 rows -> 17: **Export >** (OTF, TTF, WOFF2 | glyph SVG, Spacing text SVG), **Proof >** (Print, Export as PDF), **Every glyph >** (the six font-wide passes, labels shortened), **Help >** (Primer, Keyboard shortcuts, Dump registry). New / Open / Open recent / Import, Save, Undo / Redo, Navigator / Inspector, Preferences / About / Quit stay at the top. Accelerators unchanged. Checked on screen (Xvfb).
 - **r7 -- lookupflag, both ways: sandbox green, not crc** (`s10_r7_lookupflag.zip`). Selftest **1295 / 0** (4 new). No new warnings, no new package.
   - Feature syntax: `lookupflag RightToLeft / IgnoreBaseGlyphs / IgnoreLigatures / IgnoreMarks;` (or a number), in force to the end of the block; a change mid-feature starts a new lookup. `MarkAttachmentType` / `UseMarkFilteringSet` warn and are skipped. GSUB writes the flag.
   - GDEF: a glyph with combining code points and no anchors now counts as a mark too, so IgnoreMarks works for fonts with no ANCHORS.
@@ -342,7 +349,7 @@ Primitives (rectangle, ellipse -- Shift square / circle, Alt from centre; line =
 Then: M15 transform panel + corner tools + extreme points + offset stroke; M16 mark positioning, features editor, italic angle / font info. Later: print proof, ttfautohint, weight masters (v3).
 
 ## Still open
-- s10 asks: answered. M16, print proof, GSUB import and the ttfautohint hook done in s10. Next (s11): Scott uses Granjon and brings gotchas; loose ends left -- proof options, horizontal-stem drift, a per-script control for the side warnings, lookup flags (ignore marks) in the feature syntax.
+- s10 asks: answered. M16, print proof, GSUB import and the ttfautohint hook done in s10. Next (s11): Scott uses Granjon and brings gotchas; loose ends left -- (proof options: done r9) horizontal-stem drift, a per-script control for the side warnings, lookup flags (ignore marks) in the feature syntax.
 - M15 done in the sandbox (s10). Transform follow-ons: Transform Each (each path about its own centre), a remembered origin, a free-transform 'perspective' (no -- fonts don't), handles in Pick mode for a node selection (now Select only).
 - Overlap vs direction check: built in s10 (overlaps finding; direction judges nesting only).
 - M14 questions (s08): answered at the close -- see "s09 first" at the top.

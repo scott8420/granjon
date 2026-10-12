@@ -59,6 +59,13 @@ struct Settings {
     // ── Preview + export (M9) ─────────────────────────────────────────────
     std::string preview_text = "Hamburgefonstiv HOHOHO nonono";   // the waterfall's sample
     std::string proof_paper  = "letter";   // s10: the proof PDF's page -- "letter" or "a4"
+    // r9: proof options (Preferences, PROOF) -- the pages put in, the
+    // waterfall's sizes, glyph cell size, and whether the glyph pages follow
+    // the navigator's selection ("selection") or always show the font ("all").
+    std::vector<std::string> proof_pages = {"waterfall", "text", "spacing", "kerning", "features", "glyphs"};
+    std::string proof_sizes  = "72 48 36 24 18 14 12 10 9 8 7 6";
+    std::string proof_cells  = "medium";   // "large" (5 a row), "medium" (8), "small" (12)
+    std::string proof_glyphs = "selection";
     bool        export_autohint = false;   // s10: run ttfautohint on an exported TTF (when it is installed)
     bool        preview_kern = true;     // the compiled kerning on
     bool        preview_invert = false;  // show the page in the OTHER mode than the desktop's

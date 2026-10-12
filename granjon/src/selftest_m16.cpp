@@ -278,6 +278,28 @@ void selftest_m16(const std::function<void(const std::string&, bool, const std::
                   std::find(p.glyphs.begin(), p.glyphs.end(), "_part.stem") == p.glyphs.end(),
               std::to_string(p.glyphs.size()));
         check("proof: what the font lacks is named", p.missing.find('Q') != std::string::npos && p.missing.find('n') == std::string::npos);
+
+        // r9: options
+        model::ProofOptions o;
+        o.waterfall = o.text = o.kerning = o.features = false;
+        const std::set<std::string> sel = {"o", "n", "Agrave"};
+        o.only = &sel;
+        o.glyph_columns = 12;
+        const auto q = model::proof_plan(f, "nov HOH", o);
+        check("proof options: pages turned off are empty", q.waterfall.empty() && q.text_sizes.empty() && q.kerning.empty() &&
+                                                             q.features.empty() && !q.spacing.empty() && q.missing.empty());
+        check("proof options: glyph pages follow the selection, glyph order, drawn only",
+              q.glyph_subset && q.glyphs.size() == 2 && q.glyph_columns == 12, std::to_string(q.glyphs.size()));
+        o = {};
+        o.spacing = o.glyphs = false;
+        o.sizes = model::parse_proof_sizes("36, 12 12 x 9.5 2");
+        const auto r = model::proof_plan(f, "", o);
+        check("proof options: the sizes parsed (repeats, junk, out of range dropped)",
+              r.waterfall == std::vector<double>{36, 12, 9.5} && r.spacing.empty() && r.glyphs.empty() && !r.glyph_subset);
+        check("proof options: nothing parseable -> the default sizes", model::parse_proof_sizes(" ,x ").size() == 12);
+        o = {};
+        o.waterfall = o.text = o.spacing = o.kerning = o.features = o.glyphs = false;
+        check("proof options: every page off -> an empty plan", model::proof_plan(f, "", o).empty() && !p.empty());
     }
 
     std::cout << "s10 GSUB import\n";

@@ -510,6 +510,11 @@ int main() {
         s.editor_snap = false;
         s.handles_relative = false;
         s.navigator_open = {"Basic Latin", "Unencoded"};
+        s.proof_pages = {"spacing", "glyphs"};   // r9
+        s.proof_sizes = "36 12";
+        s.proof_cells = "small";
+        s.proof_glyphs = "all";
+        s.proof_paper = "a4";
         check("settings: save makes the folder", core::save_settings(file, s));
         check("settings: round-trip", core::load_settings(file) == s);
         check("settings: no temp file left", !stdfs::exists(file + ".tmp"));

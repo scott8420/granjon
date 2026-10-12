@@ -5,6 +5,7 @@
 #include "model/Font.hpp"
 #include "model/Spacing.hpp"
 
+#include <algorithm>
 #include <cstdio>
 #include <set>
 
@@ -55,7 +56,27 @@ char32_t typed(const Font& f, const std::string& name) {
 
 }  // namespace
 
-ProofPlan proof_plan(const Font& f, const std::string& sample) {
+std::vector<double> parse_proof_sizes(const std::string& text) {
+    std::vector<double> out;
+    std::string tok;
+    auto flush = [&] {
+        if (tok.empty()) return;
+        try {
+            std::size_t used = 0;
+            const double v = std::stod(tok, &used);
+            if (used == tok.size() && v >= 4 && v <= 300 && std::find(out.begin(), out.end(), v) == out.end()) out.push_back(v);
+        } catch (...) {}
+        tok.clear();
+    };
+    for (char c : text) {
+        if (c == ' ' || c == ',' || c == '\t' || c == ';') flush();
+        else tok += c;
+    }
+    flush();
+    return out.empty() ? ProofOptions{}.sizes : out;
+}
+
+ProofPlan proof_plan(const Font& f, const std::string& sample, const ProofOptions& opt) {
     ProofPlan p;
     p.family = f.info().family.empty() ? "Untitled" : f.info().family;
     p.style = f.info().style.empty() ? "Regular" : f.info().style;
@@ -64,14 +85,18 @@ ProofPlan proof_plan(const Font& f, const std::string& sample) {
     p.version = v;
     p.sample = sample.empty() ? "Hamburgefonstiv" : sample;
     p.paragraph = kProofParagraph;
+    p.waterfall = opt.waterfall ? opt.sizes : std::vector<double>{};
+    if (!opt.text) p.text_sizes.clear();
+    p.glyph_columns = std::clamp(opt.glyph_columns, 3, 16);
     {
         std::set<char32_t> miss;
-        for (char32_t c : decode(p.sample + p.paragraph))
+        for (char32_t c : decode((opt.waterfall ? p.sample : "") + std::string(opt.text ? p.paragraph : "")))
             if (c != U' ' && !drawn(f.glyph_for(c))) miss.insert(c);
         for (char32_t c : miss) utf8(p.missing, c);
     }
 
     // spacing: each drawn letter between its controls, eight to a line
+    if (opt.spacing) {
     auto between = [&](char32_t from, char32_t to, const char* ctl) {
         if (!drawn(f.glyph_for(static_cast<char32_t>(ctl[0])))) return;
         std::string line;
@@ -95,9 +120,10 @@ ProofPlan proof_plan(const Font& f, const std::string& sample) {
         for (char32_t c : decode(s)) ok = ok && (c == U' ' || drawn(f.glyph_for(c)));
         if (ok) p.spacing.push_back(s);
     }
+    }
 
     // kerning: every pair in effect with a value, both sides typable
-    {
+    if (opt.kerning) {
         const auto& k = f.kerning();
         std::set<std::pair<std::string, std::string>> seen;
         std::vector<std::string> pairs;
@@ -132,7 +158,7 @@ ProofPlan proof_plan(const Font& f, const std::string& sample) {
     }
 
     // features: each feature's typable inputs
-    if (!f.features().text.empty()) {
+    if (opt.features && !f.features().text.empty()) {
         const FeaDoc d = parse_fea(f.features().text, [&](const std::string& n) { return f.glyph(n) != nullptr; });
         if (d.ok())
             for (const auto& ft : d.features) {
@@ -167,8 +193,10 @@ ProofPlan proof_plan(const Font& f, const std::string& sample) {
             }
     }
 
+    p.glyph_subset = opt.only && !opt.only->empty();
+    if (opt.glyphs)
     for (const auto& n : f.glyph_order())   // only glyphs that draw something (an accented letter waits for its parts)
-        if (const Glyph* g = f.glyph(n); drawn(g) && (!g->contours.empty() || !geom::all_contours(f, *g).empty()))
+        if (const Glyph* g = f.glyph(n); (!p.glyph_subset || opt.only->count(n)) && drawn(g) && (!g->contours.empty() || !geom::all_contours(f, *g).empty()))
             p.glyphs.push_back(n);
     return p;
 }
