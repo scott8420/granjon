@@ -9,7 +9,8 @@
 // (s10) of every format (5 / 6, glyph-, class- and coverage-based) come in as
 // `sub a x' lookup NAME b;` / `ignore sub ...` -- class 0 written as the glyphs
 // its ClassDef leaves out; reverse chaining (8) is counted and left out.
-// Lookup flags are not carried.
+// Lookup flags: the four plain bits (IgnoreMarks ...) come in as lookupflag;
+// mark classes and filtering sets are noted and dropped.
 #include "import/ReaderParts.hpp"
 
 #include <algorithm>
@@ -68,10 +69,29 @@ std::string read_gsub(Span gsub, const std::vector<std::string>& names, std::vec
     auto name = [&](unsigned g) -> std::string { return g < names.size() ? names[g] : std::string(); };
     const Span feats = gsub.from(gsub.u16(6)), lookups = gsub.from(gsub.u16(8));
 
-    // features: tag -> lookup indices (records repeat per script: merged)
+    // features: tag -> lookup indices. Only the records every script's
+    // default language uses (Granjon writes DFLT + latn defaults); records
+    // only a language asks for (a Sami locl, a Turkish liga) are left out --
+    // merged in, they would apply to all text.
+    std::set<unsigned> wanted, anywhere;
+    {
+        const Span scripts = gsub.from(gsub.u16(4));
+        auto take = [&](Span ls, std::set<unsigned>& into) {
+            if (const unsigned req = ls.u16(2); req != 0xFFFF) into.insert(req);
+            for (unsigned k = 0, m = ls.u16(4); k < m; ++k) into.insert(ls.u16(6 + 2 * k));
+        };
+        for (unsigned i = 0, n = scripts.u16(0); i < n; ++i) {
+            const Span s = scripts.from(scripts.u16(2 + 6 * i + 4));
+            if (const unsigned d = s.u16(0)) take(s.from(d), wanted);
+            for (unsigned k = 0, m = s.u16(2); k < m; ++k) take(s.from(s.u16(4 + 6 * k + 4)), anywhere);
+        }
+        if (wanted.empty()) wanted = anywhere;   // no defaults at all: every record
+    }
+    int lang_only = 0;
     std::vector<std::string> order;
     std::map<std::string, std::vector<int>> by_tag;
     for (unsigned i = 0, n = feats.u16(0); i < n; ++i) {
+        if (!wanted.contains(i)) { lang_only += anywhere.contains(i); continue; }
         const std::string tag(reinterpret_cast<const char*>(feats.sub(2 + 6 * i, 4).p), 4);
         const Span f = feats.from(feats.u16(6 + 6 * i));
         auto& v = by_tag[tag];
@@ -89,13 +109,16 @@ std::string read_gsub(Span gsub, const std::vector<std::string>& names, std::vec
     std::map<int, std::vector<std::string>> rules;
     int contextual = 0, odd_names = 0, flagged = 0;
     std::set<int> chained;   // lookups a contextual rule applies
+    std::map<int, int> flags;   // s10: lookupflag (the four plain bits)
     std::vector<int> todo(used.begin(), used.end());
     for (std::size_t q = 0; q < todo.size(); ++q) {   // grows as contextual rules name more lookups
         const int li = todo[q];
         if (li < 0 || static_cast<unsigned>(li) >= nl) continue;
         const Span L = lookups.from(lookups.u16(2 + 2 * static_cast<unsigned>(li)));
         unsigned type = L.u16(0);
-        if (L.u16(2) & 0x00FF) ++flagged;
+        const unsigned lf = L.u16(2);
+        if (lf & 0xFFF0) ++flagged;   // mark classes / filtering sets: not kept
+        if (lf & 0x0F) flags[li] = static_cast<int>(lf & 0x0F);
         std::vector<std::string>& out = rules[li];
         std::set<int> seen_single;
         for (unsigned s = 0, ns = L.u16(4); s < ns; ++s) {
@@ -313,8 +336,16 @@ std::string read_gsub(Span gsub, const std::vector<std::string>& names, std::vec
         }
         return keep;
     };
-    auto block = [&](const std::string& nm, const std::vector<std::string>& r) {
+    auto block = [&](const std::string& nm, const std::vector<std::string>& r, int li) {
         text += "\nlookup " + nm + " {\n";
+        if (auto f = flags.find(li); f != flags.end()) {
+            std::string fl = "    lookupflag";
+            if (f->second & 1) fl += " RightToLeft";
+            if (f->second & 2) fl += " IgnoreBaseGlyphs";
+            if (f->second & 4) fl += " IgnoreLigatures";
+            if (f->second & 8) fl += " IgnoreMarks";
+            text += fl + ";\n";
+        }
         for (const auto& l : r) text += l + "\n";
         text += "} " + nm + ";\n";
     };
@@ -329,7 +360,7 @@ std::string read_gsub(Span gsub, const std::vector<std::string>& names, std::vec
             auto rr = resolve(r, bad);
             if (bad) ++unresolved;
             if (rr.empty()) { if (pass != 1) dropped.insert(li); continue; }
-            block(lname[li] + (pass == 1 ? "_ctx" : ""), rr);
+            block(lname[li] + (pass == 1 ? "_ctx" : ""), rr, li);
         }
     if (unresolved) notes.push_back("GSUB: " + std::to_string(unresolved) + " contextual rule(s) named a lookup that couldn't be read; left out.");
     int features = 0;
@@ -346,7 +377,8 @@ std::string read_gsub(Span gsub, const std::vector<std::string>& names, std::vec
     if (contextual) notes.push_back("GSUB: " + std::to_string(contextual) + " reverse-chaining lookup(s) not read (Granjon doesn't compile them); "
                                     "the features using only those are left out.");
     if (odd_names) notes.push_back("GSUB: " + std::to_string(odd_names) + " rule(s) skipped -- a glyph name the feature syntax can't write.");
-    if (flagged) notes.push_back("GSUB: lookup flags (ignore marks ...) on " + std::to_string(flagged) + " lookup(s) were not kept.");
+    if (flagged) notes.push_back("GSUB: mark classes / filtering sets in the lookup flags of " + std::to_string(flagged) + " lookup(s) were not kept (the ignore flags were).");
+    if (lang_only) notes.push_back("GSUB: " + std::to_string(lang_only) + " language-specific feature record(s) left out (Granjon writes the default language only).");
     if (features == 0) return {};
     notes.push_back("GSUB: " + std::to_string(features) + " feature(s) read into the feature file (Features view, Ctrl+6).");
     return text;

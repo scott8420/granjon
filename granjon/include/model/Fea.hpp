@@ -11,8 +11,10 @@
 //   sub a from [a.alt1 a.alt2];                                                     alternate
 //   sub f f i by f_f_i;            sub [f f.alt] i by f_i;                          ligature
 //   sub fraction @numr' by @dnom;  sub a x' lookup L b;   ignore sub a x', x' b;   contextual (s10)
+// (s10) lookupflag RightToLeft / IgnoreBaseGlyphs / IgnoreLigatures / IgnoreMarks
+// (or a number); MarkAttachmentType / UseMarkFilteringSet are skipped with a warning.
 // Read and skipped with a warning: pos rules (kerning comes from KERN, marks
-// from ANCHORS), lookupflag, script / language other than DFLT / latn, table
+// from ANCHORS), script / language other than DFLT / latn, table
 // blocks, featureNames. Errors (with the line): reverse chaining (rsub),
 // include, unknown glyphs or lookups, unbalanced braces, a malformed rule.
 #include <functional>
@@ -46,6 +48,8 @@ struct FeaLookup {
     FeaRule::Kind        kind = FeaRule::Kind::Single;
     std::vector<FeaRule> rules;
     int                  line = 0;
+    int                  flag = 0;               // s10: lookupflag -- RightToLeft 1, IgnoreBaseGlyphs 2,
+                                                 // IgnoreLigatures 4, IgnoreMarks 8
 };
 struct FeaFeature {
     std::string      tag;

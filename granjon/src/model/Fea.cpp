@@ -334,6 +334,7 @@ private:
     // Statements of a lookup block or a feature. `feature` null = inside a named lookup.
     void body(FeaFeature* feature, int lookup) {
         int cur = -1;   // the anonymous lookup the rules are going into
+        int flag = 0;   // lookupflag in force
         while (peek().k != Tok::K::End && !is("}")) {
             const Tok& x = peek();
             if (x.k == Tok::K::Class && is("=", 1)) { class_def(); continue; }
@@ -345,10 +346,12 @@ private:
                 ++m_doc.rules;
                 int target = lookup;
                 if (feature) {
-                    if (cur < 0 || m_doc.lookups[static_cast<std::size_t>(cur)].kind != r.kind) {
+                    if (cur < 0 || m_doc.lookups[static_cast<std::size_t>(cur)].kind != r.kind ||
+                        m_doc.lookups[static_cast<std::size_t>(cur)].flag != flag) {
                         FeaLookup l;
                         l.kind = r.kind;
                         l.line = r.line;
+                        l.flag = flag;
                         m_doc.lookups.push_back(l);
                         cur = static_cast<int>(m_doc.lookups.size()) - 1;
                         feature->lookups.push_back(cur);
@@ -393,10 +396,12 @@ private:
                     ++m_doc.rules;
                     int target = lookup;
                     if (feature) {
-                        if (cur < 0 || m_doc.lookups[static_cast<std::size_t>(cur)].kind != FeaRule::Kind::Chain) {
+                        if (cur < 0 || m_doc.lookups[static_cast<std::size_t>(cur)].kind != FeaRule::Kind::Chain ||
+                            m_doc.lookups[static_cast<std::size_t>(cur)].flag != flag) {
                             FeaLookup l;
                             l.kind = FeaRule::Kind::Chain;
                             l.line = r.line;
+                            l.flag = flag;
                             m_doc.lookups.push_back(l);
                             cur = static_cast<int>(m_doc.lookups.size()) - 1;
                             feature->lookups.push_back(cur);
@@ -426,7 +431,40 @@ private:
                 skip_statement();
                 continue;
             }
-            if (w == "lookupflag" || w == "parameters" || w == "sizemenuname" || w == "feature" || w == "subtable") {
+            if (w == "lookupflag") {   // s10
+                take();
+                int fl = 0;
+                bool ok = true;
+                while (peek().k != Tok::K::End && !is(";")) {
+                    const Tok& t = take();
+                    if (t.s == "RightToLeft") fl |= 1;
+                    else if (t.s == "IgnoreBaseGlyphs") fl |= 2;
+                    else if (t.s == "IgnoreLigatures") fl |= 4;
+                    else if (t.s == "IgnoreMarks") fl |= 8;
+                    else if (!t.s.empty() && std::all_of(t.s.begin(), t.s.end(), [](char c) { return std::isdigit(static_cast<unsigned char>(c)); })) {
+                        const int v = std::stoi(t.s);
+                        if (v & ~0x0F) warn(t.line, "lookupflag bits past IgnoreMarks (mark classes / filtering sets) are skipped");
+                        fl |= v & 0x0F;
+                    } else if (t.s == "MarkAttachmentType" || t.s == "UseMarkFilteringSet") {
+                        warn(t.line, t.s + " is skipped (Granjon writes no mark classes or filtering sets)");
+                        if (peek().k != Tok::K::End && !is(";")) { std::vector<std::string> v; item(v); }
+                    } else {
+                        error(t.line, "unknown lookupflag '" + t.s + "'");
+                        ok = false;
+                    }
+                }
+                expect(";");
+                if (!ok) continue;
+                flag = fl;
+                cur = -1;   // the next rules start a lookup with this flag
+                if (!feature && lookup >= 0) {
+                    auto& L = m_doc.lookups[static_cast<std::size_t>(lookup)];
+                    if (!L.rules.empty() && L.flag != fl) warn(x.line, "a lookupflag after rules applies to the whole lookup '" + L.name + "'");
+                    L.flag = fl;
+                }
+                continue;
+            }
+            if (w == "parameters" || w == "sizemenuname" || w == "feature" || w == "subtable") {
                 warn(x.line, "'" + w + "' is skipped");
                 skip_statement();
                 continue;

@@ -416,4 +416,26 @@ void selftest_m16(const std::function<void(const std::string&, bool, const std::
               bd.errors.empty() ? "" : bd.errors[0].text);
         check("frac: and compiles again", otf::compile_otf(back).size() > 0 && feature_tags(table(otf::compile_otf(back), "GSUB")) == feature_tags(table(b, "GSUB")));
     }
+
+    std::cout << "s10 lookupflag\n";
+    {
+        const auto d = model::parse_fea("lookup L { lookupflag IgnoreMarks; sub a b by c; } L;\n"
+                                        "feature liga { lookupflag RightToLeft IgnoreLigatures; sub f i by f_i; lookupflag 0; sub f l by f_l; } liga;\n");
+        check("lookupflag: parsed on a named lookup and per run in a feature",
+              d.ok() && d.lookups.size() == 3 && d.lookups[0].flag == 8 && d.lookups[1].flag == 5 && d.lookups[2].flag == 0,
+              d.errors.empty() ? std::to_string(d.lookups.size()) : d.errors[0].text);
+        check("lookupflag: an unknown word is an error", !model::parse_fea("feature liga { lookupflag Sideways; } liga;").ok());
+        command::Document doc;
+        model::make_preset_font(doc.font, {"sans", "Flags", "", true});
+        auto& f = doc.font;
+        auto& j = doc.journal;
+        command::add_glyph(j, f, "f_i", {});
+        command::set_features(j, f, "feature liga { lookupflag IgnoreMarks; sub f i by f_i; } liga;\n", "x", false);
+        const auto b = otf::compile_otf(f);
+        model::Font back;
+        reader::import_font(b, back);
+        check("lookupflag: written to GSUB and read back", back.features().text.find("lookupflag IgnoreMarks;") != std::string::npos,
+              back.features().text.substr(0, 200));
+        check("gdef: combining marks without anchors are classed (IgnoreMarks needs them)", !table(b, "GDEF").empty());
+    }
 }

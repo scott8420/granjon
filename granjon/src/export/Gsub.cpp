@@ -184,6 +184,7 @@ Bytes build_gsub(const std::string& fea, const Prepared& p, OtfReport& rep, int*
                 break;
             }
         }
+        out.flag = L.flag;   // s10
         remap[li] = static_cast<int>(lookups.size());
         lookups.push_back(std::move(out));
     }

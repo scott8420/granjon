@@ -3,7 +3,7 @@
 # s11_loose_ends
 
 ## Files to upload
-- `s10_r6_context_import.zip` (the one zip to install -- everything in s10: overlaps flag, M15b, r1 ink-trap warning, M16, print proof, r2 GSUB import + ttfautohint, r3 the aarch64 note, r4 stem / sidebearing warnings, r5 contextual substitution, r6 every contextual format on import. Earlier s10 zips are superseded. Or a fresh `scripts/granjon_backup.sh -o s11_loose_ends`)
+- `s10_r7_lookupflag.zip` (the one zip to install -- everything in s10: overlaps flag, M15b, r1 ink-trap warning, M16, print proof, r2 GSUB import + ttfautohint, r3 the aarch64 note, r4 stem / sidebearing warnings, r5 contextual substitution, r6 every contextual format on import, r7 lookupflag + default-language import. Earlier s10 zips are superseded. Or a fresh `scripts/granjon_backup.sh -o s11_loose_ends`)
 - `RULES.md`, `HANDOFF.md`, `ARCHITECTURE.md`, `ARC.md`, `CANON.md`
 
 ---
@@ -17,7 +17,15 @@
 - **r3: crc** (Scott).
 - **r4: crc** (Scott).
 - **r5: crc** (Scott).
-- **r6 -- every contextual format on import: sandbox green, not crc** (`s10_r6_context_import.zip`). Selftest 1291 / 0. No new warnings, no new package.
+- **r6: crc** (Scott).
+- **r7 -- lookupflag, both ways: sandbox green, not crc** (`s10_r7_lookupflag.zip`). Selftest **1295 / 0** (4 new). No new warnings, no new package.
+  - Feature syntax: `lookupflag RightToLeft / IgnoreBaseGlyphs / IgnoreLigatures / IgnoreMarks;` (or a number), in force to the end of the block; a change mid-feature starts a new lookup. `MarkAttachmentType` / `UseMarkFilteringSet` warn and are skipped. GSUB writes the flag.
+  - GDEF: a glyph with combining code points and no anchors now counts as a mark too, so IgnoreMarks works for fonts with no ANCHORS.
+  - Import: each lookup's four plain flag bits are written back (`lookupflag IgnoreMarks;` -- 17 of DejaVu Sans' lookups); mark classes / filtering sets are noted as dropped.
+  - Import now takes only the feature records every script's **default** language uses. Merging all records (r2-r6) applied language-only ones to all text -- caught on DejaVu Serif: its Sami `locl` (Eng -> Eng.alt) and Turkish `liga` became defaults. Language-only records are counted in a note (DejaVu 3, Carlito 74).
+  - HarfBuzz, eight strings (liga, smcp, smcp + salt with combining marks, frac, liga off, dlig, case, ss01 + stacked marks), original vs round trip: DejaVu Sans, DejaVu Serif, Carlito, GFS Baskerville all 8/8. otf_check passes.
+  - Not covered: per-language features (`script` / `language` blocks) -- Granjon still writes DFLT + latn defaults only.
+- **r6 -- every contextual format on import: sandbox green, crc** (`s10_r6_context_import.zip`). Selftest 1291 / 0. No new warnings, no new package.
   - GsubRead now reads context (type 5) and chaining context (type 6) in all three formats -- glyph sequences (1), class sequences (2: each class written as its glyphs; class 0 as every glyph its ClassDef leaves out), coverages (3) -- into `sub ... x' lookup NAME ...;` / `ignore sub ...`. Reverse chaining (8) is still counted and left out.
   - Names before use: lookups applied only through contexts are written first; a lookup a feature ALSO uses directly gets a copy (`NAME_ctx`) written first for the contexts, the original staying in the font's order -- exact (caught on DejaVu Sans: a contextual rule naming `medi_10`, which the medi feature also uses).
   - Real fonts: DejaVu Sans now imports whole -- 13 features, 643 rules (was 12 / 472, 4 contextual skipped); Carlito 23 / 644; DejaVu Serif 8 / 53; GFS Baskerville 1 / 19. All recompile with no errors and shape ten test strings (Latin features, frac, Arabic and Syriac joining) identically to the originals in HarfBuzz.

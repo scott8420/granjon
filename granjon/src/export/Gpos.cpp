@@ -201,7 +201,14 @@ MarkData mark_data(const Prepared& p) {
         for (const auto& a : o.anchors) under = under || (a.name.size() > 1 && a.name[0] == '_');
         bool combining = true;
         for (char32_t cp : o.unicodes) combining = combining && unicode::category(cp).starts_with("M");
-        if (under && (o.unicodes.empty() || combining)) { d.is_mark[g] = true; d.marks.push_back(static_cast<int>(g)); }
+        // a mark: an "_X" anchor (and no code point, or combining ones) -- or (s10)
+        // a combining code point with no anchors at all, so a lookup's
+        // IgnoreMarks knows it (GDEF) even before it is anchored
+        const bool coded_mark = !o.unicodes.empty() && combining;
+        if ((under && (o.unicodes.empty() || combining)) || (coded_mark && o.anchors.empty())) {
+            d.is_mark[g] = true;
+            d.marks.push_back(static_cast<int>(g));
+        }
     }
     for (std::size_t g = 0; g < p.glyphs.size(); ++g)
         for (const auto& a : p.glyphs[g].anchors)
