@@ -371,8 +371,10 @@ Newest session at the bottom.
 
 - r5 (s10): contextual substitution -- marked glyphs, ignore, lookup references; ChainContextSubst format 3; Generate writes frac; import reads coverage-kind contextual lookups. HarfBuzz-identical round trips on DejaVu Sans, Carlito, GFS Baskerville.
 
+- r6 (s10): import reads contextual lookups of every format (glyph / class / coverage); copies for lookups both chained and in a feature. DejaVu Sans now round-trips whole (Arabic and Syriac shaping identical).
+
 ## Backlog notes (s10)
 - Proof: an options dialog (pages, sizes, paper), a glyph-selection proof, granjon-cli proof.
-- Features: (contextual + GSUB import: done s10) class / glyph-list contextual formats on import, glyph rename rewriting the feature text, aalt, a syntax-aware editor (line numbers).
+- Features: (contextual + GSUB import, every format: done s10) lookupflag (ignore marks) both ways, glyph rename rewriting the feature text, aalt, a syntax-aware editor (line numbers).
 - Round corners: a per-corner radius handle on the canvas (drag to set); "inverse" (concave) rounding.
 - Extreme points: a font-wide pass (menu, like Remove overlaps in every glyph).

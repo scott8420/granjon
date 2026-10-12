@@ -6,10 +6,10 @@
 // lookup order (the order OpenType applies them); each feature then lists its
 // lookups by name. Single (both formats), multiple, alternate and ligature
 // substitutions are read, through Extension lookups too. Contextual lookups
-// (s10) of the coverage kind (chaining format 3, the kind Granjon writes) come
-// in as `sub a x' lookup NAME b;` / `ignore sub ...`; the other contextual
-// formats (5, 6.1, 6.2, 8) are counted in the report and left out. Lookup
-// flags are not carried.
+// (s10) of every format (5 / 6, glyph-, class- and coverage-based) come in as
+// `sub a x' lookup NAME b;` / `ignore sub ...` -- class 0 written as the glyphs
+// its ClassDef leaves out; reverse chaining (8) is counted and left out.
+// Lookup flags are not carried.
 #include "import/ReaderParts.hpp"
 
 #include <algorithm>
@@ -32,6 +32,24 @@ std::vector<int> coverage(Span s) {
         }
     } else {
         throw BadFont("an unknown Coverage format in GSUB");
+    }
+    return out;
+}
+
+std::map<int, int> class_def(Span s) {
+    std::map<int, int> out;
+    const unsigned fmt = s.u16(0);
+    if (fmt == 1) {
+        const unsigned start = s.u16(2), n = s.u16(4);
+        for (unsigned i = 0; i < n; ++i) if (const unsigned c = s.u16(6 + 2 * i)) out[static_cast<int>(start + i)] = static_cast<int>(c);
+    } else if (fmt == 2) {
+        const unsigned n = s.u16(2);
+        for (unsigned i = 0; i < n; ++i) {
+            const unsigned a = s.u16(4 + 6 * i), b = s.u16(6 + 6 * i), c = s.u16(8 + 6 * i);
+            if (c) for (unsigned g = a; g <= b; ++g) out[static_cast<int>(g)] = static_cast<int>(c);
+        }
+    } else {
+        throw BadFont("an unknown ClassDef format in GSUB");
     }
     return out;
 }
@@ -84,57 +102,134 @@ std::string read_gsub(Span gsub, const std::vector<std::string>& names, std::vec
             Span st = L.from(L.u16(6 + 2 * s));
             unsigned t = type;
             if (t == 7) { t = st.u16(2); st = st.from(st.u32(4)); }
-            if (t == 6 && st.u16(0) == 3) {   // s10: chaining context, coverage-based -- read
-                auto covs = [&](std::size_t at, unsigned n) {
-                    std::vector<std::vector<int>> v;
-                    for (unsigned k = 0; k < n; ++k) v.push_back(coverage(st.from(st.u16(at + 2 * k))));
+            if (t == 5 || t == 6) {   // s10: contextual -- every format, as coverage-style rules
+                using Pos = std::vector<std::vector<int>>;
+                // one rule out: back in reading order; records (input index, lookup)
+                auto emit = [&](const Pos& back, const Pos& in, const Pos& ahead, const std::vector<std::pair<unsigned, unsigned>>& recs) {
+                    auto pos = [&](const std::vector<int>& g) -> std::string {
+                        if (g.empty()) return {};
+                        std::vector<std::string> ns;
+                        for (int x : g) {
+                            const std::string n = name(static_cast<unsigned>(x));
+                            if (!fea_name(n)) return {};
+                            ns.push_back(n);
+                        }
+                        if (ns.size() == 1) return ns[0];
+                        std::string c = "[";
+                        for (std::size_t i = 0; i < ns.size(); ++i) c += (i ? " " : "") + ns[i];
+                        return c + "]";
+                    };
+                    std::map<unsigned, unsigned> rec;
+                    for (const auto& [seq, target] : recs) {
+                        if (!rec.count(seq)) rec[seq] = target;   // one lookup per position (Granjon's syntax)
+                        chained.insert(static_cast<int>(target));
+                    }
+                    std::string l = recs.empty() ? "    ignore sub" : "    sub";
+                    bool ok = true;
+                    for (const auto& g : back) { const auto x = pos(g); ok = ok && !x.empty(); l += " " + x; }
+                    for (unsigned k = 0; k < in.size(); ++k) {
+                        const auto x = pos(in[k]);
+                        ok = ok && !x.empty();
+                        l += " " + x + "'";
+                        if (auto r = rec.find(k); r != rec.end()) l += " lookup @L" + std::to_string(r->second) + "@";
+                    }
+                    for (const auto& g : ahead) { const auto x = pos(g); ok = ok && !x.empty(); l += " " + x; }
+                    if (!ok) { ++odd_names; return; }
+                    out.push_back(l + ";");
+                };
+                auto records = [&](Span at, unsigned n) {
+                    std::vector<std::pair<unsigned, unsigned>> r;
+                    for (unsigned k = 0; k < n; ++k) r.push_back({at.u16(4 * k), at.u16(2 + 4 * k)});
+                    return r;
+                };
+                const unsigned fmt = st.u16(0);
+                const unsigned ng = static_cast<unsigned>(names.size());
+                // a class's glyphs (class 0: every glyph the ClassDef leaves out)
+                auto members = [&](const std::map<int, int>& cd, unsigned cls) {
+                    std::vector<int> v;
+                    if (cls == 0) { for (unsigned g = 0; g < ng; ++g) if (!cd.count(static_cast<int>(g))) v.push_back(static_cast<int>(g)); }
+                    else for (const auto& [g, c] : cd) if (static_cast<unsigned>(c) == cls) v.push_back(g);
                     return v;
                 };
-                std::size_t at = 2;
-                const unsigned nb = st.u16(at);
-                auto back = covs(at + 2, nb);
-                std::reverse(back.begin(), back.end());   // the table holds them closest-first
-                at += 2 + 2 * nb;
-                const unsigned ni = st.u16(at);
-                const auto in = covs(at + 2, ni);
-                at += 2 + 2 * ni;
-                const unsigned na = st.u16(at);
-                const auto ahead = covs(at + 2, na);
-                at += 2 + 2 * na;
-                const unsigned nr = st.u16(at);
-                std::map<unsigned, int> rec;
-                for (unsigned k = 0; k < nr; ++k) {
-                    const unsigned seq = st.u16(at + 2 + 4 * k), target = st.u16(at + 4 + 4 * k);
-                    rec[seq] = static_cast<int>(target);
-                    chained.insert(static_cast<int>(target));
-                }
-                auto pos = [&](const std::vector<int>& g) -> std::string {
-                    std::vector<std::string> ns;
-                    for (int x : g) {
-                        const std::string n = name(static_cast<unsigned>(x));
-                        if (!fea_name(n)) return {};
-                        ns.push_back(n);
+                if (fmt == 3) {
+                    auto covs = [&](std::size_t at, unsigned n) {
+                        Pos v;
+                        for (unsigned k = 0; k < n; ++k) v.push_back(coverage(st.from(st.u16(at + 2 * k))));
+                        return v;
+                    };
+                    if (t == 5) {
+                        const unsigned ni = st.u16(2), nr = st.u16(4);
+                        emit({}, covs(6, ni), {}, records(st.from(6 + 2 * ni), nr));
+                    } else {
+                        std::size_t at = 2;
+                        const unsigned nb = st.u16(at);
+                        Pos back = covs(at + 2, nb);
+                        std::reverse(back.begin(), back.end());   // the table holds them closest-first
+                        at += 2 + 2 * nb;
+                        const unsigned ni = st.u16(at);
+                        const Pos in = covs(at + 2, ni);
+                        at += 2 + 2 * ni;
+                        const unsigned na = st.u16(at);
+                        const Pos ahead = covs(at + 2, na);
+                        at += 2 + 2 * na;
+                        emit(back, in, ahead, records(st.from(at + 2), st.u16(at)));
                     }
-                    if (ns.size() == 1) return ns[0];
-                    std::string c = "[";
-                    for (std::size_t i = 0; i < ns.size(); ++i) c += (i ? " " : "") + ns[i];
-                    return c + "]";
-                };
-                std::string l = nr == 0 ? "    ignore sub" : "    sub";
-                bool ok = true;
-                for (const auto& g : back) { const auto x = pos(g); ok = ok && !x.empty(); l += " " + x; }
-                for (unsigned k = 0; k < in.size(); ++k) {
-                    const auto x = pos(in[k]);
-                    ok = ok && !x.empty();
-                    l += " " + x + "'";
-                    if (auto r = rec.find(k); r != rec.end()) l += " lookup @L" + std::to_string(r->second) + "@";
+                    continue;
                 }
-                for (const auto& g : ahead) { const auto x = pos(g); ok = ok && !x.empty(); l += " " + x; }
-                if (!ok) { ++odd_names; continue; }
-                out.push_back(l + ";");
+                if (fmt != 1 && fmt != 2) { ++contextual; out.clear(); break; }
+                const auto cov = coverage(st.from(st.u16(2)));
+                std::map<int, int> cdb, cdi, cda;
+                std::size_t sets_at = 4;
+                if (fmt == 2) {
+                    if (t == 5) { cdi = class_def(st.from(st.u16(4))); sets_at = 6; }
+                    else {
+                        cdb = class_def(st.from(st.u16(4)));
+                        cdi = class_def(st.from(st.u16(6)));
+                        cda = class_def(st.from(st.u16(8)));
+                        sets_at = 10;
+                    }
+                }
+                const unsigned nsets = st.u16(sets_at);
+                for (unsigned si = 0; si < nsets; ++si) {
+                    const unsigned so = st.u16(sets_at + 2 + 2 * si);
+                    if (so == 0) continue;
+                    const Span set = st.from(so);
+                    // the first input position: format 1 -- the covered glyph; format 2 -- covered glyphs of class si
+                    std::vector<int> first;
+                    if (fmt == 1) { if (si < cov.size()) first.push_back(cov[si]); }
+                    else for (int g : cov) if ((cdi.count(g) ? static_cast<unsigned>(cdi.at(g)) : 0u) == si) first.push_back(g);
+                    if (first.empty()) continue;
+                    auto as_pos = [&](const std::map<int, int>& cd, unsigned v) {
+                        return fmt == 1 ? std::vector<int>{static_cast<int>(v)} : members(cd, v);
+                    };
+                    for (unsigned ri = 0, nr = set.u16(0); ri < nr; ++ri) {
+                        const Span r = set.from(set.u16(2 + 2 * ri));
+                        Pos back, in, ahead;
+                        std::size_t at = 0;
+                        if (t == 6) {
+                            const unsigned nb = r.u16(0);
+                            for (unsigned k = 0; k < nb; ++k) back.push_back(as_pos(cdb, r.u16(2 + 2 * k)));
+                            std::reverse(back.begin(), back.end());
+                            at = 2 + 2 * nb;
+                            const unsigned ni = r.u16(at);
+                            in.push_back(first);
+                            for (unsigned k = 1; k < ni; ++k) in.push_back(as_pos(cdi, r.u16(at + 2 * k)));
+                            at += 2 * ni;
+                            const unsigned na = r.u16(at);
+                            for (unsigned k = 0; k < na; ++k) ahead.push_back(as_pos(cda, r.u16(at + 2 + 2 * k)));
+                            at += 2 + 2 * na;
+                            emit(back, in, ahead, records(r.from(at + 2), r.u16(at)));
+                        } else {
+                            const unsigned ni = r.u16(0), nsub = r.u16(2);
+                            in.push_back(first);
+                            for (unsigned k = 1; k < ni; ++k) in.push_back(as_pos(cdi, r.u16(4 + 2 * (k - 1))));
+                            emit({}, in, {}, records(r.from(4 + 2 * (ni - 1)), nsub));
+                        }
+                    }
+                }
                 continue;
             }
-            if (t == 5 || t == 6 || t == 8) { ++contextual; out.clear(); break; }
+            if (t == 8) { ++contextual; out.clear(); break; }   // reverse chaining: not supported
             auto line = [&](std::vector<std::string> in, std::vector<std::string> outs, bool alternate) {
                 for (const auto& x : in) if (!fea_name(x)) { ++odd_names; return; }
                 for (const auto& x : outs) if (!fea_name(x)) { ++odd_names; return; }
@@ -198,33 +293,45 @@ std::string read_gsub(Span gsub, const std::vector<std::string>& names, std::vec
         while (!first.empty() && first.back() == ' ') first.pop_back();
         lname[li] = (first.empty() ? "ctx" : first) + "_" + std::to_string(li);
     }
-    // a contextual rule names its lookups: those (applied only through it) are
-    // written first, so every name is known where it is used; the rest keep
-    // the font's order (the order OpenType applies them)
-    std::vector<int> emit;
-    for (const auto& [li, r] : rules) if (chained.count(li) && !used.count(li)) emit.push_back(li);
-    for (const auto& [li, r] : rules) if (!(chained.count(li) && !used.count(li))) emit.push_back(li);
-    std::set<int> dropped;
-    for (int li : emit) {
-        auto& r = rules[li];
-        // resolve the placeholders; a rule naming a lookup that came out empty goes
+    // A contextual rule names its lookups, and a name must be defined before
+    // it is used. Lookups applied ONLY through contexts are written first; a
+    // lookup a feature also uses directly gets a COPY written first ("_ctx")
+    // for the contexts, the original staying in the font's order (the order
+    // OpenType applies a feature's lookups) -- exact either way.
+    auto resolve = [&](std::vector<std::string> r, bool& bad) {
         std::vector<std::string> keep;
         for (auto l : r) {
-            bool bad = false;
+            bool b = false;
             for (std::size_t a; (a = l.find("@L")) != std::string::npos;) {
-                const std::size_t b = l.find('@', a + 2);
-                const int target = std::stoi(l.substr(a + 2, b - a - 2));
-                if (!rules.count(target) || rules[target].empty() || dropped.count(target)) { bad = true; break; }
-                l.replace(a, b - a + 1, lname[target]);
+                const std::size_t e = l.find('@', a + 2);
+                const int target = std::stoi(l.substr(a + 2, e - a - 2));
+                if (!rules.count(target) || rules[target].empty()) { b = true; break; }
+                l.replace(a, e - a + 1, lname[target] + (used.count(target) ? "_ctx" : ""));
             }
-            if (!bad) keep.push_back(l);
+            if (b) { bad = true; continue; }
+            keep.push_back(l);
         }
-        r = keep;
-        if (r.empty()) { dropped.insert(li); continue; }
-        text += "\nlookup " + lname[li] + " {\n";
+        return keep;
+    };
+    auto block = [&](const std::string& nm, const std::vector<std::string>& r) {
+        text += "\nlookup " + nm + " {\n";
         for (const auto& l : r) text += l + "\n";
-        text += "} " + lname[li] + ";\n";
-    }
+        text += "} " + nm + ";\n";
+    };
+    std::set<int> dropped;
+    int unresolved = 0;
+    for (int pass = 0; pass < 3; ++pass)
+        for (auto& [li, r] : rules) {
+            const bool only_ctx = chained.count(li) && !used.count(li);
+            const bool copy = chained.count(li) && used.count(li);
+            if ((pass == 0 && !only_ctx) || (pass == 1 && !copy) || (pass == 2 && only_ctx)) continue;
+            bool bad = false;
+            auto rr = resolve(r, bad);
+            if (bad) ++unresolved;
+            if (rr.empty()) { if (pass != 1) dropped.insert(li); continue; }
+            block(lname[li] + (pass == 1 ? "_ctx" : ""), rr);
+        }
+    if (unresolved) notes.push_back("GSUB: " + std::to_string(unresolved) + " contextual rule(s) named a lookup that couldn't be read; left out.");
     int features = 0;
     for (const auto& tag : order) {
         std::string body;
@@ -236,8 +343,8 @@ std::string read_gsub(Span gsub, const std::vector<std::string>& names, std::vec
         text += "\nfeature " + t + " {\n" + body + "} " + t + ";\n";
         ++features;
     }
-    if (contextual) notes.push_back("GSUB: " + std::to_string(contextual) + " contextual lookup(s) of the glyph- or class-list kind not read "
-                                    "(Granjon reads and writes the coverage kind); the features using only those are left out.");
+    if (contextual) notes.push_back("GSUB: " + std::to_string(contextual) + " reverse-chaining lookup(s) not read (Granjon doesn't compile them); "
+                                    "the features using only those are left out.");
     if (odd_names) notes.push_back("GSUB: " + std::to_string(odd_names) + " rule(s) skipped -- a glyph name the feature syntax can't write.");
     if (flagged) notes.push_back("GSUB: lookup flags (ignore marks ...) on " + std::to_string(flagged) + " lookup(s) were not kept.");
     if (features == 0) return {};

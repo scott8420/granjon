@@ -3,7 +3,7 @@
 # s11_loose_ends
 
 ## Files to upload
-- `s10_r5_contextual.zip` (the one zip to install -- everything in s10: overlaps flag, M15b, r1 ink-trap warning, M16, print proof, r2 GSUB import + ttfautohint, r3 the aarch64 note, r4 stem / sidebearing warnings, r5 contextual substitution. Earlier s10 zips are superseded. Or a fresh `scripts/granjon_backup.sh -o s11_loose_ends`)
+- `s10_r6_context_import.zip` (the one zip to install -- everything in s10: overlaps flag, M15b, r1 ink-trap warning, M16, print proof, r2 GSUB import + ttfautohint, r3 the aarch64 note, r4 stem / sidebearing warnings, r5 contextual substitution, r6 every contextual format on import. Earlier s10 zips are superseded. Or a fresh `scripts/granjon_backup.sh -o s11_loose_ends`)
 - `RULES.md`, `HANDOFF.md`, `ARCHITECTURE.md`, `ARC.md`, `CANON.md`
 
 ---
@@ -16,6 +16,11 @@
 - **Print proof: crc** (Scott).
 - **r3: crc** (Scott).
 - **r4: crc** (Scott).
+- **r5: crc** (Scott).
+- **r6 -- every contextual format on import: sandbox green, not crc** (`s10_r6_context_import.zip`). Selftest 1291 / 0. No new warnings, no new package.
+  - GsubRead now reads context (type 5) and chaining context (type 6) in all three formats -- glyph sequences (1), class sequences (2: each class written as its glyphs; class 0 as every glyph its ClassDef leaves out), coverages (3) -- into `sub ... x' lookup NAME ...;` / `ignore sub ...`. Reverse chaining (8) is still counted and left out.
+  - Names before use: lookups applied only through contexts are written first; a lookup a feature ALSO uses directly gets a copy (`NAME_ctx`) written first for the contexts, the original staying in the font's order -- exact (caught on DejaVu Sans: a contextual rule naming `medi_10`, which the medi feature also uses).
+  - Real fonts: DejaVu Sans now imports whole -- 13 features, 643 rules (was 12 / 472, 4 contextual skipped); Carlito 23 / 644; DejaVu Serif 8 / 53; GFS Baskerville 1 / 19. All recompile with no errors and shape ten test strings (Latin features, frac, Arabic and Syriac joining) identically to the originals in HarfBuzz.
 - **r5 -- contextual substitution: sandbox green, not crc** (`s10_r5_contextual.zip`). Selftest **1291 / 0** (10 new). No new warnings, no new package.
   - Feature syntax: marked glyphs -- `sub [c d] a' [e f] by a.alt;` (single in context), `sub f' i' by f_i;` (ligature in context), `sub a from` in context, `sub x a' lookup NAME;` (a named lookup applied at the mark), `ignore sub b a', a' c;`. The marks must be one run. A rule's by / from becomes a lookup of its own (not in any feature) that the context applies. Contextual rules run into one chain lookup, as the other kinds do. Errors now: reverse chaining (rsub), not contextual.
   - GSUB: ChainContextSubst format 3 (a coverage per position -- back closest-first, input, ahead -- and the lookup records), one subtable per rule in file order; usMaxContext counts the whole context.
@@ -328,7 +333,7 @@ Primitives (rectangle, ellipse -- Shift square / circle, Alt from centre; line =
 Then: M15 transform panel + corner tools + extreme points + offset stroke; M16 mark positioning, features editor, italic angle / font info. Later: print proof, ttfautohint, weight masters (v3).
 
 ## Still open
-- s10 asks: answered. M16, print proof, GSUB import and the ttfautohint hook done in s10. Next (s11): Scott uses Granjon and brings gotchas; loose ends left -- contextual lookups of the glyph / class-list kind on import, proof options, horizontal-stem drift, a per-script control for the side warnings.
+- s10 asks: answered. M16, print proof, GSUB import and the ttfautohint hook done in s10. Next (s11): Scott uses Granjon and brings gotchas; loose ends left -- proof options, horizontal-stem drift, a per-script control for the side warnings, lookup flags (ignore marks) in the feature syntax.
 - M15 done in the sandbox (s10). Transform follow-ons: Transform Each (each path about its own centre), a remembered origin, a free-transform 'perspective' (no -- fonts don't), handles in Pick mode for a node selection (now Select only).
 - Overlap vs direction check: built in s10 (overlaps finding; direction judges nesting only).
 - M14 questions (s08): answered at the close -- see "s09 first" at the top.
