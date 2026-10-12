@@ -8,6 +8,7 @@
 #include "views/OverviewGrid.hpp"
 #include "views/SpacingStrip.hpp"
 #include "views/ReportList.hpp"
+#include "views/FeatureView.hpp"
 #include "views/PreviewPane.hpp"
 #include "views/ViewContext.hpp"
 
@@ -102,6 +103,10 @@ private:
     void on_primer_link(const std::string& target);   // category: handler: a Primer "Try it" link, done in this window
     void on_about();                             // category: handler: open the About window (dialog-lifetime exemplar)
     void on_font_metrics_keys();                 // category: handler: apply metrics keys font-wide (one step, M6)
+    void on_proof_pdf();                         // s10: the print proof as a PDF
+    void on_proof_print();                       // s10: the print proof to a printer (Ctrl+P)
+    void on_font_extremes();                     // s10: add extreme points font-wide (one step)
+    void on_font_inktraps();                     // s10: ink traps at every tight crotch (one step)
     void on_font_overlaps();                     // category: handler: remove overlaps font-wide (one step, M10c)
     void on_font_directions();                   // category: handler: correct directions font-wide (one step)
     void on_font_anchors();                      // category: handler: default anchors on the whole font (one step)
@@ -165,6 +170,7 @@ private:
     views::GlyphCanvas    m_editor{m_ctx};
     views::SpacingStrip   m_spacing{m_ctx};
     views::ReportList     m_report{m_ctx};
+    views::FeatureView    m_features{m_ctx};   // M16c
     views::PreviewPane    m_preview{m_ctx};
     views::Inspector      m_inspector{m_ctx};
 

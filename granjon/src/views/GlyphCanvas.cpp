@@ -1227,6 +1227,24 @@ void GlyphCanvas::draw_guides(const Cairo::RefPtr<Cairo::Context>& cr, int w, in
         cr->stroke();
     }
 
+    // M16a: an italic font -- the sidebearing lines slanted by the italic
+    // angle, through half the x-height (where italic spacing is judged).
+    if (const double ia = m_ctx.doc.font.info().italic_angle; ia != 0) {
+        const double t = std::tan(-ia * 3.14159265358979 / 180.0);
+        const double yc = m.x_height / 2.0, ylo = m.descender - 200.0, yhi = m.ascender + 200.0;
+        std::vector<double> dash{6.0, 4.0};
+        cr->set_dash(dash, 0);
+        for (double x0 : {0.0, static_cast<double>(g.advance)}) {
+            const geom::Vec2 a = to_screen({x0 + (ylo - yc) * t, ylo}), b2 = to_screen({x0 + (yhi - yc) * t, yhi});
+            cr->move_to(a.x, a.y);
+            cr->line_to(b2.x, b2.y);
+        }
+        cr->set_source_rgba(NS[0], NS[1], NS[2], 0.55);
+        cr->set_line_width(1.0);
+        cr->stroke();
+        cr->unset_dash();
+    }
+
     // LSB / width / RSB, under the descender zone.
     const auto sb = model::sidebearings(m_ctx.doc.font, g);
     const double ty = to_screen({0, m.descender - os}).y + 6;

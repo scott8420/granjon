@@ -46,6 +46,12 @@ struct OtfReport {
     int         kern_glyph_pairs = 0;    // PairPos format 1 entries (exceptions, glyph/group)
     int         kern_class_pairs = 0;    // non-zero cells in the class matrices
     int         gpos_subtables = 0;
+    int         mark_classes = 0;        // M16b: anchor classes with marks and bases ("top", "bottom" ...)
+    int         mark_bases = 0;          //       base glyph attachments, summed over the classes
+    int         mkmk_pairs = 0;          //       marks that other marks stack on
+    int         gsub_features = 0;       // M16c: features compiled from features.fea
+    int         gsub_rules = 0;          //       substitution rules in them
+    int         fea_errors = 0;          //       errors in features.fea (any -> no GSUB)
     int         overlaps_removed = 0;    // glyphs whose outline the union changed
     int         overlap_fallbacks = 0;   // glyphs the union could not rebuild: written as drawn
     int         tt_points = 0;           // TTF: points in glyf (on + off curve)

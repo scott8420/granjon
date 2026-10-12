@@ -225,6 +225,13 @@ bool import_font(const std::vector<std::uint8_t>& data, model::Font& into, Impor
         if (info.style.empty()) info.style = "Regular";
         info.copyright = pick({0});
         info.license = pick({13});
+        info.trademark = pick({7});
+        info.manufacturer = pick({8});
+        info.designer = pick({9});
+        info.description = pick({10});
+        info.manufacturer_url = pick({11});
+        info.designer_url = pick({12});
+        if (const Span post = sf.get("post"); post.n >= 8) info.italic_angle = std::round(post.i32(4) / 65536.0 * 100) / 100;
         info.units_per_em = static_cast<int>(head.u16(18));
         if (info.units_per_em < 16 || info.units_per_em > 16384) throw BadFont("units per em out of range");
         const double rev = head.i32(4) / 65536.0;
@@ -239,6 +246,8 @@ bool import_font(const std::vector<std::uint8_t>& data, model::Font& into, Impor
             std::string v(reinterpret_cast<const char*>(os2.sub(58, 4).p), 4);
             while (!v.empty() && (v.back() == ' ' || v.back() == '\0')) v.pop_back();
             info.vendor = v;
+            info.weight_class = os2.u16(4);
+            info.width_class = std::clamp<int>(os2.u16(6), 1, 9);
             const int ta = os2.i16(68), td = os2.i16(70);
             if (ta > 0) { m.ascender = ta; m.descender = td; }
             if (os2.u16(0) >= 2 && os2.n >= 90) { os2_xh = os2.i16(86); os2_cap = os2.i16(88); }

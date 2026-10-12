@@ -1,4 +1,5 @@
 #include "views/ReportList.hpp"
+#include "views/PathOps.hpp"
 
 #include "Log.hpp"
 #include "command/Verbs.hpp"
@@ -40,14 +41,16 @@ ReportList::ReportList(ViewContext& ctx)
     m_show_skipped.set_tooltip_text("List the findings you skipped too (greyed, with Unskip)");
     m_show_skipped.signal_toggled().connect([this] { rebuild(); });
     m_fix_all.set_label("Fix all");
-    m_fix_all.set_tooltip_text("Fix every fixable finding in the report (skipped ones stay) -- one undo step");
+    m_fix_all.set_tooltip_text("Fix every fixable finding in the report (skipped ones stay) -- one undo step. Warnings "
+                               "(ink traps) are advice: fix them from their own section.");
     m_fix_all.signal_clicked().connect([this] {
         std::vector<model::Finding> all;
         for (const auto& c : model::checks())
+            if (!c.warning)   // s10: warnings are advice -- their own section's Fix all
             for (auto& x : visible(c.id))
                 if (!model::is_skipped(m_ctx.doc.font, x)) all.push_back(x);
         std::size_t n = 0;
-        if (command::fix_findings(m_ctx.doc.journal, m_ctx.doc.font, all, &n) && m_ctx.say)
+        if (command::fix_findings(m_ctx.doc.journal, m_ctx.doc.font, all, &n, fix_amounts(m_ctx)) && m_ctx.say)
             m_ctx.say(m_ctx.doc.journal.undo_label() + ". Ctrl+Z takes it back.", false);
     });
     m_recheck.set_label("Re-check");
@@ -208,7 +211,7 @@ void ReportList::rebuild() {
             fix->signal_clicked().connect([this, id] {
                 std::vector<model::Finding> todo;
                 for (auto& x : visible(id)) if (!model::is_skipped(m_ctx.doc.font, x)) todo.push_back(x);
-                if (command::fix_findings(m_ctx.doc.journal, m_ctx.doc.font, todo) && m_ctx.say)
+                if (command::fix_findings(m_ctx.doc.journal, m_ctx.doc.font, todo, nullptr, fix_amounts(m_ctx)) && m_ctx.say)
                     m_ctx.say(m_ctx.doc.journal.undo_label() + ".", false);
             });
             head->append(*fix);
@@ -263,7 +266,7 @@ void ReportList::rebuild() {
                     auto fix = Gtk::make_managed<Gtk::Button>("Fix");
                     fix->set_valign(Gtk::Align::CENTER);
                     fix->signal_clicked().connect([this, x] {
-                        command::fix_findings(m_ctx.doc.journal, m_ctx.doc.font, {x});
+                        command::fix_findings(m_ctx.doc.journal, m_ctx.doc.font, {x}, nullptr, fix_amounts(m_ctx));
                     });
                     row->append(*fix);
                 }

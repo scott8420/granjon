@@ -43,6 +43,13 @@ bool is_corner(const model::Contour& c, int i);
 // way; pass `ink_left = false` for one running the wrong way).
 bool is_crotch(const model::Contour& c, int i, bool ink_left = true);
 
+// The angle of the WHITE wedge at a crotch, degrees (180 = no turn). Small =
+// tight: ink fills it in at small sizes (s10: the ink-trap warning, < 60).
+double white_angle(const model::Contour& c, int i);
+// A crotch that is the apex of an ink trap already: its two edges short lines
+// (under `span`) ending at convex corners -- the notch ink_traps cuts.
+bool is_trap_apex(const model::Contour& c, int i, double span, bool ink_left = true);
+
 // Round the given nodes (those that are corners). The count rounded.
 int round_corners(model::Contour& c, const std::set<int>& nodes, double radius);
 // Ink traps at the given nodes (those that are crotches). The count cut.

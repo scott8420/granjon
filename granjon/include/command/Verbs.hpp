@@ -306,6 +306,17 @@ const std::string& sample_png();
 // ── font records ───────────────────────────────────────────────────────────
 bool set_family(FontJournal& j, Font& f, const std::string& family);
 bool set_style(FontJournal& j, Font& f, const std::string& style);
+// M16c: the feature file's text. Typing merges into one step (the window,
+// key "features"); `label` names the step ("Edit features", "Generate
+// features"). Refused when nothing changes.
+bool set_features(FontJournal& j, Font& f, const std::string& text, const std::string& label = "Edit features",
+                  bool merge = true);
+// M16a: the whole font info record replaced (one field edited in the
+// inspector) -- ONE step labelled `label`; refused when nothing changes.
+// Refused with `why`: an italic angle outside -45..45, a weight class outside
+// 0..1000 (0 = from the style name), a width class outside 1..9, a vendor ID
+// over 4 characters.
+bool set_info(FontJournal& j, Font& f, const model::FontInfo& info, const std::string& label, std::string* why = nullptr);
 bool set_units_per_em(FontJournal& j, Font& f, int upm, std::string* why = nullptr);
 bool set_metric(FontJournal& j, Font& f, model::Metrics::Field which, int value);   // merges
 bool set_kern(FontJournal& j, Font& f, const std::string& left, const std::string& right, int value);
@@ -333,7 +344,12 @@ bool apply_metrics_keys(FontJournal& j, Font& f, const std::vector<std::string>&
 // ── checks (M7) ────────────────────────────────────────────────────────────
 // Fix every fixable finding given (any glyphs, any checks) -- ONE step.
 // `fixed` counts the findings acted on.
-bool fix_findings(FontJournal& j, Font& f, const std::vector<model::Finding>& findings, std::size_t* fixed = nullptr);
+bool fix_findings(FontJournal& j, Font& f, const std::vector<model::Finding>& findings, std::size_t* fixed = nullptr,
+                  const model::FixAmounts& amounts = {});
+// s10: every unskipped fixable finding of ONE check, font-wide -- ONE step
+// (Add extreme points / ink traps in every glyph). `fixed` counts findings.
+bool fix_check_everywhere(FontJournal& j, Font& f, model::CheckId check, std::size_t* fixed = nullptr,
+                          const model::FixAmounts& amounts = {});
 // Skip (or unskip) findings: their keys go into the font's CheckSkips. ONE step.
 bool skip_findings(FontJournal& j, Font& f, const std::vector<model::Finding>& findings, bool skip = true);
 

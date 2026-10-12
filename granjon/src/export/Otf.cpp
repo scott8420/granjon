@@ -93,7 +93,32 @@ OutGlyph prepare_glyph(const model::Font& f, const model::Glyph& src, bool overl
         o.ymax = static_cast<int>(std::ceil(b->y1));
     }
     o.contours = std::move(flat.contours);
+    o.anchors = glyph_anchors(f, src);
     return o;
+}
+
+std::vector<model::Anchor> glyph_anchors(const model::Font& f, const model::Glyph& g, int depth) {
+    if (!g.anchors.empty() || g.components.empty() || depth > 8) return g.anchors;
+    auto moved = [](const model::Anchor& a, const model::Component& k) {
+        return model::Anchor{a.name, k.xx * a.x + k.yx * a.y + k.dx, k.xy * a.x + k.yy * a.y + k.dy};
+    };
+    std::vector<model::Anchor> out;
+    const model::Component& first = g.components.front();
+    if (const model::Glyph* b = f.glyph(first.base))
+        for (const auto& a : glyph_anchors(f, *b, depth + 1))
+            if (!a.name.empty() && a.name[0] != '_') out.push_back(moved(a, first));
+    for (std::size_t i = 1; i < g.components.size(); ++i) {
+        const model::Glyph* m = f.glyph(g.components[i].base);
+        if (!m) continue;
+        const auto ma = glyph_anchors(f, *m, depth + 1);
+        for (const auto& a : ma) {
+            if (a.name.empty() || a.name[0] == '_') continue;
+            const bool rides = std::any_of(ma.begin(), ma.end(), [&](const model::Anchor& u) { return u.name == "_" + a.name; });
+            if (!rides) continue;
+            for (auto& o : out) if (o.name == a.name) o = moved(a, g.components[i]);
+        }
+    }
+    return out;
 }
 
 Prepared prepare(const model::Font& f, const OtfOptions& opt, OtfReport& rep) {
@@ -160,6 +185,7 @@ Prepared prepare(const model::Font& f, const OtfOptions& opt, OtfReport& rep) {
         o.contours = std::move(shaped.contours);
         o.empty = shaped.empty;
         o.xmin = shaped.xmin; o.ymin = shaped.ymin; o.xmax = shaped.xmax; o.ymax = shaped.ymax;
+        o.anchors = std::move(shaped.anchors);
         if (!src.components.empty()) ++rep.decomposed;
         for (const auto& c : o.contours)
             if (!c.closed && c.nodes.size() > 1) ++rep.open_contours;
@@ -208,10 +234,14 @@ Bytes compile_otf(const model::Font& f, const OtfOptions& opt, OtfReport* out) {
     std::map<std::string, Bytes> tables;
     const Bytes gpos = build_gpos(f.kerning(), p, rep);
     if (!gpos.empty()) tables["GPOS"] = gpos;
+    if (const Bytes gdef = build_gdef(p); !gdef.empty()) tables["GDEF"] = gdef;
+    int lig_context = 1;
+    if (const Bytes gsub = build_gsub(f.features().text, p, rep, &lig_context); !gsub.empty()) tables["GSUB"] = gsub;
+    const int max_context = std::max(gpos.empty() ? 1 : 2, lig_context);
     tables["head"] = build_head(p);
     tables["hhea"] = build_hhea(p);
     tables["maxp"] = build_maxp(p);
-    tables["OS/2"] = build_os2(p, !gpos.empty());
+    tables["OS/2"] = build_os2(p, max_context);
     tables["name"] = build_name(p);
     tables["cmap"] = build_cmap(p);
     tables["post"] = build_post(p);

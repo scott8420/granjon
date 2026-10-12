@@ -13,9 +13,13 @@
 // Subtables are split to stay under 64 KB; the lookup becomes an Extension
 // (type 9) only if its subtables pass 64 KB together.
 #include "export/OtfParts.hpp"
+#include "export/Layout.hpp"
 #include "model/Spacing.hpp"
+#include "unicode/UcdTable.hpp"
 
 #include <algorithm>
+#include <cmath>
+#include <map>
 #include <set>
 
 namespace granjon::otf {
@@ -26,32 +30,6 @@ constexpr std::size_t kSubtableBudget = 60000;
 
 bool left_group(const std::string& s)  { return s.rfind("public.kern1.", 0) == 0; }
 bool right_group(const std::string& s) { return s.rfind("public.kern2.", 0) == 0; }
-
-Bytes coverage(std::vector<int> gids) {
-    std::sort(gids.begin(), gids.end());
-    gids.erase(std::unique(gids.begin(), gids.end()), gids.end());
-    Writer w;
-    w.u16(1);
-    w.u16(static_cast<unsigned>(gids.size()));
-    for (int g : gids) w.u16(static_cast<unsigned>(g));
-    return w.b;
-}
-
-Bytes class_def(std::vector<std::pair<int, int>> gid_class) {   // class 0 entries are left out
-    std::sort(gid_class.begin(), gid_class.end());
-    struct R { int a, b, c; };
-    std::vector<R> rs;
-    for (const auto& [g, c] : gid_class) {
-        if (c == 0) continue;
-        if (!rs.empty() && rs.back().b + 1 == g && rs.back().c == c) rs.back().b = g;
-        else rs.push_back({g, g, c});
-    }
-    Writer w;
-    w.u16(2);
-    w.u16(static_cast<unsigned>(rs.size()));
-    for (const auto& r : rs) { w.u16(static_cast<unsigned>(r.a)); w.u16(static_cast<unsigned>(r.b)); w.u16(static_cast<unsigned>(r.c)); }
-    return w.b;
-}
 
 using Row = std::pair<int, std::vector<std::pair<int, int>>>;   // first gid -> (second gid, value)
 
@@ -79,9 +57,7 @@ Bytes pair_pos1(const std::vector<Row>& rows) {
     return w.b;
 }
 
-}  // namespace
-
-Bytes build_gpos(const model::Kerning& k, const Prepared& p, OtfReport& rep) {
+std::vector<Bytes> kern_subtables(const model::Kerning& k, const Prepared& p, OtfReport& rep) {
     auto gid_of = [&](const std::string& n) {
         auto it = p.gid.find(n);
         return it == p.gid.end() ? -1 : it->second;
@@ -200,60 +176,143 @@ Bytes build_gpos(const model::Kerning& k, const Prepared& p, OtfReport& rep) {
             subtables.push_back(w.b);
         }
     }
-    if (subtables.empty()) return {};
-    rep.gpos_subtables = static_cast<int>(subtables.size());
+    return subtables;
+}
 
-    // ── the lookup ──
-    Writer lookup;
-    std::size_t total = 0;
-    for (const auto& s : subtables) total += s.size();
-    const std::size_t lhead = 6 + 2 * subtables.size();
-    const bool ext = lhead + total - subtables.back().size() > 0xFFFF;
-    lookup.u16(ext ? 9 : 2);
-    lookup.u16(0);
-    lookup.u16(static_cast<unsigned>(subtables.size()));
-    if (!ext) {
-        std::size_t at = lhead;
-        for (const auto& s : subtables) { lookup.u16(static_cast<unsigned>(at)); at += s.size(); }
-        for (const auto& s : subtables) lookup.bytes(s);
-    } else {
-        const std::size_t ext_at = lhead;
-        for (std::size_t i = 0; i < subtables.size(); ++i) lookup.u16(static_cast<unsigned>(ext_at + 8 * i));
-        std::size_t data = ext_at + 8 * subtables.size();
-        for (std::size_t i = 0; i < subtables.size(); ++i) {
-            const std::size_t here = ext_at + 8 * i;
-            lookup.u16(1);
-            lookup.u16(2);
-            lookup.u32(static_cast<std::uint32_t>(data - here));
-            data += subtables[i].size();
+// ── mark positioning (M16b) ────────────────────────────────────────────────
+// A mark = a glyph with an "_X" anchor whose code points (if any) are all
+// combining marks. Class X = every "_X" anchor name some mark carries; a base
+// (any other glyph) with an "X" anchor attaches it. One subtable per class, so
+// a mark with two underscore anchors joins both.
+struct MarkData {
+    std::vector<bool> is_mark;
+    std::vector<int>  marks;                                           // gids
+    std::map<std::string, std::vector<std::pair<int, model::Anchor>>> mark_of;   // class -> (mark gid, its "_X")
+    std::map<std::string, std::vector<std::pair<int, model::Anchor>>> base_of;   // class -> (base gid, its "X")
+    std::map<std::string, std::vector<std::pair<int, model::Anchor>>> mark2_of;  // class -> (mark gid, its "X")
+};
+
+MarkData mark_data(const Prepared& p) {
+    MarkData d;
+    d.is_mark.assign(p.glyphs.size(), false);
+    for (std::size_t g = 0; g < p.glyphs.size(); ++g) {
+        const auto& o = p.glyphs[g];
+        bool under = false;
+        for (const auto& a : o.anchors) under = under || (a.name.size() > 1 && a.name[0] == '_');
+        bool combining = true;
+        for (char32_t cp : o.unicodes) combining = combining && unicode::category(cp).starts_with("M");
+        if (under && (o.unicodes.empty() || combining)) { d.is_mark[g] = true; d.marks.push_back(static_cast<int>(g)); }
+    }
+    for (std::size_t g = 0; g < p.glyphs.size(); ++g)
+        for (const auto& a : p.glyphs[g].anchors)
+            if (d.is_mark[g] && a.name.size() > 1 && a.name[0] == '_') d.mark_of[a.name.substr(1)].push_back({static_cast<int>(g), a});
+    for (std::size_t g = 0; g < p.glyphs.size(); ++g)
+        for (const auto& a : p.glyphs[g].anchors) {
+            if (a.name.empty() || a.name[0] == '_' || !d.mark_of.count(a.name)) continue;
+            (d.is_mark[g] ? d.mark2_of : d.base_of)[a.name].push_back({static_cast<int>(g), a});
         }
-        for (const auto& s : subtables) lookup.bytes(s);
-    }
+    return d;
+}
 
-    Writer scripts;   // DFLT and latn, each a default LangSys with feature 0
-    scripts.u16(2);
-    scripts.tag("DFLT"); scripts.u16(14);
-    scripts.tag("latn"); scripts.u16(26);
-    for (int i = 0; i < 2; ++i) {
-        scripts.u16(4); scripts.u16(0);
-        scripts.u16(0); scripts.u16(0xFFFF); scripts.u16(1); scripts.u16(0);
-    }
-    Writer features;
-    features.u16(1);
-    features.tag("kern"); features.u16(8);
-    features.u16(0); features.u16(1); features.u16(0);
-
+Bytes anchor_table(const model::Anchor& a) {
     Writer w;
-    const std::size_t sl = 10, fl = sl + scripts.size(), ll = fl + features.size();
+    w.u16(1);
+    w.i16(static_cast<int>(std::lround(a.x)));
+    w.i16(static_cast<int>(std::lround(a.y)));
+    return w.b;
+}
+
+// MarkBasePos / MarkMarkPos format 1, ONE mark class. `targets` are the bases
+// (or the marks marks attach to).
+Bytes mark_attach(const std::vector<std::pair<int, model::Anchor>>& marks,
+                  const std::vector<std::pair<int, model::Anchor>>& targets) {
+    auto sorted = [](std::vector<std::pair<int, model::Anchor>> v) {
+        std::sort(v.begin(), v.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+        v.erase(std::unique(v.begin(), v.end(), [](const auto& a, const auto& b) { return a.first == b.first; }), v.end());
+        return v;
+    };
+    const auto M = sorted(marks), B = sorted(targets);
+    std::vector<int> mg, bg;
+    for (const auto& m : M) mg.push_back(m.first);
+    for (const auto& b : B) bg.push_back(b.first);
+    const Bytes mcov = coverage(mg), bcov = coverage(bg);
+    Writer marr;   // MarkArray: count, (class, anchor offset) records, anchors
+    marr.u16(static_cast<unsigned>(M.size()));
+    std::size_t at = 2 + 4 * M.size();
+    for (std::size_t i = 0; i < M.size(); ++i) { marr.u16(0); marr.u16(static_cast<unsigned>(at)); at += 6; }
+    for (const auto& m : M) marr.bytes(anchor_table(m.second));
+    Writer barr;   // BaseArray: count, one anchor offset per base (one class), anchors
+    barr.u16(static_cast<unsigned>(B.size()));
+    at = 2 + 2 * B.size();
+    for (std::size_t i = 0; i < B.size(); ++i) { barr.u16(static_cast<unsigned>(at)); at += 6; }
+    for (const auto& b : B) barr.bytes(anchor_table(b.second));
+    const std::size_t head = 12;
+    Writer w;
+    w.u16(1);
+    w.u16(static_cast<unsigned>(head));                                   // mark coverage
+    w.u16(static_cast<unsigned>(head + mcov.size()));                     // base coverage
+    w.u16(1);                                                             // one mark class
+    w.u16(static_cast<unsigned>(head + mcov.size() + bcov.size()));       // MarkArray
+    w.u16(static_cast<unsigned>(head + mcov.size() + bcov.size() + marr.size()));   // BaseArray
+    w.bytes(mcov);
+    w.bytes(bcov);
+    w.bytes(marr.b);
+    w.bytes(barr.b);
+    return w.b;
+}
+
+std::vector<Bytes> mark_subtables(const MarkData& d, bool mkmk, OtfReport& rep) {
+    std::vector<Bytes> out;
+    for (const auto& [cls, marks] : d.mark_of) {
+        const auto& tmap = mkmk ? d.mark2_of : d.base_of;
+        auto it = tmap.find(cls);
+        if (it == tmap.end() || it->second.empty()) continue;
+        out.push_back(mark_attach(marks, it->second));
+        if (!mkmk) {
+            ++rep.mark_classes;
+            rep.mark_bases += static_cast<int>(it->second.size());
+        } else {
+            rep.mkmk_pairs += static_cast<int>(it->second.size());
+        }
+    }
+    return out;
+}
+
+}  // namespace
+
+Bytes build_gpos(const model::Kerning& k, const Prepared& p, OtfReport& rep) {
+    std::vector<Lookup> lookups;
+    std::vector<Feature> features;
+    if (auto ks = kern_subtables(k, p, rep); !ks.empty()) {
+        features.push_back({"kern", {static_cast<int>(lookups.size())}});
+        lookups.push_back({2, 0, std::move(ks)});
+    }
+    const MarkData md = mark_data(p);
+    if (auto ms = mark_subtables(md, false, rep); !ms.empty()) {
+        features.push_back({"mark", {static_cast<int>(lookups.size())}});
+        lookups.push_back({4, 0, std::move(ms)});
+    }
+    if (auto ms = mark_subtables(md, true, rep); !ms.empty()) {
+        features.push_back({"mkmk", {static_cast<int>(lookups.size())}});
+        lookups.push_back({6, 0, std::move(ms)});
+    }
+    int n = 0;
+    for (const auto& l : lookups) n += static_cast<int>(l.subtables.size());
+    rep.gpos_subtables = n;
+    return layout_table(std::move(features), lookups, 9);
+}
+
+Bytes build_gdef(const Prepared& p) {
+    const MarkData md = mark_data(p);
+    if (md.marks.empty()) return {};
+    std::vector<std::pair<int, int>> cls;
+    for (std::size_t g = 0; g < p.glyphs.size(); ++g) cls.push_back({static_cast<int>(g), md.is_mark[g] ? 3 : 1});
+    const Bytes cd = class_def(cls);
+    Writer w;
     w.u16(1); w.u16(0);
-    w.u16(static_cast<unsigned>(sl));
-    w.u16(static_cast<unsigned>(fl));
-    w.u16(static_cast<unsigned>(ll));
-    w.bytes(scripts.b);
-    w.bytes(features.b);
-    w.u16(1);   // LookupList: one lookup, right after
-    w.u16(4);
-    w.bytes(lookup.b);
+    w.u16(12);   // GlyphClassDef right after the header
+    w.u16(0); w.u16(0); w.u16(0);
+    w.bytes(cd);
     return w.b;
 }
 

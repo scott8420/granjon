@@ -139,8 +139,15 @@ Bytes build_hhea(const Prepared& p) {
     w.i16(min_lsb);
     w.i16(min_rsb);
     w.i16(x_extent);
-    w.i16(1);              // caretSlopeRise (upright; a slant waits for italicAngle)
-    w.i16(0);              // caretSlopeRun
+    // M16a: the caret leans with the italic angle (rise / run; upright 1 / 0)
+    if (p.info.italic_angle != 0) {
+        const int rise = p.info.units_per_em;
+        w.i16(rise);
+        w.i16(static_cast<int>(std::lround(rise * std::tan(-p.info.italic_angle * 3.14159265358979 / 180.0))));
+    } else {
+        w.i16(1);          // caretSlopeRise
+        w.i16(0);          // caretSlopeRun
+    }
     w.i16(0);              // caretOffset
     w.zeros(8);            // reserved
     w.i16(0);              // metricDataFormat
@@ -167,7 +174,7 @@ Bytes build_maxp(const Prepared& p) {
 }
 
 // ── OS/2 (version 4) ───────────────────────────────────────────────────────
-Bytes build_os2(const Prepared& p, bool kerns) {
+Bytes build_os2(const Prepared& p, int max_context) {
     const int upm = p.info.units_per_em;
     const Vert v = vertical(p);
 
@@ -243,15 +250,26 @@ Bytes build_os2(const Prepared& p, bool kerns) {
     Writer w;
     w.u16(4);
     w.i16(avg);
-    w.u16(static_cast<unsigned>(weight_class(p.style)));
-    w.u16(5);              // usWidthClass: normal
+    w.u16(static_cast<unsigned>(p.info.weight_class > 0 ? p.info.weight_class : weight_class(p.style)));
+    w.u16(static_cast<unsigned>(std::clamp(p.info.width_class, 1, 9)));   // usWidthClass
     w.u16(0);              // fsType: installable
     w.i16(rnd(upm * 0.65)); w.i16(rnd(upm * 0.6)); w.i16(0); w.i16(rnd(upm * 0.075));   // subscript
     w.i16(rnd(upm * 0.65)); w.i16(rnd(upm * 0.6)); w.i16(0); w.i16(rnd(upm * 0.35));    // superscript
     w.i16(ul_thick);
     w.i16(p.metrics.x_height > 0 ? rnd(p.metrics.x_height * 0.6) : rnd(upm * 0.22));
     w.i16(0);              // sFamilyClass
-    w.zeros(10);           // panose: any
+    {   // panose: any -- except a monospaced font says so (Latin Text, proportion 9)
+        bool mono = true;
+        int adv = -1;
+        for (const auto& g : p.glyphs) {
+            if (g.advance == 0) continue;
+            if (adv < 0) adv = g.advance;
+            else if (g.advance != adv) { mono = false; break; }
+        }
+        Bytes pan(10, 0);
+        if (mono && adv > 0) { pan[0] = 2; pan[3] = 9; }
+        w.bytes(pan);
+    }
     for (auto u : ur) w.u32(u);
     w.tag(vend.c_str());
     w.u16(fs);
@@ -268,7 +286,7 @@ Bytes build_os2(const Prepared& p, bool kerns) {
     w.i16(p.metrics.cap_height);
     w.u16(0);              // usDefaultChar
     w.u16(p.cmap.count(0x20) ? 0x20 : 0);   // usBreakChar
-    w.u16(kerns ? 2 : 1);  // usMaxContext: a pair
+    w.u16(static_cast<unsigned>(std::max(1, max_context)));   // usMaxContext
     return w.b;
 }
 
@@ -301,6 +319,12 @@ Bytes build_name(const Prepared& p) {
     recs.push_back({4, p.family + (p.style == "Regular" ? "" : " " + p.style)});
     recs.push_back({5, ver});
     recs.push_back({6, p.ps_name});
+    if (!p.info.trademark.empty()) recs.push_back({7, p.info.trademark});
+    if (!p.info.manufacturer.empty()) recs.push_back({8, p.info.manufacturer});
+    if (!p.info.designer.empty()) recs.push_back({9, p.info.designer});
+    if (!p.info.description.empty()) recs.push_back({10, p.info.description});
+    if (!p.info.manufacturer_url.empty()) recs.push_back({11, p.info.manufacturer_url});
+    if (!p.info.designer_url.empty()) recs.push_back({12, p.info.designer_url});
     if (!p.info.license.empty()) recs.push_back({13, p.info.license});
     if (!ribbi) {
         recs.push_back({16, p.family});
@@ -431,7 +455,7 @@ Bytes build_post(const Prepared& p) {
     }
     Writer w;
     w.u32(0x00030000);
-    w.i32(0);                          // italicAngle
+    w.i32(static_cast<std::int32_t>(std::lround(p.info.italic_angle * 65536.0)));   // italicAngle (Fixed)
     w.i16(-rnd(upm * 0.075));          // underlinePosition
     w.i16(rnd(upm * 0.05));            // underlineThickness
     w.u32(fixed && adv > 0 ? 1 : 0);

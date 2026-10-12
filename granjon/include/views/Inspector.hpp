@@ -61,6 +61,16 @@ private:
     widgets::Entry      m_family;
     widgets::Entry      m_style;
     widgets::SpinButton m_upm;
+    // M16a: STYLE (italic angle, weight / width class) and CREDITS (the name table)
+    widgets::SpinButton m_italic{"inspector.italic_angle"};
+    widgets::DropDown   m_weight{"inspector.weight_class"};
+    widgets::DropDown   m_widthc{"inspector.width_class"};
+    widgets::Label      m_style_hint{"inspector.style_hint"};
+    widgets::Entry      m_version{"inspector.version"};
+    std::vector<std::pair<Gtk::Entry*, std::string model::FontInfo::*>> m_credit_fields;
+    void on_info_text(Gtk::Entry& e, std::string model::FontInfo::*field, const char* label);
+    void on_version();
+    void refresh_font_info();
     widgets::Label      m_origin{"inspector.origin"};   // M12: the preset the font started from
     Gtk::Box*           m_origin_card = nullptr;
     std::array<widgets::SpinButton*, 5> m_metric{};

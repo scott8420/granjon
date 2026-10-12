@@ -13,7 +13,9 @@ freetype-py uharfbuzz ufoLib2) and says which it skipped:
             -- advance and code points
   freetype  loads and renders every glyph
   harfbuzz  with the source given: shapes every kerning pair the source
-            implies and compares the advance change with UFO precedence
+            implies and compares the advance change with UFO precedence;
+            (M16b) shapes base + combining mark for every anchor class and
+            checks the mark lands on the base's anchor (and mark on mark)
 Exit status 0 = everything that ran passed.
 """
 import sys
@@ -159,7 +161,10 @@ def main():
 
         outline_bad, adv_bad, missing = [], [], []
         hmtx = font["hmtx"]
+        skip_export = set(ufo.lib.get("public.skipExportGlyphs", []))   # M14c: parts never reach the font
         for g in ufo:
+            if g.name in skip_export:
+                continue
             o = src_to_otf.get(g.name)
             if o is None or o not in gs:
                 missing.append(g.name)
@@ -269,6 +274,43 @@ def main():
             if got != ufo_kern(a, b):
                 bad.append(f"{a}/{b} {got} != {ufo_kern(a, b)}")
         say(not bad, f"harfbuzz: {len(pairs)} kerning pairs shape to the source's values", "; ".join(bad[:5]))
+
+        # -- marks (M16b): base + mark lands anchor on anchor ------------------
+        import unicodedata
+        cmap = font.getBestCmap()
+        def anchors(g):
+            return {a.name: (round(a.x), round(a.y)) for a in g.anchors}
+        marks = [g for g in ufo if g.unicodes and unicodedata.category(chr(g.unicodes[0])).startswith("M")
+                 and any(a.name.startswith("_") for a in g.anchors)]
+        bases = [g for g in ufo if g.unicodes and not g.components and g.anchors
+                 and not unicodedata.category(chr(g.unicodes[0])).startswith("M")]
+        tried, bad = 0, []
+        for m in marks:
+            ma = anchors(m)
+            for b in bases:
+                ba = anchors(b)
+                for name in ba:
+                    if "_" + name not in ma:
+                        continue
+                    text = chr(b.unicodes[0]) + chr(m.unicodes[0])
+                    if len(unicodedata.normalize("NFC", text)) == 1 and ord(unicodedata.normalize("NFC", text)) in cmap:
+                        continue   # composes to a precomposed glyph: not a mark attachment
+                    tried += 1
+                    buf = hb.Buffer()
+                    buf.add_str(text)
+                    buf.guess_segment_properties()
+                    hb.shape(hbfont, buf, {"liga": False})
+                    if len(buf.glyph_positions) != 2:
+                        bad.append(f"{b.name}+{m.name}: {len(buf.glyph_positions)} glyphs")
+                        continue
+                    pos = buf.glyph_positions[1]
+                    want = (ba[name][0] - round(b.width) - ma["_" + name][0], ba[name][1] - ma["_" + name][1])
+                    if (pos.x_offset, pos.y_offset) != want:
+                        bad.append(f"{b.name}+{m.name} ({pos.x_offset}, {pos.y_offset}) != {want}")
+        if tried:
+            say(not bad, f"harfbuzz: {tried} base + mark pairs attach anchor to anchor", "; ".join(bad[:5]))
+        else:
+            skip("harfbuzz marks", "no base / combining mark pairs with matching anchors in the source")
 
     print("-" * 47)
     print("all passed" if not fails else f"{fails} failed")

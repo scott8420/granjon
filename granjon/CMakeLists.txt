@@ -113,6 +113,8 @@ add_library(granjon_core STATIC
     src/model/Coverage.cpp
     src/model/Composite.cpp
     src/model/Spacing.cpp
+    src/model/Fea.cpp       # M16c: the feature file (parse, generate)
+    src/model/Proof.cpp     # s10: what a print proof shows
     src/model/Checks.cpp
     src/model/Profiles.cpp
     src/model/Presets.cpp   # M12: new font from a preset (data: resources/presets/)
@@ -129,6 +131,8 @@ add_library(granjon_core STATIC
     src/export/Cff.cpp
     src/export/Tables.cpp
     src/export/Gpos.cpp
+    src/export/Layout.cpp   # M16: the layout tables' common frame (GPOS, GSUB)
+    src/export/Gsub.cpp     # M16c: features.fea -> GSUB
     src/export/Otf.cpp
     # M10a: TrueType -- cu2qu (cubic -> quadratic) and glyf / loca / post 2 / gasp.
     src/export/Quad.cpp
@@ -157,7 +161,7 @@ target_include_directories(granjon_core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thir
 # ── Headless selftest -- exercises the core with no display ────────────────────
 # Cairn's Stones (the journal's own fixture) compiles into the selftest only:
 # it proves the journal mechanics; the app's store is model::Font.
-add_executable(granjon_selftest src/selftest.cpp src/selftest_export.cpp src/selftest_edit.cpp src/selftest_import.cpp src/selftest_presets.cpp src/selftest_image.cpp src/selftest_draw.cpp src/selftest_shape.cpp src/core/Stones.cpp)
+add_executable(granjon_selftest src/selftest.cpp src/selftest_export.cpp src/selftest_edit.cpp src/selftest_import.cpp src/selftest_presets.cpp src/selftest_image.cpp src/selftest_draw.cpp src/selftest_shape.cpp src/selftest_m16.cpp src/core/Stones.cpp)
 target_link_libraries(granjon_selftest PRIVATE granjon_core ${BROTLIDEC_LIBRARIES})
 target_include_directories(granjon_selftest PRIVATE ${BROTLIDEC_INCLUDE_DIRS})
 # selftest.cpp's main() is one long walk; GCC 16 with -g notes "variable
@@ -220,6 +224,8 @@ add_executable(granjon
     src/views/GlyphCanvas.cpp
     src/views/SpacingStrip.cpp
     src/views/ReportList.cpp
+    src/views/FeatureView.cpp   # M16c
+    src/views/ProofPrinter.cpp  # s10: print proof (PDF / printer)
     src/views/PreviewPane.cpp
     src/Shell.cpp
     src/Shell_zones.cpp

@@ -1590,6 +1590,25 @@ bool set_style(FontJournal& j, Font& f, const std::string& style) {
     });
 }
 
+bool set_features(FontJournal& j, Font& f, const std::string& text, const std::string& label, bool merge) {
+    if (text == f.features().text) return false;
+    return j.run(label, {Font::kFeatures}, [&] {
+        model::Features x;
+        x.text = text;
+        f.put(Font::kFeatures, Record{x});
+    }, merge ? "features" : "");
+}
+
+bool set_info(FontJournal& j, Font& f, const model::FontInfo& info, const std::string& label, std::string* why) {
+    if (info == f.info()) return false;
+    if (!(info.italic_angle >= -45 && info.italic_angle <= 45)) { say(why, "Italic angle: -45 to 45 degrees (italics lean right: negative, e.g. -12)."); return false; }
+    if (info.weight_class < 0 || info.weight_class > 1000) { say(why, "Weight class: 1..1000 (400 Regular, 700 Bold), or 0 to follow the style name."); return false; }
+    if (info.width_class < 1 || info.width_class > 9) { say(why, "Width class: 1 (Ultra-condensed) .. 9 (Ultra-expanded), 5 normal."); return false; }
+    if (info.vendor.size() > 4) { say(why, "Vendor ID: at most 4 characters (registered with Microsoft)."); return false; }
+    if (info.units_per_em != f.info().units_per_em) { say(why, "Units per em has its own field (it rescales nothing, but it is checked)."); return false; }
+    return j.run(label, {Font::kInfo}, [&] { f.put(Font::kInfo, Record{info}); });
+}
+
 bool set_units_per_em(FontJournal& j, Font& f, int upm, std::string* why) {
     if (upm < 16 || upm > 16384) {
         say(why, "Units per em must be 16..16384 (the OpenType limit). 1000 is the PostScript "
@@ -1684,7 +1703,8 @@ bool apply_metrics_keys(FontJournal& j, Font& f, const std::vector<std::string>&
 
 // ── checks (M7) ────────────────────────────────────────────────────────────
 
-bool fix_findings(FontJournal& j, Font& f, const std::vector<model::Finding>& findings, std::size_t* fixed) {
+bool fix_findings(FontJournal& j, Font& f, const std::vector<model::Finding>& findings, std::size_t* fixed,
+                  const model::FixAmounts& amounts) {
     std::map<std::string, std::vector<model::Finding>> geo;   // glyph -> geometric fixes
     std::set<std::string> keyed;                               // glyphs whose key to apply
     std::size_t n = 0;
@@ -1705,11 +1725,22 @@ bool fix_findings(FontJournal& j, Font& f, const std::vector<model::Finding>& fi
                                      : "Fix " + std::to_string(n) + " findings";
     return j.run(label, ids, [&] {
         for (const auto& [name, xs] : geo)
-            if (auto g = model::fix_glyph(f, name, xs)) f.put(name, Record{*g});
+            if (auto g = model::fix_glyph(f, name, xs, amounts)) f.put(name, Record{*g});
         for (const auto& name : model::key_order(f))   // referenced glyphs first
             if (keyed.count(name))
                 if (auto g = model::apply_key(f, name)) f.put(name, Record{*g});
     });
+}
+
+bool fix_check_everywhere(FontJournal& j, Font& f, model::CheckId check, std::size_t* fixed,
+                          const model::FixAmounts& amounts) {
+    std::vector<model::Finding> all;
+    for (const auto& n : f.glyph_order())
+        for (auto& x : model::check_glyph(f, n))
+            if (x.check == check && x.fixable && !model::is_skipped(f, x)) all.push_back(std::move(x));
+    if (fixed) *fixed = all.size();
+    if (all.empty()) return false;
+    return fix_findings(j, f, all, nullptr, amounts);
 }
 
 bool skip_findings(FontJournal& j, Font& f, const std::vector<model::Finding>& findings, bool skip) {
@@ -1846,6 +1877,7 @@ const std::vector<Verb>& verbs() {
              add_shape(j, f, "n", geom::shape_ellipse({{600.3, 100}, {800, 299.6}}), "Ellipse"); }},
         {"boolean_contours", [](FontJournal& j, Font& f) { boolean_contours(j, f, "H", {0, 2}, geom::BoolOp::Union); }},
         {"add_extremes", [](FontJournal& j, Font& f) { add_extremes(j, f, "lens", {}); }},
+        {"fix_check_everywhere", [](FontJournal& j, Font& f) { fix_check_everywhere(j, f, model::CheckId::Extremes); }},
         {"offset_contours", [](FontJournal& j, Font& f) { offset_contours(j, f, "n", {}, 10, geom::Join::Miter); }},
         {"expand_stroke", [](FontJournal& j, Font& f) { expand_stroke(j, f, "H", {2}, 20, geom::Join::Round, geom::Cap::Round); }},
         {"round_corners", [](FontJournal& j, Font& f) {
@@ -1905,6 +1937,12 @@ const std::vector<Verb>& verbs() {
              drag_end(j, f); }},
         {"set_family",   [](FontJournal& j, Font& f) { set_family(j, f, "Garamond Nova"); }},
         {"set_style",    [](FontJournal& j, Font& f) { set_style(j, f, "Italic"); }},
+        {"set_features", [](FontJournal& j, Font& f) { set_features(j, f, "feature liga { sub H H by O; } liga;\n"); }},
+        {"set_info",     [](FontJournal& j, Font& f) {
+             model::FontInfo i = f.info();
+             i.italic_angle = -11.5;
+             i.designer = "Scott";
+             set_info(j, f, i, "Font info"); }},
         {"set_units_per_em", [](FontJournal& j, Font& f) { set_units_per_em(j, f, 2048); }},
         {"set_metric",   [](FontJournal& j, Font& f) { set_metric(j, f, Metrics::Field::XHeight, 480); }},
         {"set_kern",     [](FontJournal& j, Font& f) { set_kern(j, f, "H", "n", -20); }},

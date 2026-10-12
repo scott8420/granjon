@@ -14,7 +14,7 @@ namespace {
 struct ViewSpec { const char* id; const char* title; };
 constexpr ViewSpec kViews[] = {
     {"overview", "Overview"}, {"editor", "Editor"}, {"spacing", "Spacing"},
-    {"preview", "Preview"},   {"report", "Report"},
+    {"preview", "Preview"},   {"report", "Report"},     {"features", "Features"},
 };
 }  // namespace
 
@@ -125,6 +125,7 @@ void Shell::build_views() {  // zone: the view stack
     m_stack.add(m_spacing, "spacing", "Spacing");
     m_stack.add(m_preview, "preview", "Preview");
     m_stack.add(m_report, "report", "Report");
+    m_stack.add(m_features, "features", "Features");
 }
 
 void Shell::add_stub_view(const char* id, const char* title, const char* what) {  // zone
@@ -166,6 +167,10 @@ Glib::RefPtr<Gio::Menu> Shell::build_menu() {  // zone: hamburger model
     exp->append("Export glyph as SVG…", "win.export-svg-glyph");
     exp->append("Export Spacing text as SVG…", "win.export-svg-text");
     menu->append_section(exp);
+    auto proof = Gio::Menu::create();
+    proof->append("Print proof…", "win.proof-print");
+    proof->append("Export proof as PDF…", "win.proof-pdf");
+    menu->append_section(proof);
 
     // Undo / Redo, re-labelled live and greyed when there is nothing to do --
     // update_undo_ui() owns this section.
@@ -178,6 +183,8 @@ Glib::RefPtr<Gio::Menu> Shell::build_menu() {  // zone: hamburger model
     fontm->append("Add default anchors to every letter and mark", "win.font-anchors");
     fontm->append("Correct contour directions in every glyph", "win.font-directions");
     fontm->append("Remove overlaps in every glyph", "win.font-overlaps");
+    fontm->append("Add extreme points in every glyph", "win.font-extremes");
+    fontm->append("Ink traps at every tight crotch", "win.font-inktraps");
     fontm->append("Apply metrics keys in every glyph", "win.font-metrics-keys");
     menu->append_section(fontm);
 

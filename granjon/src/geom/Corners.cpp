@@ -280,6 +280,23 @@ bool is_crotch(const Contour& c, int i, bool ink_left) {
     return ink_left ? turn < 0 : turn > 0;
 }
 
+double white_angle(const Contour& c, int i) {
+    if (!interior(c, i)) return 180;
+    Vec2 in, out;
+    tangents(c, i, in, out);
+    if (in.length_sq() < 1e-12 || out.length_sq() < 1e-12) return 180;
+    return std::acos(std::clamp((in * -1.0).dot(out), -1.0, 1.0)) * 180.0 / std::numbers::pi;
+}
+
+bool is_trap_apex(const Contour& c, int i, double span, bool ink_left) {
+    const int n = static_cast<int>(c.nodes.size());
+    if (!c.closed || n < 4 || !is_crotch(c, i, ink_left)) return false;
+    const int a = wrap(i - 1, n), b = wrap(i + 1, n);
+    if (!seg_line(c, a) || !seg_line(c, i)) return false;
+    if (seg_of(c, a).p0.dist(seg_of(c, a).p3) > span || seg_of(c, i).p0.dist(seg_of(c, i).p3) > span) return false;
+    return is_corner(c, a) && !is_crotch(c, a, ink_left) && is_corner(c, b) && !is_crotch(c, b, ink_left);
+}
+
 int round_corners(Contour& c, const std::set<int>& nodes, double radius) {
     const int n = static_cast<int>(c.nodes.size());
     if (radius <= 0 || n < 3) return 0;

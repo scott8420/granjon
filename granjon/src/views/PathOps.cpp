@@ -336,6 +336,7 @@ void repick(ViewContext& ctx, bool whole, const std::set<int>& cs) {
 double corner_radius(const ViewContext& ctx) { return setting_or(ctx.settings.corner_radius, 0.02 * em(ctx)); }
 double trap_width(const ViewContext& ctx) { return setting_or(ctx.settings.trap_width, 0.015 * em(ctx)); }
 double trap_depth(const ViewContext& ctx) { return setting_or(ctx.settings.trap_depth, 0.025 * em(ctx)); }
+model::FixAmounts fix_amounts(const ViewContext& ctx) { return {trap_width(ctx), trap_depth(ctx)}; }
 
 void round_picked(ViewContext& ctx) {
     const bool whole = whole_paths_picked(ctx);

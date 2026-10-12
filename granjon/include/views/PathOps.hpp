@@ -61,6 +61,7 @@ double clone_offset(const ViewContext& ctx);
 double corner_radius(const ViewContext& ctx);   // 2 % of the em
 double trap_width(const ViewContext& ctx);      // 1.5 %
 double trap_depth(const ViewContext& ctx);      // 2.5 %
+model::FixAmounts fix_amounts(const ViewContext& ctx);   // s10: what the Checks' fixes use
 // M15b: on the pick. Round corners / ink traps work on the picked NODES (a
 // whole path picked = all its corners); extreme points on the picked paths,
 // or the whole glyph when nothing is picked. A whole-path pick stays picked

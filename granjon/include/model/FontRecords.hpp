@@ -18,6 +18,16 @@ struct FontInfo {
     std::string copyright;
     std::string license;
     std::string vendor;            // OS/2 achVendID, 4 chars
+    // M16a: the rest of the font info a release wants (UFO fontinfo keys in brackets)
+    double      italic_angle = 0;  // degrees, counter-clockwise from upright: italics are negative (-12) [italicAngle]
+    std::string designer;          // [openTypeNameDesigner]       name ID 9
+    std::string designer_url;      // [openTypeNameDesignerURL]    name ID 12
+    std::string manufacturer;      // [openTypeNameManufacturer]   name ID 8
+    std::string manufacturer_url;  // [openTypeNameManufacturerURL] name ID 11
+    std::string trademark;         // [trademark]                  name ID 7
+    std::string description;       // [openTypeNameDescription]    name ID 10
+    int         weight_class = 0;  // OS/2 usWeightClass 1..1000; 0 = from the style name [openTypeOS2WeightClass]
+    int         width_class  = 5;  // OS/2 usWidthClass 1..9, 5 = normal [openTypeOS2WidthClass]
     int         units_per_em = 1000;
     std::vector<Guide> guides;     // font-wide guidelines (fontinfo.plist "guidelines")
     // M12: the preset the font was started from ("" = blank / imported) and

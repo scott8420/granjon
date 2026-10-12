@@ -38,6 +38,10 @@ void Shell::bind_actions() {  // bindings: actions + recents group
     add_action("font-anchors",  sigc::mem_fun(*this, &Shell::on_font_anchors));
     add_action("font-directions", sigc::mem_fun(*this, &Shell::on_font_directions));
     add_action("font-overlaps", sigc::mem_fun(*this, &Shell::on_font_overlaps));
+    add_action("proof-pdf", sigc::mem_fun(*this, &Shell::on_proof_pdf));
+    add_action("proof-print", sigc::mem_fun(*this, &Shell::on_proof_print));
+    add_action("font-extremes", sigc::mem_fun(*this, &Shell::on_font_extremes));
+    add_action("font-inktraps", sigc::mem_fun(*this, &Shell::on_font_inktraps));
     add_action("font-metrics-keys", sigc::mem_fun(*this, &Shell::on_font_metrics_keys));
     add_action("quit",          [this]() { close(); });   // close-request asks about unsaved changes
 

@@ -18,6 +18,11 @@ struct OutGlyph {
     std::vector<char32_t>       unicodes;
     bool                        empty = true;
     int                         xmin = 0, ymin = 0, xmax = 0, ymax = 0;   // 0s when empty
+    // M16b: the glyph's anchors -- its own, or (a composite with none) its
+    // first component's, moved with it; a later component that is a mark
+    // carrying "X" as well as "_X" lifts the composite's "X" onto itself
+    // (so a mark typed after an accented letter stacks above the accent).
+    std::vector<model::Anchor>  anchors;
 };
 
 // The font after the pre-export steps; every table builder reads only this.
@@ -49,13 +54,23 @@ Bytes build_cff(const Prepared& p);
 Bytes build_head(const Prepared& p, int loca_format = 0);
 Bytes build_hhea(const Prepared& p);
 Bytes build_maxp(const Prepared& p);
-Bytes build_os2(const Prepared& p, bool kerns);
+// max_context: OS/2 usMaxContext -- 2 with any pair / mark positioning, a
+// ligature's length when longer (M16c).
+Bytes build_os2(const Prepared& p, int max_context);
 Bytes build_name(const Prepared& p);
 Bytes build_cmap(const Prepared& p);
 Bytes build_post(const Prepared& p);
 Bytes build_hmtx(const Prepared& p);
 // Empty when the font has no kerning that reaches two glyphs.
 Bytes build_gpos(const model::Kerning& k, const Prepared& p, OtfReport& rep);
+// M16c: the feature file's substitutions (model::parse_fea) -- empty when
+// there are none, or when the file has an error (the report says which).
+// `max_context` gets the longest ligature's length.
+Bytes build_gsub(const std::string& fea, const Prepared& p, OtfReport& rep, int* max_context = nullptr);
+// M16b: GDEF glyph classes (1 base, 3 mark) -- empty when the font has no marks.
+Bytes build_gdef(const Prepared& p);
+// M16b: a glyph's anchors after propagation (see OutGlyph::anchors).
+std::vector<model::Anchor> glyph_anchors(const model::Font& f, const model::Glyph& g, int depth = 0);
 
 // ── TrueType (M10) ──
 // A glyph's TrueType outline: rounded quadratic contours, TrueType direction.

@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <map>
 #include <set>
 
 namespace granjon::model {
@@ -66,6 +67,10 @@ const std::vector<CheckInfo>& checks() {
         {CheckId::Extremes, "extremes", "Extreme points",
          "A curve should have a node where it is furthest left, right, up or down. Without one, hinting has "
          "nothing to hold the edge to, overshoots can't be measured, and small sizes lose the curve's edge."},
+        {CheckId::InkTraps, "inktraps", "Ink traps (warning)",
+         "Where two strokes meet at a tight angle -- p's bowl into its stem, inside v's point, n's shoulder -- "
+         "ink spreads into the narrow white and fills it at small sizes or on soft paper. A trap (a small notch "
+         "cut into the ink) keeps the join open. Advice, not a defect: skip it for display sizes.", true},
         {CheckId::Zones, "zones", "Near the metric lines",
          "A flat top or bottom a unit or three off the baseline, x-height or cap height reads as a mistake "
          "at text sizes and breaks hinting's alignment zones. Snap it to the line."},
@@ -143,6 +148,25 @@ std::vector<Finding> check_glyph(const Font& f, const std::string& name) {
                 "Contour " + std::to_string(c + 1) + " lacks " + std::to_string(k) + (k == 1 ? " extreme point" : " extreme points"),
                 std::to_string(c), true, c);
 
+    // Ink traps (s10, a warning): tight crotches without a trap.
+    {
+        const auto wrong = geom::wrong_way(g->contours);
+        const double em = std::max(16, f.info().units_per_em);
+        for (int c = 0; c < static_cast<int>(g->contours.size()); ++c) {
+            const auto& con = g->contours[c];
+            const bool left = std::find(wrong.begin(), wrong.end(), c) == wrong.end();
+            for (int i = 0; i < static_cast<int>(con.nodes.size()); ++i) {
+                if (!geom::is_crotch(con, i, left) || geom::is_trap_apex(con, i, 0.08 * em, left)) continue;
+                const double a = geom::white_angle(con, i);
+                if (a >= kTightCrotch) continue;
+                add(CheckId::InkTraps,
+                    "Node " + std::to_string(i + 1) + " of contour " + std::to_string(c + 1) + ": a " +
+                        std::to_string(static_cast<int>(std::lround(a))) + "-degree crotch, no trap",
+                    spot(c, i), true, c, i);
+            }
+        }
+    }
+
     // Zones (flat nodes) and overshoot (round extremes).
     const auto lines = lines_of(m);
     for (int c = 0; c < static_cast<int>(g->contours.size()); ++c) {
@@ -213,7 +237,8 @@ std::vector<Finding> check_glyph(const Font& f, const std::string& name) {
     return out;
 }
 
-std::optional<Glyph> fix_glyph(const Font& f, const std::string& name, const std::vector<Finding>& xs) {
+std::optional<Glyph> fix_glyph(const Font& f, const std::string& name, const std::vector<Finding>& xs,
+                               const FixAmounts& amounts) {
     const Glyph* was = f.glyph(name);
     if (!was) return std::nullopt;
     Glyph g = *was;
@@ -235,6 +260,30 @@ std::optional<Glyph> fix_glyph(const Font& f, const std::string& name, const std
     for (const auto& x : xs)
         if (x.glyph == name && x.check == CheckId::Open && x.contour >= 0 && x.contour < static_cast<int>(g.contours.size()))
             g.contours[x.contour].closed = true;
+    // 3a. ink traps (by node index -- before anything else changes them),
+    // one call per contour; `amounts`, else 1.5 % / 2.5 % of the em.
+    {
+        std::map<int, std::set<int>> traps;
+        for (const auto& x : xs)
+            if (x.glyph == name && x.check == CheckId::InkTraps && x.contour >= 0 &&
+                x.contour < static_cast<int>(g.contours.size()))
+                traps[x.contour].insert(x.index);
+        if (!traps.empty()) {
+            const double em = std::max(16, f.info().units_per_em);
+            const auto wrong = geom::wrong_way(g.contours);
+            for (const auto& [ci, nodes] : traps) {
+                const bool left = std::find(wrong.begin(), wrong.end(), ci) == wrong.end();
+                const double tw = amounts.trap_width > 0 ? amounts.trap_width : std::round(0.015 * em);
+                const double td = amounts.trap_depth > 0 ? amounts.trap_depth : std::round(0.025 * em);
+                if (geom::ink_traps(g.contours[ci], nodes, tw, td, left) > 0) {
+                    Glyph t;
+                    t.contours = {g.contours[ci]};
+                    t.snap();
+                    g.contours[ci] = t.contours[0];
+                }
+            }
+        }
+    }
     // 3b. extreme points (node indices change from here on), snapped
     for (const auto& x : xs)
         if (x.glyph == name && x.check == CheckId::Extremes && x.contour >= 0 &&

@@ -56,6 +56,8 @@ Settings load_settings(const std::string& file) {
         get(pv, "kern", s.preview_kern);
         get(pv, "invert", s.preview_invert);
     }
+    if (const json pr = j.value("proof", json::object()); pr.is_object()) get(pr, "paper", s.proof_paper);
+    if (s.proof_paper != "letter" && s.proof_paper != "a4") s.proof_paper = Settings{}.proof_paper;
     const json ex = j.value("export", json::object());
     if (ex.is_object()) get(ex, "folder", s.export_folder);
     if (const json in = j.value("inspector", json::object()); in.is_object()) get(in, "code_format", s.code_format);
@@ -144,6 +146,7 @@ bool save_settings(const std::string& file, const Settings& s) {
         {"navigator", {{"open", s.navigator_open}}},
         {"spacing", {{"text", s.spacing_text}, {"size", s.spacing_size}}},
         {"preview", {{"text", s.preview_text}, {"kern", s.preview_kern}, {"invert", s.preview_invert}}},
+        {"proof", {{"paper", s.proof_paper}}},
         {"export", {{"folder", s.export_folder}}},
         {"inspector", {{"code_format", s.code_format}}},
         {"new_font", {{"preset", s.new_preset}, {"create_set", s.new_create_set}}},

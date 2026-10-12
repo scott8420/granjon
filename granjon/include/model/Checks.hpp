@@ -15,6 +15,8 @@
 //                crossing itself -> Remove overlaps (or a boolean)
 //   Extremes     (M15b) a curve bulging past its nodes with no node at its
 //                horizontal / vertical extreme -> add it
+//   InkTraps     (s10, a WARNING) a crotch tighter than 60 degrees with no
+//                trap -> cut one (1.5 % / 2.5 % of the em)
 //   Zones        a flat node a unit or three off a metric line -> snap to it
 //   Overshoot    a round top / bottom with no overshoot, or one off the font's
 //                overshoot -> move the extreme to the overshoot line
@@ -28,13 +30,14 @@
 
 namespace granjon::model {
 
-enum class CheckId { Direction, Open, Zones, Overshoot, Origin, Keys, Overlap, Extremes };
+enum class CheckId { Direction, Open, Zones, Overshoot, Origin, Keys, Overlap, Extremes, InkTraps };
 
 struct CheckInfo {
     CheckId     id;
     const char* tag;     // stable, in skip keys ("direction", "zones", ...)
     const char* name;    // "Contour direction"
     const char* why;     // one or two sentences: why it matters
+    bool        warning = false;   // s10: advice, not a defect (a font can ship with it)
 };
 const std::vector<CheckInfo>& checks();
 const CheckInfo& check_info(CheckId id);
@@ -54,6 +57,9 @@ struct Finding {
 // The tolerance for "a unit or three off": 3 units at 1000 UPM, scaled.
 double zone_tolerance(const Font& f);
 
+// s10: the ink-trap warning's threshold: a white wedge tighter than this.
+constexpr double kTightCrotch = 60.0;
+
 // Every check on one glyph (skipped findings included -- the caller filters
 // with is_skipped, so the report can still show them on request).
 std::vector<Finding> check_glyph(const Font& f, const std::string& glyph);
@@ -62,6 +68,10 @@ bool is_skipped(const Font& f, const Finding& x);
 // The fix for these findings of ONE glyph, on a copy: node moves first, then
 // rounding, closing, reversing (indices stay valid until then). Keys are not
 // geometry and are left to apply_key. nullopt when nothing changes.
-std::optional<Glyph> fix_glyph(const Font& f, const std::string& glyph, const std::vector<Finding>& xs);
+// s10: amounts the fixes use (0 = a share of the em: ink trap 1.5 % wide,
+// 2.5 % deep) -- the app passes the SHAPE card's remembered values.
+struct FixAmounts { double trap_width = 0, trap_depth = 0; };
+std::optional<Glyph> fix_glyph(const Font& f, const std::string& glyph, const std::vector<Finding>& xs,
+                               const FixAmounts& amounts = {});
 
 }  // namespace granjon::model

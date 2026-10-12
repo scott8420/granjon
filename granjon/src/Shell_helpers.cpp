@@ -207,6 +207,7 @@ void Shell::repaint_changed() {  // helper
     m_navigator.update(dirty);
     m_overview.update(dirty);
     m_report.update(dirty);
+    m_features.update(dirty);
     m_preview.refresh();   // compiles only when shown, after a pause
     m_inspector.refresh();
     // Left in on purpose: a step that takes long enough to feel is worth a line.
@@ -226,6 +227,7 @@ void Shell::repaint() {  // helper
     m_navigator.refresh();
     m_overview.refresh();
     m_report.refresh();
+    m_features.refresh();
     m_preview.refresh();
     m_inspector.refresh();
 }

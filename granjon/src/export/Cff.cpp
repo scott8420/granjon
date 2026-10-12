@@ -232,6 +232,7 @@ Bytes build_cff(const Prepared& p) {
         if (sid_notice >= 0) { dnum(d, sid_notice); dop(d, 1); }
         dnum(d, sid_full);    dop(d, 2);
         dnum(d, sid_family);  dop(d, 3);
+        if (p.info.italic_angle != 0) { dreal(d, p.info.italic_angle); dop(d, 1202); }   // M16a: ItalicAngle
         if (p.info.units_per_em != 1000 && p.info.units_per_em > 0) {
             const double s = 1.0 / p.info.units_per_em;
             dreal(d, s); dnum(d, 0); dnum(d, 0); dreal(d, s); dnum(d, 0); dnum(d, 0);

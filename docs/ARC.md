@@ -359,8 +359,14 @@ Newest session at the bottom.
 - M15b `geom/Offset`: per segment, the offset refitted as cubics (end tangents kept, handle lengths by least squares on five points of the true offset, Schneider reparameterisation x3, split until within 0.5 unit); joins miter (bevel past 4 x) / round / bevel where the offset opens; straight across where it closes (the loop winds backwards); then the M10c engine's union under the POSITIVE fill rule (`union_positive`) -- loops, inside-out pieces and overlaps drop out, curves exact. Offset bolder / lighter; expand stroke (open path -> band with butt / round / square caps; closed -> ring). Verified on every preset's n o H O p v at +/-12.
 - UI: SHAPE card (radius; trap width / depth; offset distance + join + lighter / bolder; stroke width (= the Line tool's Stroke) + cap + expand), OUTLINE gains Add extreme points, context menu Shape >. Amounts remembered in settings.json. 5 icons.
 
+- Scott's answers: offset h / v split -- no; ink traps -- "a warning with an option to fix" (r1: a Checks warning under 60 degrees, Fix cuts it); font-wide passes -- yes (r1: ☰ extreme points / ink traps); icons fine. Then: "granjon feels nearly done" -- Scott steps back; I finish M16, print proof and details with minimal check-ins; he uses it and returns with gotchas.
+
+- M16 (s10, Scott stepping back): M16a font info + italic angle (STYLE / CREDITS cards, post / hhea caret / CFF / name 7-12 / OS/2 weight + width, panose mono, slanted sidebearing lines); M16b mark positioning (shared layout frame, GPOS mark / mkmk from anchors, GDEF, anchor propagation into composites; otf_check.py gained a harfbuzz mark check); M16c features (model/Fea parser + generator from glyph names, GSUB compiler, Features view Ctrl+6). Next: print proof, then loose ends.
+
+- Print proof (s10): model::proof_plan + views::ProofPrinter -- waterfall, text, spacing, kerning, features off / on, every drawn glyph; through the compiled font; Ctrl+P (GtkPrintOperation) and Export proof as PDF.
+
 ## Backlog notes (s10)
-- Offset: separate horizontal / vertical amounts (Glyphs' Offset Curve) so a bolder pass can keep the x-height and baseline -- today every edge moves, tops and bottoms too.
-- Ink trap: a rounded slot end (today a V), and traps on a whole font's crotches in one go (a font-wide pass like Correct directions).
+- Proof: an options dialog (pages, sizes, paper), a glyph-selection proof, granjon-cli proof.
+- Features: contextual substitution (calt, frac, ignore), GSUB import -> features.fea, glyph rename rewriting the feature text, aalt, a syntax-aware editor (line numbers).
 - Round corners: a per-corner radius handle on the canvas (drag to set); "inverse" (concave) rounding.
 - Extreme points: a font-wide pass (menu, like Remove overlaps in every glyph).

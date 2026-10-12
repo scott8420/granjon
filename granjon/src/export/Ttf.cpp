@@ -190,10 +190,14 @@ Bytes compile_ttf(const model::Font& f, const OtfOptions& opt, OtfReport* out) {
     std::map<std::string, Bytes> tables;
     const Bytes gpos = build_gpos(f.kerning(), p, rep);
     if (!gpos.empty()) tables["GPOS"] = gpos;
+    if (const Bytes gdef = build_gdef(p); !gdef.empty()) tables["GDEF"] = gdef;
+    int lig_context = 1;
+    if (const Bytes gsub = build_gsub(f.features().text, p, rep, &lig_context); !gsub.empty()) tables["GSUB"] = gsub;
+    const int max_context = std::max(gpos.empty() ? 1 : 2, lig_context);
     tables["head"] = build_head(p, gl.loca_format);
     tables["hhea"] = build_hhea(p);
     tables["maxp"] = build_maxp_tt(p, gl);
-    tables["OS/2"] = build_os2(p, !gpos.empty());
+    tables["OS/2"] = build_os2(p, max_context);
     tables["name"] = build_name(p);
     tables["cmap"] = build_cmap(p);
     tables["post"] = build_post2(p);

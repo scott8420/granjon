@@ -84,10 +84,11 @@ void selftest_presets(const std::function<void(const std::string&, bool, const s
         int found = 0;
         for (const auto& n : f.glyph_order())
             for (const auto& x : model::check_glyph(f, n)) {
+                if (model::check_info(x.check).warning) continue;   // s10: advice (ink traps), not defects
                 if (first.empty()) first = n + ": " + x.message;
                 ++found;
             }
-        check(tag + "the Checks report is empty", found == 0, first);
+        check(tag + "the Checks report is empty (warnings aside)", found == 0, first);
 
         bool shut = true, cubic_ok = true;
         for (const auto& n : model::control_glyphs()) {

@@ -58,6 +58,7 @@ struct Settings {
 
     // ── Preview + export (M9) ─────────────────────────────────────────────
     std::string preview_text = "Hamburgefonstiv HOHOHO nonono";   // the waterfall's sample
+    std::string proof_paper  = "letter";   // s10: the proof PDF's page -- "letter" or "a4"
     bool        preview_kern = true;     // the compiled kerning on
     bool        preview_invert = false;  // show the page in the OTHER mode than the desktop's
     std::string export_folder;           // where the Export dialog starts

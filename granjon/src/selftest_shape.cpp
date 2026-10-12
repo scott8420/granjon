@@ -348,4 +348,34 @@ void selftest_shape(const std::function<void(const std::string&, bool, const std
         check("offset: every preset's n o H O p v, +12 / -12 -- clean, right way, no overlaps; round corners too",
               bad.empty() && tried > 20, bad);
     }
+
+    std::cout << "s10 ink-trap warning\n";
+    {
+        command::Document d;
+        model::make_preset_font(d.font, {"sans", "T", "@none", false});
+        auto& j = d.journal;
+        auto& f = d.font;
+        const auto xs = model::check_glyph(f, "p");
+        std::vector<model::Finding> traps;
+        for (const auto& x : xs) if (x.check == model::CheckId::InkTraps) traps.push_back(x);
+        check("ink-trap warning: p's two bowl joins (31 degrees) are flagged", traps.size() == 2,
+              std::to_string(traps.size()));
+        check("ink-trap warning: it is a warning", model::check_info(model::CheckId::InkTraps).warning &&
+                                                       !model::check_info(model::CheckId::Overlap).warning);
+        int h = 0;
+        for (const auto& x : model::check_glyph(f, "H")) h += x.check == model::CheckId::InkTraps;
+        check("ink-trap warning: H's square crotches (90) are not", h == 0);
+        const std::size_t steps = j.size();
+        const std::size_t before = f.glyph("p")->contours[0].nodes.size();
+        const bool ok = command::fix_findings(j, f, traps);
+        check("ink-trap warning: Fix cuts both traps, one step", ok && j.size() == steps + 1 &&
+                                                                     f.glyph("p")->contours[0].nodes.size() == before + 4);
+        int left = 0, other = 0;
+        for (const auto& x : model::check_glyph(f, "p")) {
+            left += x.check == model::CheckId::InkTraps;
+            other += !model::check_info(x.check).warning;
+        }
+        check("ink-trap warning: after the fix -- no warning left (the trap's apex is not a crotch to trap), no new findings",
+              left == 0 && other == 0, std::to_string(left) + " / " + std::to_string(other));
+    }
 }

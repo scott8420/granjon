@@ -269,6 +269,77 @@ void Inspector::build_font_page() {
     hint->add_css_class("hint");
     vm.wide(*hint);
 
+    // ── M16a: STYLE -- italic angle, weight and width class ──────────────────
+    Card st(*page, "STYLE");
+    spin_setup(m_italic, -45, 45);
+    m_italic.set_digits(1);
+    m_italic.set_increments(0.5, 1);
+    m_italic.set_tooltip_text("Italic angle, degrees from upright -- italics lean right, so negative (-12 is typical). "
+                              "Goes to post / hhea (the caret leans) / CFF; the editor draws slanted sidebearing lines. 0 = upright.");
+    m_italic.signal_value_changed().connect([this] {
+        if (m_painting) return;
+        model::FontInfo i = m_ctx.doc.font.info();
+        i.italic_angle = std::round(m_italic.get_value() * 10) / 10;
+        std::string why;
+        if (!command::set_info(m_ctx.doc.journal, m_ctx.doc.font, i, "Italic angle", &why) && !why.empty()) m_ctx.say(why, true);
+    });
+    st.field("Italic angle", m_italic);
+    static const int kWeights[] = {0, 100, 200, 300, 400, 500, 600, 700, 800, 900};
+    m_weight.set_model(Gtk::StringList::create({"From the style name", "100 Thin", "200 Extra-light", "300 Light",
+                                                "400 Regular", "500 Medium", "600 Semi-bold", "700 Bold",
+                                                "800 Extra-bold", "900 Black"}));
+    m_weight.set_tooltip_text("OS/2 weight class -- how apps sort the family's weights. 'From the style name' reads "
+                              "Light / Bold / Black ... out of the Style field.");
+    m_weight.property_selected().signal_changed().connect([this] {
+        if (m_painting) return;
+        model::FontInfo i = m_ctx.doc.font.info();
+        i.weight_class = kWeights[std::min<guint>(m_weight.get_selected(), 9)];
+        command::set_info(m_ctx.doc.journal, m_ctx.doc.font, i, "Weight class");
+    });
+    st.field("Weight", m_weight);
+    m_widthc.set_model(Gtk::StringList::create({"1 Ultra-condensed", "2 Extra-condensed", "3 Condensed", "4 Semi-condensed",
+                                               "5 Normal", "6 Semi-expanded", "7 Expanded", "8 Extra-expanded",
+                                               "9 Ultra-expanded"}));
+    m_widthc.set_tooltip_text("OS/2 width class -- how apps sort the family's widths");
+    m_widthc.property_selected().signal_changed().connect([this] {
+        if (m_painting) return;
+        model::FontInfo i = m_ctx.doc.font.info();
+        i.width_class = static_cast<int>(std::min<guint>(m_widthc.get_selected(), 8)) + 1;
+        command::set_info(m_ctx.doc.journal, m_ctx.doc.font, i, "Width class");
+    });
+    st.field("Width", m_widthc);
+    m_style_hint.set_xalign(0.0f);
+    m_style_hint.set_wrap(true);
+    m_style_hint.add_css_class("hint");
+    st.wide(m_style_hint);
+
+    // ── M16a: CREDITS -- the name table ──────────────────────────────────────
+    Card cr(*page, "CREDITS");
+    m_version.set_tooltip_text("Version, major.minor (1.000; the minor part is three digits: 1.5 = 1.500)");
+    on_commit(m_version, [this] { on_version(); });
+    cr.field("Version", m_version);
+    struct Credit { const char* name; const char* tip; std::string model::FontInfo::*field; };
+    static const Credit kCredits[] = {
+        {"Designer", "Who drew it (name ID 9)", &model::FontInfo::designer},
+        {"Designer URL", "The designer's site (name ID 12)", &model::FontInfo::designer_url},
+        {"Manufacturer", "The foundry or publisher (name ID 8)", &model::FontInfo::manufacturer},
+        {"Manufacturer URL", "The foundry's site (name ID 11)", &model::FontInfo::manufacturer_url},
+        {"Vendor ID", "Four letters registered with Microsoft (OS/2 achVendID); empty = NONE", &model::FontInfo::vendor},
+        {"Copyright", "Copyright (c) 2026 ... (name ID 0)", &model::FontInfo::copyright},
+        {"Trademark", "... is a trademark of ... (name ID 7)", &model::FontInfo::trademark},
+        {"License", "The licence text or its name, e.g. SIL Open Font License 1.1 (name ID 13)", &model::FontInfo::license},
+        {"Description", "A line about the face (name ID 10)", &model::FontInfo::description},
+    };
+    for (const auto& c : kCredits) {
+        auto* e = Gtk::make_managed<widgets::Entry>(std::string("inspector.credit.") + c.name);
+        e->set_tooltip_text(c.tip);
+        const auto field = c.field;
+        const char* label = c.name;
+        on_commit(*e, [this, e, field, label] { on_info_text(*e, field, label); });
+        cr.field(c.name, *e);
+        m_credit_fields.push_back({e, field});
+    }
+
     // M12: what the font was started from -- a record of intent (the stems
     // it set out with), shown only for a preset font.
     Card origin(*page, "STARTED FROM");
@@ -1207,6 +1278,7 @@ void Inspector::refresh() {
         if (!m_family.has_focus()) m_family.set_text(f.info().family);
         if (!m_style.has_focus())  m_style.set_text(f.info().style);
         m_upm.set_value(f.info().units_per_em);
+        refresh_font_info();
         for (std::size_t i = 0; i < m_metric.size(); ++i)
             if (m_metric[i]) m_metric[i]->set_value(f.metrics().get(static_cast<model::Metrics::Field>(i)));
         const auto& o = f.info().origin;
@@ -1910,6 +1982,63 @@ void Inspector::on_style() {
     if (m_painting) return;
     const std::string v = m_style.get_text();
     if (v != m_ctx.doc.font.info().style) command::set_style(m_ctx.doc.journal, m_ctx.doc.font, v);
+}
+void Inspector::on_info_text(Gtk::Entry& e, std::string model::FontInfo::*field, const char* label) {
+    if (m_painting) return;
+    model::FontInfo i = m_ctx.doc.font.info();
+    const std::string v = e.get_text();
+    if (i.*field == v) return;
+    i.*field = v;
+    std::string why;
+    if (!command::set_info(m_ctx.doc.journal, m_ctx.doc.font, i, label, &why) && !why.empty()) {
+        m_ctx.say(why, true);
+        e.set_text(m_ctx.doc.font.info().*field);
+    }
+}
+void Inspector::on_version() {
+    if (m_painting) return;
+    const std::string v = m_version.get_text();
+    int major = 0, minor = 0;
+    const auto dot = v.find('.');
+    try {
+        major = std::stoi(v.substr(0, dot));
+        if (dot != std::string::npos && dot + 1 < v.size()) {
+            std::string m = v.substr(dot + 1, 3);
+            while (m.size() < 3) m += '0';   // 1.5 = 1.500
+            minor = std::stoi(m);
+        }
+    } catch (...) {
+        m_ctx.say("Version: a number like 1.000 or 2.013.", true);
+        refresh_font_info();
+        return;
+    }
+    model::FontInfo i = m_ctx.doc.font.info();
+    if (major < 0 || major > 65535) { m_ctx.say("Version: the major part 0..65535.", true); refresh_font_info(); return; }
+    i.version_major = major;
+    i.version_minor = minor;
+    command::set_info(m_ctx.doc.journal, m_ctx.doc.font, i, "Version");
+    refresh_font_info();
+}
+void Inspector::refresh_font_info() {
+    const auto& i = m_ctx.doc.font.info();
+    const bool was = m_painting;
+    m_painting = true;
+    if (!m_italic.has_focus()) m_italic.set_value(i.italic_angle);
+    static const int kWeights[] = {0, 100, 200, 300, 400, 500, 600, 700, 800, 900};
+    guint wi = 0;
+    for (guint k = 0; k < 10; ++k) if (kWeights[k] == i.weight_class) wi = k;
+    m_weight.set_selected(wi);
+    m_widthc.set_selected(static_cast<guint>(std::clamp(i.width_class, 1, 9) - 1));
+    char ver[32];
+    std::snprintf(ver, sizeof ver, "%d.%03d", i.version_major, i.version_minor);
+    if (!m_version.has_focus()) m_version.set_text(ver);
+    for (auto& [e, field] : m_credit_fields)
+        if (!e->has_focus()) e->set_text(i.*field);
+    m_painting = was;
+    std::string h = i.italic_angle == 0 ? "Upright." : "Leans " + std::to_string(static_cast<int>(std::lround(-i.italic_angle))) + " degrees right; ";
+    if (i.italic_angle != 0) h += "the editor draws slanted sidebearing lines. Transform > Skew by the angle slants a drawing.";
+    if (i.weight_class == 0) h += " Weight follows the style name.";
+    m_style_hint.set_text(h);
 }
 void Inspector::on_upm() {
     if (m_painting) return;

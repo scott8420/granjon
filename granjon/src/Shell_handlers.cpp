@@ -1,4 +1,8 @@
 #include "Shell.hpp"
+#include "views/PathOps.hpp"
+#include "views/ProofPrinter.hpp"
+#include "model/Proof.hpp"
+#include <gtkmm/printoperation.h>
 #include "model/Spacing.hpp"
 
 #include "model/Find.hpp"
@@ -233,6 +237,72 @@ void Shell::on_font_directions() {  // handler: the menu's "Correct contour dire
         say(m_doc.journal.undo_label() + ". Ctrl+Z takes it back.", false);
     else
         say("Every contour already runs the right way.", false);
+}
+
+void Shell::on_proof_pdf() {  // handler: the menu's "Export proof as PDF…" (s10)
+    auto dialog = Gtk::FileDialog::create();
+    dialog->set_title("Export proof as PDF");
+    dialog->set_initial_name(otf::default_file_name(m_doc.font.info(), "-proof.pdf"));
+    std::error_code ec;
+    if (!m_settings.export_folder.empty() && std::filesystem::is_directory(m_settings.export_folder, ec))
+        dialog->set_initial_folder(Gio::File::create_for_path(m_settings.export_folder));
+    dialog->save(*this, [this, dialog](const Glib::RefPtr<Gio::AsyncResult>& result) {
+        Glib::RefPtr<Gio::File> file;
+        try { file = dialog->save_finish(result); } catch (const Glib::Error&) { return; }
+        if (!file) return;
+        std::filesystem::path p = file->get_path();
+        if (p.extension() != ".pdf") p += ".pdf";
+        views::ProofPrinter pr(m_doc.font, model::proof_plan(m_doc.font, m_settings.preview_text), m_settings.preview_kern);
+        int pages = 0;
+        if (!pr.ok() || !pr.write_pdf(p.string(), m_settings.proof_paper, &pages)) {
+            say("Could not write the proof: " + pr.why(), true);
+            return;
+        }
+        m_settings.export_folder = p.parent_path().string();
+        save_settings();
+        say("Proof: " + p.filename().string() + " -- " + std::to_string(pages) + (pages == 1 ? " page" : " pages") +
+                (m_settings.proof_paper == "a4" ? ", A4." : ", Letter."), false);
+    });
+}
+
+void Shell::on_proof_print() {  // handler: Ctrl+P (s10)
+    auto pr = std::make_shared<views::ProofPrinter>(m_doc.font, model::proof_plan(m_doc.font, m_settings.preview_text),
+                                                    m_settings.preview_kern);
+    if (!pr->ok()) { say("Could not set the proof: " + pr->why(), true); return; }
+    auto op = Gtk::PrintOperation::create();
+    op->set_job_name(m_doc.font.info().family + " " + m_doc.font.info().style + " proof");
+    op->set_unit(Gtk::Unit::POINTS);
+    op->set_use_full_page(true);   // the proof keeps its own margins
+    op->signal_begin_print().connect([op, pr](const Glib::RefPtr<Gtk::PrintContext>& ctx) {
+        op->set_n_pages(pr->pages(ctx->get_width(), ctx->get_height()));
+    });
+    op->signal_draw_page().connect([pr](const Glib::RefPtr<Gtk::PrintContext>& ctx, int page) {
+        pr->draw_page(ctx->get_cairo_context()->cobj(), page, ctx->get_width(), ctx->get_height());
+    });
+    try {
+        const auto res = op->run(Gtk::PrintOperation::Action::PRINT_DIALOG, *this);
+        if (res == Gtk::PrintOperation::Result::APPLY) say("Proof sent to the printer.", false);
+    } catch (const Glib::Error& e) {
+        say(std::string("Printing failed: ") + e.what(), true);
+    }
+}
+
+void Shell::on_font_extremes() {  // handler: the menu's "Add extreme points in every glyph" (s10)
+    std::size_t n = 0;
+    if (command::fix_check_everywhere(m_doc.journal, m_doc.font, model::CheckId::Extremes, &n))
+        say(m_doc.journal.undo_label() + " -- extreme points on " + std::to_string(n) + " contour(s). Ctrl+Z takes it back.", false);
+    else
+        say("No curve is missing an extreme point (skipped findings left alone).", false);
+}
+
+void Shell::on_font_inktraps() {  // handler: the menu's "Ink traps at every tight crotch" (s10)
+    std::size_t n = 0;
+    const auto am = views::fix_amounts(m_ctx);
+    if (command::fix_check_everywhere(m_doc.journal, m_doc.font, model::CheckId::InkTraps, &n, am))
+        say(m_doc.journal.undo_label() + " -- " + std::to_string(n) + " ink trap(s), " + std::to_string(std::lround(am.trap_width)) +
+                " wide, " + std::to_string(std::lround(am.trap_depth)) + " deep. Ctrl+Z takes it back.", false);
+    else
+        say("No crotch tighter than 60 degrees without a trap (skipped findings left alone).", false);
 }
 
 void Shell::on_font_overlaps() {  // handler: the menu's "Remove overlaps in every glyph" (M10c)
