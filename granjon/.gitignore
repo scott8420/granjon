@@ -4,3 +4,5 @@ compile_commands.json
 *.o
 *.a
 .cache/
+/build-install/
+build-install.log

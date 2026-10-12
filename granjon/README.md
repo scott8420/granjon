@@ -15,8 +15,20 @@ Built from the Cairn seed. Design: `../docs/ARCHITECTURE.md`. Story so far:
 ./build/granjon_selftest    # the headless core gate (no display)
 ```
 
-Deps (Fedora): `gtkmm4.0-devel spdlog-devel libxml2-devel cmake gcc-c++`.
-Deps (Ubuntu/Debian): `libgtkmm-4.0-dev libspdlog-dev libxml2-dev cmake g++`.
+Deps (Fedora): `gtkmm4.0-devel spdlog-devel libxml2-devel brotli-devel cmake gcc-c++`.
+Deps (Ubuntu/Debian): `libgtkmm-4.0-dev libspdlog-dev libxml2-dev libbrotli-dev cmake g++`.
+
+## Install
+
+```
+./install.sh                # Release build + selftest, into ~/.local (app grid: Granjon)
+./install.sh --system       # into /usr/local (sudo)
+./uninstall.sh              # remove it (add --system to match; --purge also removes settings)
+```
+
+Three files: `bin/granjon`, the launcher entry and the app icon (everything
+else is compiled into the program). The Release build lives in
+`build-install/`, apart from `build/`. Run `./install.sh` again after an update.
 The Unicode data needs no network at build time. To move to a newer Unicode
 or char-set revision, fetch the upstream files (URLs in the script's header)
 and run `../scripts/ucd_trim.py RAW_DIR`.

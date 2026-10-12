@@ -3,7 +3,7 @@
 # s11_loose_ends
 
 ## Files to upload
-- `s10_r9_proof_options.zip` (the one zip to install -- everything in s10: overlaps flag, M15b, r1 ink-trap warning, M16, print proof, r2 GSUB import + ttfautohint, r3 the aarch64 note, r4 stem / sidebearing warnings, r5 contextual substitution, r6 every contextual format on import, r7 lookupflag + default-language import, r8 hamburger submenus, r9 proof options. Earlier s10 zips are superseded. Or a fresh `scripts/granjon_backup.sh -o s11_loose_ends`)
+- `s10_r10_install.zip` (the one zip to install -- everything in s10: overlaps flag, M15b, r1 ink-trap warning, M16, print proof, r2 GSUB import + ttfautohint, r3 the aarch64 note, r4 stem / sidebearing warnings, r5 contextual substitution, r6 every contextual format on import, r7 lookupflag + default-language import, r8 hamburger submenus, r9 proof options, r10 install / uninstall scripts. Earlier s10 zips are superseded. Or a fresh `scripts/granjon_backup.sh -o s11_loose_ends`)
 - `RULES.md`, `HANDOFF.md`, `ARCHITECTURE.md`, `ARC.md`, `CANON.md`
 
 ---
@@ -19,7 +19,14 @@
 - **r5: crc** (Scott).
 - **r6: crc** (Scott).
 - **r8: crc** (Scott: "thx much better").
-- **r9 -- proof options: sandbox green, not crc** (`s10_r9_proof_options.zip`). Selftest **1300 / 0** (5 new + settings round-trip). No new warnings, no new package.
+- **r9: crc** (Scott). Then: "we need an install/uninstall script pls".
+- **r10 -- install / uninstall: sandbox green, not crc** (`s10_r10_install.zip`). Selftest 1300 / 0. No new package to build; no source change.
+  - `granjon/install.sh`: a Release build in `build-install/` (output to `build-install.log`, errors shown on failure), the selftest (`--no-test` skips; a failure installs nothing), then `cmake --install --component granjon --strip` into `~/.local` (default, no sudo), `/usr/local` (`--system`, sudo) or `--prefix DIR`. The launcher's Exec is rewritten to the full path (a session PATH may lack ~/.local/bin). The list of what went where: `<prefix>/share/granjon/install-manifest.txt`. Icon cache / desktop database refreshed when the tools are there.
+  - `granjon/uninstall.sh`: removes the listed files (only Granjon's three + the list; anything else in it is skipped), same `--system` / `--prefix`; `--purge` also removes `~/.config/granjon`, `~/.local/share/granjon`, `~/.cache/granjon`. Fonts are never touched.
+  - CMake: `install()` rules in the `granjon` component -- the fetched Clipper2 has install rules of its own (headers, lib, cmake config), so a plain `cmake --install` would copy those too.
+  - New: `resources/desktop/io.github.granjon.Granjon.desktop` (Graphics; named for the app id, so GNOME matches the window to it) and `io.github.granjon.Granjon.svg` -- the full-colour app icon (docks and the app grid don't recolour symbolic icons): Scott's logo in a dusky pale green #8fa892, no tile (Scott's pick over an ink-on-paper tile) -- reads on dark and light docks.
+  - Checked: install into a test HOME (~/.local) and a prefix, the installed program starts, uninstall --purge leaves nothing. README has an Install section (and brotli in the deps lines).
+- **r9 -- proof options: sandbox green, crc** (`s10_r9_proof_options.zip`). Selftest **1300 / 0** (5 new + settings round-trip). No new warnings, no new package.
   - Preferences gains a **PROOF** card (paper moved there from EXPORT): **Pages** -- six checkboxes (Waterfall, Text, Spacing, Kerning, Features, Glyphs); **Waterfall sizes** -- points typed as a list ("72 48 36 ..."; repeats, junk and sizes outside 4-300 dropped, nothing usable = the default); **Glyph size** -- Large (5 a row) / Medium (8) / Small (12); **Glyph pages show** -- the navigator's selection (when there is one, else every glyph; the default) / every glyph; **Paper**.
   - ☰ Proof > **Options…** opens Preferences.
   - `model::ProofOptions` + `parse_proof_sizes`; `proof_plan(font, sample, options)` leaves a page's lists empty when it is off. ProofPrinter no longer leaves a blank page for a page turned off; the glyph section says "(the selection)". Every page off: the status line says so and nothing prints.

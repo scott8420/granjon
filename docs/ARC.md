@@ -375,6 +375,7 @@ Newest session at the bottom.
 - r7 (s10): lookupflag in the feature syntax, GSUB and import; GDEF marks from combining code points; import keeps default-language feature records only (DejaVu Serif's Sami Eng.alt had become a default). Four real fonts shape identically after a round trip.
 - r8 (s10): hamburger menu grouped into Export / Proof / Every glyph / Help submenus (30 rows -> 17).
 - r9 (s10): proof options -- Preferences PROOF card (pages, waterfall sizes, glyph size, selection-only glyph pages, paper); Proof > Options….
+- r10 (s10): install.sh / uninstall.sh (Release build + selftest, ~/.local or --system, manifest, --purge), CMake install component, desktop entry + colour app icon.
 
 ## Backlog notes (s10)
 - Proof: (options + selection: done r9) granjon-cli proof.

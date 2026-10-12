@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Granjon
+GenericName=Font Editor
+Comment=Draw, space and export OpenType fonts
+Exec=granjon
+Icon=io.github.granjon.Granjon
+Terminal=false
+Categories=Graphics;GTK;
+Keywords=font;typeface;glyph;type;OpenType;UFO;
+StartupNotify=true
+StartupWMClass=granjon

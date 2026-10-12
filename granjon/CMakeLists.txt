@@ -246,3 +246,16 @@ target_include_directories(granjon PRIVATE include ${GTKMM_INCLUDE_DIRS} ${PANGO
 target_link_libraries(granjon     PRIVATE ${GTKMM_LIBRARIES} ${PANGOFT2_LIBRARIES} ${FONTCONFIG_LIBRARIES} granjon_core spdlog::spdlog)
 target_link_directories(granjon   PRIVATE ${GTKMM_LIBRARY_DIRS} ${PANGOFT2_LIBRARY_DIRS} ${FONTCONFIG_LIBRARY_DIRS})
 target_compile_options(granjon    PRIVATE ${GTKMM_CFLAGS_OTHER})
+
+# ── Install (r10) ────────────────────────────────────────────────────────────
+# Everything else (UI, icons, char sets, presets, primer) is compiled into the
+# binary, so an install is three files: the program, its launcher entry and
+# the app icon -- the `granjon` component (Clipper2, fetched, has install
+# rules of its own: a plain `cmake --install` would copy its headers and
+# library too). ./install.sh / ./uninstall.sh drive this (default ~/.local).
+include(GNUInstallDirs)
+install(TARGETS granjon RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT granjon)
+install(FILES resources/desktop/io.github.granjon.Granjon.desktop
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/applications COMPONENT granjon)
+install(FILES resources/desktop/io.github.granjon.Granjon.svg
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps COMPONENT granjon)
