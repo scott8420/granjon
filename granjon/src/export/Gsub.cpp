@@ -90,6 +90,35 @@ Bytes ligatures(std::map<int, std::vector<Lig>> m) {
     return w.b;
 }
 
+// ChainContextSubst format 3: coverage per position; the lookups to apply
+// at input positions. `back` goes closest-first, as the table wants.
+Bytes chain(const std::vector<std::vector<int>>& back_reading, const std::vector<std::vector<int>>& in,
+            const std::vector<std::vector<int>>& ahead, const std::vector<std::pair<int, int>>& recs) {
+    std::vector<std::vector<int>> back(back_reading.rbegin(), back_reading.rend());
+    const std::size_t head = 2 + 2 + 2 * back.size() + 2 + 2 * in.size() + 2 + 2 * ahead.size() + 2 + 4 * recs.size();
+    std::vector<Bytes> covs;
+    using Pos = std::vector<std::vector<int>>;
+    const Pos* lists[] = {&back, &in, &ahead};
+    for (const Pos* list : lists)
+        for (const auto& v : *list) covs.push_back(coverage(v));
+    std::vector<std::size_t> at;
+    std::size_t o = head;
+    for (const auto& c : covs) { at.push_back(o); o += c.size(); }
+    Writer w;
+    w.u16(3);
+    std::size_t k = 0;
+    w.u16(static_cast<unsigned>(back.size()));
+    for (std::size_t i = 0; i < back.size(); ++i) w.u16(static_cast<unsigned>(at[k++]));
+    w.u16(static_cast<unsigned>(in.size()));
+    for (std::size_t i = 0; i < in.size(); ++i) w.u16(static_cast<unsigned>(at[k++]));
+    w.u16(static_cast<unsigned>(ahead.size()));
+    for (std::size_t i = 0; i < ahead.size(); ++i) w.u16(static_cast<unsigned>(at[k++]));
+    w.u16(static_cast<unsigned>(recs.size()));
+    for (const auto& [seq, li] : recs) { w.u16(static_cast<unsigned>(seq)); w.u16(static_cast<unsigned>(li)); }
+    for (const auto& c : covs) w.bytes(c);
+    return w.b;
+}
+
 }  // namespace
 
 Bytes build_gsub(const std::string& fea, const Prepared& p, OtfReport& rep, int* max_context) {
@@ -133,6 +162,8 @@ Bytes build_gsub(const std::string& fea, const Prepared& p, OtfReport& rep, int*
                 out = {L.kind == Kind::Multiple ? 2 : 3, 0, {sets(m)}};
                 break;
             }
+            case Kind::Chain:
+                break;   // after every other lookup has its index (below)
             case Kind::Ligature: {
                 std::map<int, std::vector<Lig>> m;
                 for (const auto& r : L.rules) {
@@ -155,6 +186,29 @@ Bytes build_gsub(const std::string& fea, const Prepared& p, OtfReport& rep, int*
         }
         remap[li] = static_cast<int>(lookups.size());
         lookups.push_back(std::move(out));
+    }
+    // contextual lookups: their records point at other lookups, now numbered
+    for (std::size_t li = 0; li < doc.lookups.size(); ++li) {
+        const auto& L = doc.lookups[li];
+        if (L.kind != Kind::Chain || L.rules.empty()) continue;
+        Lookup& out = lookups[static_cast<std::size_t>(remap[li])];
+        out.type = 6;
+        auto gids = [&](const std::vector<std::vector<std::string>>& pos) {
+            std::vector<std::vector<int>> v;
+            for (const auto& p : pos) {
+                std::vector<int> g;
+                for (const auto& n : p) g.push_back(gid(n));
+                v.push_back(std::move(g));
+            }
+            return v;
+        };
+        for (const auto& r : L.rules) {
+            std::vector<std::pair<int, int>> recs;
+            for (const auto& [seq, target] : r.lookups)
+                if (remap[static_cast<std::size_t>(target)] >= 0) recs.push_back({seq, remap[static_cast<std::size_t>(target)]});
+            out.subtables.push_back(chain(gids(r.back), gids(r.in), gids(r.ahead), recs));
+            ctx = std::max(ctx, static_cast<int>(r.back.size() + r.in.size() + r.ahead.size()));
+        }
     }
     std::vector<Feature> features;
     for (const auto& f : doc.features) {

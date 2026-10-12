@@ -195,8 +195,8 @@ void selftest_m16(const std::function<void(const std::string&, bool, const std::
             const auto x = model::parse_fea(t, [](const std::string& n) { return n != "nope"; });
             return !x.ok() && x.errors[0].text.find(want) != std::string::npos;
         };
-        check("fea: errors -- contextual, unknown glyph, class sizes, unbalanced, include",
-              err("feature calt { sub a' b by c; } calt;", "contextual") && err("feature liga { sub nope by a; } liga;", "unknown glyph") &&
+        check("fea: errors -- reverse chaining, unknown glyph, class sizes, unbalanced, include",
+              err("feature calt { rsub a' b by c; } calt;", "reverse") && err("feature liga { sub nope by a; } liga;", "unknown glyph") &&
                   err("feature smcp { sub [a b] by [c d e]; } smcp;", "classes must match") &&
                   err("feature liga { sub a b by c; ", "expected") && err("include(x.fea);", "include"));
         const auto e = model::parse_fea("\n\nfeature liga {\n  sub f i by ;\n} liga;\n");
@@ -349,5 +349,71 @@ void selftest_m16(const std::function<void(const std::string&, bool, const std::
         check("drift: a stem far from the font's (60 vs 88) is left alone", count("i", model::CheckId::Stems) == 0);
         command::add_shape(j, f, "l", granjon::geom::shape_rect({{62, 0}, {150, 760}}), "R", &at);
         check("drift: a glyph with a metrics key (l) is the Keys check's, not this one's", count("l", model::CheckId::Sidebearings) == 0);
+    }
+
+    std::cout << "s10 contextual substitution\n";
+    {
+        using K = model::FeaRule::Kind;
+        const std::string src =
+            "lookup DOTS { sub a by a.sc; } DOTS;\n"
+            "feature calt {\n"
+            "  ignore sub b a';\n"
+            "  sub [c d] a' [e f] by a.alt;\n"
+            "  sub x a' lookup DOTS;\n"
+            "  sub f' i' by f_i;\n"
+            "} calt;\n";
+        const auto d = model::parse_fea(src);
+        bool ok = d.ok() && d.features.size() == 1;
+        int chain = -1;
+        if (ok) for (int li : d.features[0].lookups) if (d.lookups[static_cast<std::size_t>(li)].kind == K::Chain) chain = li;
+        ok = ok && chain >= 0;
+        const auto* L = ok ? &d.lookups[static_cast<std::size_t>(chain)] : nullptr;
+        check("contextual: ignore, by-in-context, a named lookup, a ligature in context -- one chain lookup, 4 rules",
+              ok && L->rules.size() == 4, d.errors.empty() ? "" : d.errors[0].text);
+        if (L && L->rules.size() == 4) {
+            const auto& ig = L->rules[0];
+            const auto& by = L->rules[1];
+            const auto& nm = L->rules[2];
+            const auto& lg = L->rules[3];
+            check("contextual: ignore has back context and no lookups", ig.ignore && ig.back.size() == 1 && ig.lookups.empty());
+            check("contextual: by -> back / in / ahead and a made single lookup",
+                  by.back.size() == 1 && by.in.size() == 1 && by.ahead.size() == 1 && by.lookups.size() == 1 &&
+                      d.lookups[static_cast<std::size_t>(by.lookups[0].second)].kind == K::Single &&
+                      d.lookups[static_cast<std::size_t>(by.lookups[0].second)].rules[0].out[0] == "a.alt");
+            check("contextual: lookup DOTS applied at the marked glyph", nm.lookups.size() == 1 && nm.lookups[0].second == 0);
+            check("contextual: a marked run by one glyph -> a ligature lookup at its start",
+                  lg.in.size() == 2 && d.lookups[static_cast<std::size_t>(lg.lookups[0].second)].kind == K::Ligature);
+        }
+        check("contextual: marks must be one run", !model::parse_fea("feature calt { sub a' b c' by d; } calt;").ok());
+
+        // frac, generated + compiled + read back
+        command::Document doc;
+        model::make_preset_font(doc.font, {"sans", "Frac", "", true});
+        auto& f = doc.font;
+        auto& j = doc.journal;
+        for (const char* fig : {"zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"}) {
+            command::add_glyph(j, f, std::string(fig) + ".numr", {});
+            command::add_glyph(j, f, std::string(fig) + ".dnom", {});
+        }
+        const std::string gen = model::generate_fea(f);
+        check("generate: frac from .numr / .dnom (+ the slash: this set has no fraction)", gen.find("feature frac") != std::string::npos &&
+                                                                  gen.find("[slash zero.dnom") != std::string::npos &&
+                                                                  gen.find("' by [zero.dnom") != std::string::npos,
+              gen.substr(gen.find("feature frac") == std::string::npos ? 0 : gen.find("feature frac"), 300));
+        command::set_features(j, f, gen, "g", false);
+        otf::OtfReport rep;
+        const auto b = otf::compile_otf(f, {}, &rep);
+        check("frac: compiles", rep.fea_errors == 0 && !table(b, "GSUB").empty());
+        model::Font back;
+        reader::ImportReport ir;
+        std::string why;
+        reader::import_font(b, back, &ir, &why);
+        const auto bd = model::parse_fea(back.features().text, [&](const std::string& n) { return back.glyph(n) != nullptr; });
+        bool has_chain = false;
+        for (const auto& L2 : bd.lookups) has_chain = has_chain || L2.kind == K::Chain;
+        check("frac: the contextual lookup reads back from GSUB (and parses)", bd.ok() && has_chain &&
+                                                                                back.features().text.find("' lookup ") != std::string::npos,
+              bd.errors.empty() ? "" : bd.errors[0].text);
+        check("frac: and compiles again", otf::compile_otf(back).size() > 0 && feature_tags(table(otf::compile_otf(back), "GSUB")) == feature_tags(table(b, "GSUB")));
     }
 }

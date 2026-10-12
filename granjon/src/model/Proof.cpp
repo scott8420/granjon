@@ -150,6 +150,7 @@ ProofPlan proof_plan(const Font& f, const std::string& sample) {
                             if (!c) { ok = false; break; }
                             utf8(w, c);
                         }
+                        if (r.kind == FeaRule::Kind::Chain) continue;   // its inputs are another lookup's outputs
                         if (r.kind == FeaRule::Kind::Single)   // every glyph a class names
                             for (std::size_t i = 1; i < r.in[0].size() && n < 40; ++i)
                                 if (const char32_t c = typed(f, r.in[0][i])) { std::string x; utf8(x, c); w += x; }
@@ -157,6 +158,11 @@ ProofPlan proof_plan(const Font& f, const std::string& sample) {
                         text += (text.empty() ? "" : " ") + w;
                         ++n;
                     }
+                if (tag == "frac") {   // a fraction to show, not its inputs
+                    bool ok = true;
+                    for (char32_t c : std::u32string(U"1/2 3/4 15/16")) ok = ok && (c == U' ' || f.glyph_for(c));
+                    if (ok) text = "1/2 3/4 15/16";
+                }
                 if (!text.empty()) p.features.push_back({tag, text});
             }
     }

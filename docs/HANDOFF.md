@@ -3,7 +3,7 @@
 # s11_loose_ends
 
 ## Files to upload
-- `s10_r4_drift_checks.zip` (the one zip to install -- everything in s10: overlaps flag, M15b, r1 ink-trap warning, M16, print proof, r2 GSUB import + ttfautohint, r3 the aarch64 note, r4 stem / sidebearing warnings. Earlier s10 zips are superseded. Or a fresh `scripts/granjon_backup.sh -o s11_loose_ends`)
+- `s10_r5_contextual.zip` (the one zip to install -- everything in s10: overlaps flag, M15b, r1 ink-trap warning, M16, print proof, r2 GSUB import + ttfautohint, r3 the aarch64 note, r4 stem / sidebearing warnings, r5 contextual substitution. Earlier s10 zips are superseded. Or a fresh `scripts/granjon_backup.sh -o s11_loose_ends`)
 - `RULES.md`, `HANDOFF.md`, `ARCHITECTURE.md`, `ARC.md`, `CANON.md`
 
 ---
@@ -15,6 +15,13 @@
 - **M16: crc** (Scott, on `s10_m16_features.zip`).
 - **Print proof: crc** (Scott).
 - **r3: crc** (Scott).
+- **r4: crc** (Scott).
+- **r5 -- contextual substitution: sandbox green, not crc** (`s10_r5_contextual.zip`). Selftest **1291 / 0** (10 new). No new warnings, no new package.
+  - Feature syntax: marked glyphs -- `sub [c d] a' [e f] by a.alt;` (single in context), `sub f' i' by f_i;` (ligature in context), `sub a from` in context, `sub x a' lookup NAME;` (a named lookup applied at the mark), `ignore sub b a', a' c;`. The marks must be one run. A rule's by / from becomes a lookup of its own (not in any feature) that the context applies. Contextual rules run into one chain lookup, as the other kinds do. Errors now: reverse chaining (rsub), not contextual.
+  - GSUB: ChainContextSubst format 3 (a coverage per position -- back closest-first, input, ahead -- and the lookup records), one subtable per rule in file order; usMaxContext counts the whole context.
+  - **Generate writes frac**: figures with .numr and .dnom, plus a fraction glyph (else the slash -- GF Latin Core has no fraction) -> slash -> fraction, figures -> numerators, a numerator after the divider or a denominator -> a denominator. The proof shows "1/2 3/4 15/16" for it.
+  - **Import reads the coverage kind of contextual lookups** (chaining format 3): `sub ... x' lookup NAME ...;` / `ignore sub ...`, the lookups they apply written first so every name is known where it is used; the glyph- / class-list kinds (5, 6.1, 6.2) are still counted and left out.
+  - Checked with HarfBuzz: a generated frac -- 1/2 -> one.numr slash two.dnom, 15/16 -> numerators then denominators; calt -- "ca ba da" -> c a.alt / b a (ignored) / d a.alt. Real fonts: Carlito now imports whole (23 features, 644 rules, was 22 / 469 with 7 contextual skipped); DejaVu Sans (12 / 472; 4 class-kind contextual still skipped), GFS Baskerville (1 / 19) -- all three recompile with no errors and shape seven test strings (liga, smcp + onum, frac, dlig, salt + ss01, sups + subs, ordn + calt) identically to the originals. otf_check passes.
 - **r4 -- stem and sidebearing warnings: sandbox green, not crc** (`s10_r4_drift_checks.zip`). Selftest **1281 / 0** (6 new). No new warnings, no new package.
   - **"Stem weights (warning)"** (tag `stems`): in a lower- or uppercase letter, a straight vertical stem (two facing line edges, at least 0.3 x the x-height / cap height, overlapping by half) within 2.5 % of the font's stem but not on it -- "The stem at x 62 is 86 wide; the font's lowercase stem is 88". The font's stem: the preset's record (STARTED FROM), else n's / H's measured stem. Fix moves the stem's right edge (its two nodes) by the difference.
   - **"Sidebearings (warning)"** (tag `sidebearings`): a letter with NO metrics key (the Keys check owns keyed glyphs) whose straight side (a vertical edge at its extreme, half the height or more) or round side (a bowl's extreme: a smooth node, handles plumb) is within 5 % (3 units at least) of its control's -- n / o, H / O -- but not on it. Fix sets that side (left: the drawing moves, the right side kept; right: the width).
@@ -321,7 +328,7 @@ Primitives (rectangle, ellipse -- Shift square / circle, Alt from centre; line =
 Then: M15 transform panel + corner tools + extreme points + offset stroke; M16 mark positioning, features editor, italic angle / font info. Later: print proof, ttfautohint, weight masters (v3).
 
 ## Still open
-- s10 asks: answered. M16, print proof, GSUB import and the ttfautohint hook done in s10. Next (s11): Scott uses Granjon and brings gotchas; loose ends left -- contextual features (calt / frac; GSUB import would then read them too), proof options, horizontal-stem drift, a per-script control for the side warnings.
+- s10 asks: answered. M16, print proof, GSUB import and the ttfautohint hook done in s10. Next (s11): Scott uses Granjon and brings gotchas; loose ends left -- contextual lookups of the glyph / class-list kind on import, proof options, horizontal-stem drift, a per-script control for the side warnings.
 - M15 done in the sandbox (s10). Transform follow-ons: Transform Each (each path about its own centre), a remembered origin, a free-transform 'perspective' (no -- fonts don't), handles in Pick mode for a node selection (now Select only).
 - Overlap vs direction check: built in s10 (overlaps finding; direction judges nesting only).
 - M14 questions (s08): answered at the close -- see "s09 first" at the top.

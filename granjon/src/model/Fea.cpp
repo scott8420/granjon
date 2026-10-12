@@ -182,20 +182,111 @@ private:
         expect(";");
     }
 
+    // One glyph sequence of a rule, up to by / from / ; / , -- each position
+    // a glyph / class, marked or not, a marked one perhaps naming a lookup.
+    struct Item { std::vector<std::string> g; bool marked = false; std::string lookup; int line = 0; };
+    bool sequence(std::vector<Item>& items) {
+        while (peek().k != Tok::K::End && !is("by") && !is("from") && !is(";") && !is(",")) {
+            Item it;
+            it.line = peek().line;
+            if (!item(it.g)) { error(peek().line, "unexpected '" + peek().s + "' in a substitution"); skip_statement(); return false; }
+            if (is("'")) {
+                take();
+                it.marked = true;
+                while (is("lookup")) {
+                    take();
+                    const Tok& n = take();
+                    if (!it.lookup.empty()) { error(n.line, "one lookup per marked glyph"); continue; }
+                    it.lookup = n.s;
+                }
+            }
+            items.push_back(std::move(it));
+        }
+        return true;
+    }
+
+    // A lookup made for a contextual rule's by / from (not in any feature).
+    int helper(FeaRule::Kind kind, FeaRule r) {
+        FeaLookup l;
+        l.kind = kind;
+        l.line = r.line;
+        r.kind = kind;
+        r.back.clear();
+        r.ahead.clear();
+        l.rules.push_back(std::move(r));
+        m_doc.lookups.push_back(std::move(l));
+        return static_cast<int>(m_doc.lookups.size()) - 1;
+    }
+
+    // Split a marked sequence into back / in / ahead; false (an error said) when the marks aren't one run.
+    bool context(const std::vector<Item>& items, FeaRule& r, int line) {
+        int first = -1, last = -1;
+        for (int i = 0; i < static_cast<int>(items.size()); ++i)
+            if (items[static_cast<std::size_t>(i)].marked) { if (first < 0) first = i; last = i; }
+        for (int i = first; i <= last; ++i)
+            if (!items[static_cast<std::size_t>(i)].marked) { error(line, "the marked (') glyphs must be one run"); return false; }
+        for (int i = 0; i < static_cast<int>(items.size()); ++i) {
+            const auto& g = items[static_cast<std::size_t>(i)].g;
+            if (g.empty()) return false;   // an unknown glyph: already an error
+            (i < first ? r.back : i > last ? r.ahead : r.in).push_back(g);
+        }
+        r.kind = FeaRule::Kind::Chain;
+        return true;
+    }
+
+    // ignore sub a x', x' b;   (the 'ignore' taken)
+    bool ignore_rules(std::vector<FeaRule>& out) {
+        const int line = peek().line;
+        if (!is("sub") && !is("substitute")) { error(line, "'ignore' takes 'sub' (ignore pos is not compiled)"); skip_statement(); return false; }
+        take();
+        while (true) {
+            std::vector<Item> items;
+            if (!sequence(items)) return false;
+            FeaRule r;
+            r.line = line;
+            r.ignore = true;
+            bool marked = false;
+            for (const auto& it : items) marked = marked || it.marked;
+            if (!marked) { error(line, "an ignore rule needs a marked (') glyph"); skip_statement(); return false; }
+            if (!context(items, r, line)) { skip_statement(); return false; }
+            out.push_back(std::move(r));
+            if (is(",")) { take(); continue; }
+            break;
+        }
+        expect(";");
+        return true;
+    }
+
     // sub ... ; -> a rule (false: malformed, skipped)
     bool sub_rule(FeaRule& r) {
         const int line = take().line;   // sub / substitute
         r.line = line;
-        std::vector<std::vector<std::string>> in, out;
-        while (peek().k != Tok::K::End && !is("by") && !is("from") && !is(";")) {
-            std::vector<std::string> v;
-            if (!item(v)) { error(peek().line, "unexpected '" + peek().s + "' in a substitution"); skip_statement(); return false; }
-            if (is("'")) { error(line, "contextual substitution (a ' mark) is not supported yet"); skip_statement(); return false; }
-            in.push_back(std::move(v));
+        std::vector<Item> items;
+        if (!sequence(items)) return false;
+        bool marked = false, named = false;
+        for (const auto& it : items) { marked = marked || it.marked; named = named || !it.lookup.empty(); }
+        if (items.empty()) { error(line, "a substitution needs something to substitute"); skip_statement(); return false; }
+        if (is(",")) { error(line, "',' belongs to ignore rules"); skip_statement(); return false; }
+        if (marked && named) {   // sub a x' lookup L b;
+            if (!is(";")) { error(line, "a rule naming lookups takes no 'by' / 'from'"); skip_statement(); return false; }
+            take();
+            if (!context(items, r, line)) return false;
+            int k = 0;
+            for (const auto& it : items) {
+                if (!it.marked) continue;
+                if (!it.lookup.empty()) {
+                    auto f = m_named.find(it.lookup);
+                    if (f == m_named.end()) error(it.line, "unknown lookup '" + it.lookup + "'");
+                    else r.lookups.push_back({k, f->second});
+                }
+                ++k;
+            }
+            return !r.lookups.empty();
         }
-        if (in.empty()) { error(line, "a substitution needs something to substitute"); skip_statement(); return false; }
-        if (is(";")) { error(line, "'sub' without 'by' or 'from'"); take(); return false; }
+        if (is(";")) { error(line, marked ? "a contextual rule needs 'by', 'from' or 'lookup'" : "'sub' without 'by' or 'from'"); take(); return false; }
         const bool from = take().s == "from";
+        std::vector<std::vector<std::string>> in, out;
+        for (const auto& it : items) if (!marked || it.marked) in.push_back(it.g);
         while (peek().k != Tok::K::End && !is(";")) {
             if (is("NULL")) { error(line, "deleting glyphs (by NULL) is not supported"); skip_statement(); return false; }
             std::vector<std::string> v;
@@ -203,40 +294,41 @@ private:
             out.push_back(std::move(v));
         }
         expect(";");
-        for (const auto& v : in) if (v.empty()) return false;   // an unknown glyph: already an error
+        for (const auto& it : items) if (it.g.empty()) return false;   // an unknown glyph: already an error
         for (const auto& v : out) if (v.empty()) return false;
+        FeaRule plain;
+        plain.line = line;
         if (from) {
             if (in.size() != 1 || in[0].size() != 1 || out.size() != 1) { error(line, "'from' takes one glyph and one class: sub a from [a.1 a.2];"); return false; }
-            r.kind = FeaRule::Kind::Alternate;
-            r.in = in;
-            r.out = out[0];
-            return true;
-        }
-        if (in.size() == 1 && out.size() == 1) {
-            r.kind = FeaRule::Kind::Single;
-            r.in = in;
-            if (out[0].size() == in[0].size()) r.out = out[0];
-            else if (out[0].size() == 1) r.out.assign(in[0].size(), out[0][0]);
+            plain.kind = FeaRule::Kind::Alternate;
+            plain.in = in;
+            plain.out = out[0];
+        } else if (in.size() == 1 && out.size() == 1) {
+            plain.kind = FeaRule::Kind::Single;
+            plain.in = in;
+            if (out[0].size() == in[0].size()) plain.out = out[0];
+            else if (out[0].size() == 1) plain.out.assign(in[0].size(), out[0][0]);
             else { error(line, "single substitution: " + std::to_string(in[0].size()) + " glyphs to " + std::to_string(out[0].size()) + " -- the classes must match in size"); return false; }
-            return true;
-        }
-        if (in.size() == 1 && out.size() >= 2) {
+        } else if (in.size() == 1 && out.size() >= 2) {
             if (in[0].size() != 1) { error(line, "multiple substitution takes one glyph (not a class) on the left"); return false; }
             for (const auto& v : out) if (v.size() != 1) { error(line, "multiple substitution: glyphs on the right, not classes"); return false; }
-            r.kind = FeaRule::Kind::Multiple;
-            r.in = in;
-            for (const auto& v : out) r.out.push_back(v[0]);
-            return true;
-        }
-        if (in.size() >= 2 && out.size() == 1) {
+            plain.kind = FeaRule::Kind::Multiple;
+            plain.in = in;
+            for (const auto& v : out) plain.out.push_back(v[0]);
+        } else if (in.size() >= 2 && out.size() == 1) {
             if (out[0].size() != 1) { error(line, "a ligature substitutes ONE glyph"); return false; }
-            r.kind = FeaRule::Kind::Ligature;
-            r.in = in;
-            r.out = out[0];
-            return true;
+            plain.kind = FeaRule::Kind::Ligature;
+            plain.in = in;
+            plain.out = out[0];
+        } else {
+            error(line, "many glyphs by many glyphs is not a substitution OpenType has");
+            return false;
         }
-        error(line, "many glyphs by many glyphs is not a substitution OpenType has");
-        return false;
+        if (!marked) { r = std::move(plain); return true; }
+        // contextual: the substitution becomes a lookup of its own, applied at the marked run
+        if (!context(items, r, line)) return false;
+        r.lookups.push_back({0, helper(plain.kind, plain)});
+        return true;
     }
 
     // Statements of a lookup block or a feature. `feature` null = inside a named lookup.
@@ -288,9 +380,37 @@ private:
                 cur = -1;
                 continue;
             }
-            if (w == "rsub" || w == "reversesub" || w == "ignore") {
-                error(x.line, "'" + w + "' (contextual) is not supported yet");
+            if (w == "rsub" || w == "reversesub") {
+                error(x.line, "'" + w + "' (reverse chaining) is not supported");
                 skip_statement();
+                continue;
+            }
+            if (w == "ignore") {
+                take();
+                std::vector<FeaRule> rs;
+                if (!ignore_rules(rs)) continue;
+                for (auto& r : rs) {
+                    ++m_doc.rules;
+                    int target = lookup;
+                    if (feature) {
+                        if (cur < 0 || m_doc.lookups[static_cast<std::size_t>(cur)].kind != FeaRule::Kind::Chain) {
+                            FeaLookup l;
+                            l.kind = FeaRule::Kind::Chain;
+                            l.line = r.line;
+                            m_doc.lookups.push_back(l);
+                            cur = static_cast<int>(m_doc.lookups.size()) - 1;
+                            feature->lookups.push_back(cur);
+                        }
+                        target = cur;
+                    }
+                    auto& L = m_doc.lookups[static_cast<std::size_t>(target)];
+                    if (!L.rules.empty() && L.kind != FeaRule::Kind::Chain) {
+                        error(r.line, "lookup '" + L.name + "' mixes kinds of substitution -- one lookup, one kind");
+                        continue;
+                    }
+                    L.kind = FeaRule::Kind::Chain;
+                    L.rules.push_back(std::move(r));
+                }
                 continue;
             }
             if (w == "pos" || w == "position" || w == "enum" || w == "enumerate") {
@@ -448,6 +568,32 @@ std::string generate_fea(const Font& f) {
                                               std::all_of(suf.begin() + 3, suf.end(), [](char c) { return std::isdigit(static_cast<unsigned char>(c)); })))
             salt[base].push_back(n);
     }
+    // frac (s10): figures with .numr and .dnom, and a fraction slash
+    std::string frac_text;
+    {
+        static const char* kFig[] = {"zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"};
+        std::vector<std::string> fig, nu, de;
+        for (const char* d : kFig)
+            if (names.count(d) && names.count(std::string(d) + ".numr") && names.count(std::string(d) + ".dnom")) {
+                fig.push_back(d);
+                nu.push_back(std::string(d) + ".numr");
+                de.push_back(std::string(d) + ".dnom");
+            }
+        const std::string divider = names.count("fraction") ? "fraction" : names.count("slash") ? "slash" : "";
+        if (fig.size() >= 2 && !divider.empty()) {
+            auto cls = [](const std::vector<std::string>& v, const std::string& extra = {}) {
+                std::string c = "[";
+                if (!extra.empty()) c += extra + " ";
+                for (std::size_t i = 0; i < v.size(); ++i) c += (i ? " " : "") + v[i];
+                return c + "]";
+            };
+            frac_text = "\nfeature frac {\n";
+            if (divider == "fraction" && names.count("slash")) frac_text += "    lookup FRAC_SLASH { sub slash by fraction; } FRAC_SLASH;\n";
+            frac_text += "    lookup FRAC_NUMR { sub " + cls(fig) + " by " + cls(nu) + "; } FRAC_NUMR;\n";
+            frac_text += "    lookup FRAC_DNOM { sub " + cls(de, divider) + " " + cls(nu) + "' by " + cls(de) + "; } FRAC_DNOM;\n";
+            frac_text += "} frac;\n";
+        }
+    }
     for (const auto& [base, alts] : salt) {
         if (alts.size() == 1) feat["salt"].push_back("    sub " + base + " by " + alts[0] + ";");
         else {
@@ -456,7 +602,7 @@ std::string generate_fea(const Font& f) {
             feat["salt"].push_back(l + "];");
         }
     }
-    if (feat.empty()) return {};
+    if (feat.empty() && frac_text.empty()) return {};
     std::string out = std::string(kFeaAutoBegin) + "\nlanguagesystem DFLT dflt;\nlanguagesystem latn dflt;\n";
     // a sensible order: substitutions people turn on first, then the rest by tag
     std::vector<std::string> order = {"liga", "smcp", "c2sc", "case", "onum", "lnum", "pnum", "tnum",
@@ -475,6 +621,7 @@ std::string generate_fea(const Font& f) {
         }
         out += "} " + tag + ";\n";
     }
+    out += frac_text;
     out += std::string(kFeaAutoEnd) + "\n";
     return out;
 }

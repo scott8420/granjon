@@ -369,8 +369,10 @@ Newest session at the bottom.
 
 - r4 (s10): two more warnings -- stem weights (within 2.5 % of the font's stem) and sidebearings (straight / bowl sides within 5 % of n o / H O, unkeyed glyphs); the ink-trap warning narrowed to letters and figures. Tuned on DejaVu Sans and Carlito.
 
+- r5 (s10): contextual substitution -- marked glyphs, ignore, lookup references; ChainContextSubst format 3; Generate writes frac; import reads coverage-kind contextual lookups. HarfBuzz-identical round trips on DejaVu Sans, Carlito, GFS Baskerville.
+
 ## Backlog notes (s10)
 - Proof: an options dialog (pages, sizes, paper), a glyph-selection proof, granjon-cli proof.
-- Features: contextual substitution (calt, frac, ignore), GSUB import -> features.fea, glyph rename rewriting the feature text, aalt, a syntax-aware editor (line numbers).
+- Features: (contextual + GSUB import: done s10) class / glyph-list contextual formats on import, glyph rename rewriting the feature text, aalt, a syntax-aware editor (line numbers).
 - Round corners: a per-corner radius handle on the canvas (drag to set); "inverse" (concave) rounding.
 - Extreme points: a font-wide pass (menu, like Remove overlaps in every glyph).
