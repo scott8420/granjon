@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
+  <!-- Granjon inspector icon (M15b): round corners: a corner bent into a quarter circle. Symbolic: currentColor only. -->
+  <path fill="currentColor" d="M2 15 V8 A6 6 0 0 1 8 2 H15 V4.6 H8 A3.4 3.4 0 0 0 4.6 8 V15 Z"/>
+  <path fill="currentColor" opacity="0.45" d="M2 2 H5 V3 H3 V5 H2 Z"/>
+</svg>

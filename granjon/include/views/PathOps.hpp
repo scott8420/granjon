@@ -57,5 +57,23 @@ void transform_step(ViewContext& ctx, double sx, double sy, double rot, double s
 void flip_picked(ViewContext& ctx, bool horizontal);   // about the box centre
 void rotate_picked(ViewContext& ctx, double deg);      // about the box centre
 double clone_offset(const ViewContext& ctx);
+// M15b: the remembered amounts (Settings; 0 there = a share of the em).
+double corner_radius(const ViewContext& ctx);   // 2 % of the em
+double trap_width(const ViewContext& ctx);      // 1.5 %
+double trap_depth(const ViewContext& ctx);      // 2.5 %
+// M15b: on the pick. Round corners / ink traps work on the picked NODES (a
+// whole path picked = all its corners); extreme points on the picked paths,
+// or the whole glyph when nothing is picked. A whole-path pick stays picked
+// (re-indexed); a node pick is cleared (the nodes it named were replaced).
+void round_picked(ViewContext& ctx);
+void ink_trap_picked(ViewContext& ctx);
+void extremes_picked(ViewContext& ctx);
+// M15b: offset / expand stroke on the picked paths (none picked = every path).
+double offset_distance(const ViewContext& ctx);   // 2 % of the em
+double stroke_width(const ViewContext& ctx);      // the Line tool's stroke (else the font's stem)
+geom::Join offset_join(const ViewContext& ctx);
+geom::Cap  stroke_cap(const ViewContext& ctx);
+void offset_picked(ViewContext& ctx, bool bolder);   // the result comes picked
+void stroke_picked(ViewContext& ctx);
 
 }  // namespace granjon::views

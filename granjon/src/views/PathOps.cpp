@@ -313,4 +313,122 @@ void transform_step(ViewContext& ctx, double sx, double sy, double rot, double s
     if (ctx.say) ctx.say(label + ": " + pick_subject(ctx) + " (steps in a row are one undo step).", false);
 }
 
+// ── M15b ───────────────────────────────────────────────────────────────────
+
+namespace {
+double em(const ViewContext& ctx) { return std::max(16, ctx.doc.font.info().units_per_em); }
+double setting_or(int v, double dflt) { return v > 0 ? v : std::round(dflt); }
+
+// After an op that replaced nodes: a whole-path pick re-picks those paths
+// (their node count changed), a node pick is dropped.
+void repick(ViewContext& ctx, bool whole, const std::set<int>& cs) {
+    ctx.pick.clear();
+    if (whole)
+        if (const model::Glyph* g = ctx.doc.font.glyph(ctx.selected))
+            for (int ci : cs)
+                if (ci >= 0 && ci < static_cast<int>(g->contours.size()))
+                    for (int i = 0; i < static_cast<int>(g->contours[static_cast<std::size_t>(ci)].nodes.size()); ++i)
+                        ctx.pick.insert({ci, i, geom::PointRef::Part::Node});
+    ctx.pick_changed.emit();
+}
+}  // namespace
+
+double corner_radius(const ViewContext& ctx) { return setting_or(ctx.settings.corner_radius, 0.02 * em(ctx)); }
+double trap_width(const ViewContext& ctx) { return setting_or(ctx.settings.trap_width, 0.015 * em(ctx)); }
+double trap_depth(const ViewContext& ctx) { return setting_or(ctx.settings.trap_depth, 0.025 * em(ctx)); }
+
+void round_picked(ViewContext& ctx) {
+    const bool whole = whole_paths_picked(ctx);
+    const auto cs = picked_contours(ctx);
+    std::string why;
+    int n = 0;
+    if (!command::round_corners(ctx.doc.journal, ctx.doc.font, ctx.selected, ctx.pick, corner_radius(ctx), &n, &why)) {
+        if (ctx.say) ctx.say(why, true);
+        return;
+    }
+    repick(ctx, whole, cs);
+    if (ctx.say) ctx.say(ctx.doc.journal.undo_label() + ", radius " + std::to_string(std::lround(corner_radius(ctx))) + ".", false);
+}
+
+void ink_trap_picked(ViewContext& ctx) {
+    const bool whole = whole_paths_picked(ctx);
+    const auto cs = picked_contours(ctx);
+    std::string why;
+    int n = 0;
+    if (!command::ink_traps(ctx.doc.journal, ctx.doc.font, ctx.selected, ctx.pick, trap_width(ctx), trap_depth(ctx), &n, &why)) {
+        if (ctx.say) ctx.say(why, true);
+        return;
+    }
+    repick(ctx, whole, cs);
+    if (ctx.say)
+        ctx.say(ctx.doc.journal.undo_label() + " -- " + std::to_string(std::lround(trap_width(ctx))) + " wide, " +
+                    std::to_string(std::lround(trap_depth(ctx))) + " deep.", false);
+}
+
+void extremes_picked(ViewContext& ctx) {
+    const bool whole = whole_paths_picked(ctx);
+    const auto cs = picked_contours(ctx);
+    std::string why;
+    int n = 0;
+    if (!command::add_extremes(ctx.doc.journal, ctx.doc.font, ctx.selected, {cs.begin(), cs.end()}, &n, &why)) {
+        if (ctx.say) ctx.say(cs.empty() ? why : why.substr(0, why.size() - 1) + " on the picked paths.", false);
+        return;
+    }
+    if (!cs.empty()) repick(ctx, whole, cs);
+    if (ctx.say) ctx.say(ctx.doc.journal.undo_label() + (cs.empty() ? " -- the whole glyph." : "."), false);
+}
+
+double offset_distance(const ViewContext& ctx) { return setting_or(ctx.settings.offset_distance, 0.02 * em(ctx)); }
+double stroke_width(const ViewContext& ctx) {
+    if (ctx.settings.line_width > 0) return ctx.settings.line_width;
+    const auto& info = ctx.doc.font.info();
+    if (info.origin.stem_v > 0) return info.origin.stem_v;
+    return std::max(1.0, std::round(info.units_per_em * 0.08));
+}
+geom::Join offset_join(const ViewContext& ctx) {
+    return ctx.settings.offset_join == 1 ? geom::Join::Round : ctx.settings.offset_join == 2 ? geom::Join::Bevel : geom::Join::Miter;
+}
+geom::Cap stroke_cap(const ViewContext& ctx) {
+    return ctx.settings.stroke_cap == 1 ? geom::Cap::Round : ctx.settings.stroke_cap == 2 ? geom::Cap::Square : geom::Cap::Butt;
+}
+
+namespace {
+void pick_result(ViewContext& ctx, const std::vector<int>& at) {
+    ctx.pick.clear();
+    if (const model::Glyph* g = ctx.doc.font.glyph(ctx.selected))
+        for (int ci : at)
+            for (int i = 0; i < static_cast<int>(g->contours[static_cast<std::size_t>(ci)].nodes.size()); ++i)
+                ctx.pick.insert({ci, i, geom::PointRef::Part::Node});
+    ctx.pick_changed.emit();
+}
+}  // namespace
+
+void offset_picked(ViewContext& ctx, bool bolder) {
+    const auto cs = picked_contours(ctx);
+    const double d = offset_distance(ctx) * (bolder ? 1 : -1);
+    std::vector<int> at;
+    std::string why;
+    if (!command::offset_contours(ctx.doc.journal, ctx.doc.font, ctx.selected, {cs.begin(), cs.end()}, d, offset_join(ctx), &at, &why)) {
+        if (ctx.say) ctx.say(why, true);
+        return;
+    }
+    pick_result(ctx, at);
+    if (ctx.say)
+        ctx.say(ctx.doc.journal.undo_label() + (cs.empty() ? " -- the whole glyph, " : " -- ") +
+                    std::to_string(at.size()) + (at.size() == 1 ? " path." : " paths."), false);
+}
+
+void stroke_picked(ViewContext& ctx) {
+    const auto cs = picked_contours(ctx);
+    std::vector<int> at;
+    std::string why;
+    if (!command::expand_stroke(ctx.doc.journal, ctx.doc.font, ctx.selected, {cs.begin(), cs.end()}, stroke_width(ctx),
+                                offset_join(ctx), stroke_cap(ctx), &at, &why)) {
+        if (ctx.say) ctx.say(why, true);
+        return;
+    }
+    pick_result(ctx, at);
+    if (ctx.say) ctx.say(ctx.doc.journal.undo_label() + " -- " + std::to_string(at.size()) + (at.size() == 1 ? " path." : " paths."), false);
+}
+
 }  // namespace granjon::views

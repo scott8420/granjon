@@ -82,6 +82,12 @@ Settings load_settings(const std::string& file) {
         get(e, "image_tint", s.image_tint);
         get(e, "image_opacity", s.image_opacity);
         get(e, "line_width", s.line_width);
+        get(e, "corner_radius", s.corner_radius);
+        get(e, "trap_width", s.trap_width);
+        get(e, "trap_depth", s.trap_depth);
+        get(e, "offset_distance", s.offset_distance);
+        get(e, "offset_join", s.offset_join);
+        get(e, "stroke_cap", s.stroke_cap);
         get(e, "handles_relative", s.handles_relative);
     }
     if (o.is_object()) {
@@ -91,6 +97,12 @@ Settings load_settings(const std::string& file) {
     // Ranges and vocabularies: out of bounds -> the default.
     if (s.image_opacity < 5 || s.image_opacity > 100) s.image_opacity = d.image_opacity;
     if (s.line_width < 0 || s.line_width > 10000) s.line_width = d.line_width;
+    if (s.corner_radius < 0 || s.corner_radius > 10000) s.corner_radius = d.corner_radius;
+    if (s.trap_width < 0 || s.trap_width > 10000) s.trap_width = d.trap_width;
+    if (s.trap_depth < 0 || s.trap_depth > 10000) s.trap_depth = d.trap_depth;
+    if (s.offset_distance < 0 || s.offset_distance > 10000) s.offset_distance = d.offset_distance;
+    if (s.offset_join < 0 || s.offset_join > 2) s.offset_join = d.offset_join;
+    if (s.stroke_cap < 0 || s.stroke_cap > 2) s.stroke_cap = d.stroke_cap;
     {
         const auto& t = s.image_tint;
         const bool hex = t.size() == 7 && t[0] == '#' &&
@@ -121,6 +133,12 @@ bool save_settings(const std::string& file, const Settings& s) {
                     {"image_tint", s.image_tint},
                     {"image_opacity", s.image_opacity},
                     {"line_width", s.line_width},
+                    {"corner_radius", s.corner_radius},
+                    {"trap_width", s.trap_width},
+                    {"trap_depth", s.trap_depth},
+                    {"offset_distance", s.offset_distance},
+                    {"offset_join", s.offset_join},
+                    {"stroke_cap", s.stroke_cap},
                     {"handles_relative", s.handles_relative}}},
         {"overview", {{"cell", s.overview_cell}, {"charset", s.overview_charset}}},
         {"navigator", {{"open", s.navigator_open}}},

@@ -138,7 +138,7 @@ Every check produces a **report list** with a "why this matters" note. Each item
 
 **Outlines**
 - Contour direction (CFF wants outer contours counterclockwise; TT reverses on export).
-- Open contours, missing extreme points, overlaps.
+- Open contours (M7), missing extreme points and overlaps (s10 -- both fixable).
 
 **Metrics**
 - Metrics keys propagate: edit one glyph and its dependents update.

@@ -39,6 +39,12 @@ struct Settings {
                                                // unless the image carries its own (UFO color)
     int         image_opacity   = 30;      // M13: the opacity a newly placed image gets, percent (5..100)
     int         line_width      = 0;       // M14a: the Line tool's stroke, font units (0 = the font's stem)
+    int         corner_radius   = 0;       // M15b: Round corners, font units (0 = 2 % of the em)
+    int         trap_width      = 0;       // M15b: ink trap opening along each edge (0 = 1.5 % of the em)
+    int         trap_depth      = 0;       // M15b: ink trap depth into the ink (0 = 2.5 % of the em)
+    int         offset_distance = 0;       // M15b: Offset path, bolder / lighter by this (0 = 2 % of the em)
+    int         offset_join     = 0;       // M15b: 0 miter, 1 round, 2 bevel (offset and stroke corners)
+    int         stroke_cap      = 0;       // M15b: Expand stroke's ends: 0 butt, 1 round, 2 square
     bool        handles_relative = true;   // the inspector shows handles relative to their node
 
     // ── Navigator ─────────────────────────────────────────────────────────

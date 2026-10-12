@@ -1,4 +1,5 @@
 #include "geom/Edit.hpp"
+#include "geom/Overlap.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -512,8 +513,12 @@ bool set_start(Contour& c, int index) {
 
 int depth(const std::vector<Contour>& cs, int index) {
     if (index < 0 || index >= static_cast<int>(cs.size()) || cs[index].nodes.empty()) return 0;
-    // A point of this contour: the middle of its first segment (a start node
-    // can sit on another contour's edge more easily than a curve's middle).
+    // s10: a closed contour's depth is its NESTING -- how many others hold it
+    // wholly, by filled area. A path that merely overlaps another is not a
+    // counter (Scott: overlaps are their own finding, not "wrong way").
+    if (cs[index].closed && cs[index].nodes.size() >= 2) return nest_depths(cs)[static_cast<std::size_t>(index)];
+    // An open contour: a point of it (the middle of its first segment) tested
+    // against the others.
     const Vec2 p = segment_count(cs[index]) > 0 ? segment(cs[index], 0).at(0.5)
                                                 : Vec2{cs[index].nodes[0].x, cs[index].nodes[0].y};
     int d = 0;
@@ -524,11 +529,13 @@ int depth(const std::vector<Contour>& cs, int index) {
 
 std::vector<int> wrong_way(const std::vector<Contour>& cs) {
     std::vector<int> out;
+    std::optional<std::vector<int>> d;   // computed once, only when needed
     for (int i = 0; i < static_cast<int>(cs.size()); ++i) {
         if (!cs[i].closed || cs[i].nodes.size() < 2) continue;
         const double a = signed_area(cs[i]);
         if (std::abs(a) < 1e-9) continue;
-        const bool outer = depth(cs, i) % 2 == 0;
+        if (!d) d = nest_depths(cs);
+        const bool outer = (*d)[static_cast<std::size_t>(i)] % 2 == 0;
         if ((a > 0) != outer) out.push_back(i);
     }
     return out;

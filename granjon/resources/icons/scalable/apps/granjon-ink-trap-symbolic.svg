@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
+  <!-- Granjon inspector icon (M15b): ink trap: a V notch cut into the ink at a crotch. Symbolic: currentColor only. -->
+  <path fill="currentColor" d="M1 1 H15 V6 H8.2 L4.4 4.4 L6 8.2 V15 H1 Z"/>
+</svg>

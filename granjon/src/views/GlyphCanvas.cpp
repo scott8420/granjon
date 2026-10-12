@@ -4,6 +4,7 @@
 #include <giomm/menu.h>
 #include <giomm/menuitem.h>
 #include "geom/Shapes.hpp"
+#include "geom/Corners.hpp"
 #include "geom/NodeEdit.hpp"
 
 #include "command/Verbs.hpp"
@@ -768,23 +769,79 @@ void GlyphCanvas::draw_directions(const Cairo::RefPtr<Cairo::Context>& cr, const
             cr->fill();
         }
     }
-    if (!wrong.empty()) {
+    // s10: overlaps -- the shared area tinted amber and outlined; a path
+    // crossing itself gets an amber dashed outline.
+    const double AM[3] = {0.96, 0.62, 0.12};
+    const auto& ov = overlaps_of(g);
+    for (const auto& o : ov) {
+        if (o.a == o.b) {
+            model::Glyph one;
+            one.contours = {g.contours[static_cast<std::size_t>(o.a)]};
+            cr->begin_new_path();
+            cr->save();
+            cr->translate(m_ox, m_oy);
+            cr->scale(m_s, -m_s);
+            append_glyph_path(cr, m_ctx.doc.font, one);
+            cr->restore();
+            std::vector<double> dash{5.0, 3.0};
+            cr->set_dash(dash, 0);
+            cr->set_source_rgba(AM[0], AM[1], AM[2], 0.95);
+            cr->set_line_width(2.0);
+            cr->stroke();
+            cr->unset_dash();
+            continue;
+        }
+        cr->begin_new_path();
+        for (const auto& poly : o.region) {
+            for (std::size_t i = 0; i < poly.size(); ++i) {
+                const geom::Vec2 p = to_screen(poly[i]);
+                if (i == 0) cr->move_to(p.x, p.y);
+                else cr->line_to(p.x, p.y);
+            }
+            cr->close_path();
+        }
+        cr->set_fill_rule(Cairo::Context::FillRule::WINDING);
+        cr->set_source_rgba(AM[0], AM[1], AM[2], 0.38);
+        cr->fill_preserve();
+        cr->set_source_rgba(AM[0], AM[1], AM[2], 0.95);
+        cr->set_line_width(1.5);
+        cr->stroke();
+    }
+
+    std::vector<std::pair<std::string, const double*>> notes;
+    if (!wrong.empty())
+        notes.push_back({std::to_string(wrong.size()) + (wrong.size() == 1 ? " contour runs" : " contours run") +
+                             " the wrong way -- Correct directions in the inspector",
+                         WR});
+    if (!ov.empty())
+        notes.push_back({std::to_string(ov.size()) + (ov.size() == 1 ? " overlap" : " overlaps") +
+                             " (amber) -- Remove overlaps, or a boolean",
+                         AM});
+    double y = kRuler + 8;
+    for (const auto& [text, rgb] : notes) {
         Pango::FontDescription small;
         small.set_size(9 * PANGO_SCALE);
-        auto layout = m_area.create_pango_layout(
-            std::to_string(wrong.size()) + (wrong.size() == 1 ? " contour runs" : " contours run") +
-            " the wrong way -- Correct directions in the inspector");
+        auto layout = m_area.create_pango_layout(text);
         layout->set_font_description(small);
         int lw = 0, lh = 0;
         layout->get_pixel_size(lw, lh);
-        const double x = std::max(kRuler + 8, (w - lw) / 2.0), y = kRuler + 8;
+        const double x = std::max(kRuler + 8, (w - lw) / 2.0);
         cr->set_source_rgba(0, 0, 0, 0.55);
         cr->rectangle(x - 6, y - 3, lw + 12, lh + 6);
         cr->fill();
-        cr->set_source_rgb(WR[0], WR[1], WR[2]);
+        cr->set_source_rgb(rgb[0], rgb[1], rgb[2]);
         cr->move_to(x, y);
         layout->show_in_cairo_context(cr);
+        y += lh + 10;
     }
+}
+
+const std::vector<geom::OverlapPair>& GlyphCanvas::overlaps_of(const model::Glyph& g) {
+    if (g.contours != m_ov_for) {
+        m_ov_for = g.contours;
+        m_ov = geom::overlapping(g.contours, true);
+    }
+    return m_ov;
 }
 
 // ── guides, rulers, measure (M5c) ─────────────────────────────────────────
@@ -2247,6 +2304,12 @@ void GlyphCanvas::build_context_menu() {
     act("overlaps", [this] { remove_overlaps_here(m_ctx); });
     act("reverse", [this] { reverse_picked(m_ctx); });
     act("directions", [this] { correct_directions_here(m_ctx); });
+    act("round-corners", [this] { round_picked(m_ctx); });          // M15b
+    act("ink-trap", [this] { ink_trap_picked(m_ctx); });
+    act("extremes", [this] { extremes_picked(m_ctx); });
+    act("bolder", [this] { offset_picked(m_ctx, true); });
+    act("lighter", [this] { offset_picked(m_ctx, false); });
+    act("stroke", [this] { stroke_picked(m_ctx); });
     const auto segs = [this](bool curve) {
         std::string why;
         if (command::set_segments(m_ctx.doc.journal, m_ctx.doc.font, m_shown, m_pick, curve, &why)) say_pick();
@@ -2338,6 +2401,16 @@ void GlyphCanvas::build_context_menu() {
         item(n2, "Cusp", "cusp");
         nodes->append_section(n2);
         s->append_submenu("Nodes", nodes);
+        auto shp = Gio::Menu::create();   // M15b
+        item(shp, "Round Corners", "round-corners");
+        item(shp, "Ink Trap", "ink-trap");
+        item(shp, "Add Extreme Points", "extremes");
+        auto shp2 = Gio::Menu::create();
+        item(shp2, "Offset Bolder", "bolder");
+        item(shp2, "Offset Lighter", "lighter");
+        item(shp2, "Expand Stroke", "stroke");
+        shp->append_section(shp2);
+        s->append_submenu("Shape", shp);
         auto dir = Gio::Menu::create();
         item(dir, "Reverse Picked Paths", "reverse");
         item(dir, "Correct Directions (whole glyph)", "directions");
@@ -2425,7 +2498,23 @@ void GlyphCanvas::show_context_menu(double x, double y) {
     on("union", two);
     on("subtract", two);
     on("intersect", two);
-    on("overlaps", n >= 2);
+    on("overlaps", n >= 1);   // s10: one path can cross itself
+    {   // M15b: corners / crotches among the picked nodes
+        int corners = 0, crotches = 0;
+        const auto wrong = geom::wrong_way(g->contours);
+        for (const auto& p : m_pick) {
+            if (p.part != Part::Node || p.contour < 0 || p.contour >= n) continue;
+            const auto& con = g->contours[static_cast<std::size_t>(p.contour)];
+            corners += geom::is_corner(con, p.index);
+            crotches += geom::is_crotch(con, p.index, std::find(wrong.begin(), wrong.end(), p.contour) == wrong.end());
+        }
+        on("round-corners", corners > 0);
+        on("ink-trap", crotches > 0);
+        on("extremes", n >= 1);
+        on("bolder", n >= 1);
+        on("lighter", n >= 1);
+        on("stroke", n >= 1);
+    }
     on("reverse", any);
     on("directions", n >= 1);
     on("lines", nodes >= 2);
@@ -2943,12 +3032,7 @@ void GlyphCanvas::on_tool_changed() {
 
 // ── the primitives (M14a) ─────────────────────────────────────────────────
 
-double GlyphCanvas::stroke_width() const {
-    if (m_ctx.settings.line_width > 0) return m_ctx.settings.line_width;
-    const auto& info = m_ctx.doc.font.info();
-    if (info.origin.stem_v > 0) return info.origin.stem_v;
-    return std::max(1.0, std::round(info.units_per_em * 0.08));
-}
+double GlyphCanvas::stroke_width() const { return views::stroke_width(m_ctx); }   // M15b: shared with Expand stroke
 
 model::Contour GlyphCanvas::shape_now() const {
     const Tool t = tool();

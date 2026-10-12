@@ -1,4 +1,6 @@
 #include "views/Inspector.hpp"
+#include "geom/Overlap.hpp"
+#include "geom/Corners.hpp"
 #include "views/PathOps.hpp"
 #include "model/Presets.hpp"
 
@@ -230,7 +232,7 @@ Inspector::Inspector(ViewContext& ctx)
     set_child(m_pages);
     m_ctx.kern_pick_changed.connect([this] { refresh(); });
     m_ctx.selection_changed.connect([this] { refresh(); });
-    m_ctx.pick_changed.connect([this] { refresh_pick(); refresh_guide(); refresh_booleans(); });
+    m_ctx.pick_changed.connect([this] { refresh_pick(); refresh_guide(); refresh_booleans(); refresh_shape(); });
 }
 
 void Inspector::build_font_page() {
@@ -681,6 +683,10 @@ void Inspector::build_glyph_page() {
     m_overlaps.set_tooltip_text("Remove overlaps: merge overlapping contours into one outline, the curves kept exact "
                                 "(components untouched) -- one undo step. Export does this on its own.");
     m_overlaps.signal_clicked().connect([this] { remove_overlaps_here(m_ctx); });
+    m_extremes.set_icon_name("granjon-path-extremes-symbolic");
+    m_extremes.set_tooltip_text("Add extreme points: a node wherever a curve is furthest left, right, up or down and has "
+                                "none -- on the picked paths, or the whole glyph when nothing is picked. One undo step.");
+    m_extremes.signal_clicked().connect([this] { extremes_picked(m_ctx); });
     // M14b: the booleans on the picked contours (a node or segment of each).
     auto boolean = [this](geom::BoolOp op) { boolean_picked(m_ctx, op); };
     m_union.set_icon_name("granjon-bool-union-symbolic");
@@ -705,7 +711,7 @@ void Inspector::build_glyph_page() {
             return g;
         };
         auto row = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::HORIZONTAL, 8);
-        row->append(*group({&m_correct, &m_reverse, &m_overlaps}));
+        row->append(*group({&m_correct, &m_reverse, &m_overlaps, &m_extremes}));
         row->append(*group({&m_union, &m_subtract, &m_intersect}));
         outline.wide(*row);
         m_bool_hint.set_xalign(0.0f);
@@ -743,6 +749,106 @@ void Inspector::build_glyph_page() {
         row5->append(*group({&m_arr_front, &m_arr_forward, &m_arr_backward, &m_arr_back}));
         outline.wide(*row5);
     }
+
+    // ── SHAPE: round corners, ink traps (M15b) ──────────────────────────────
+    Card shape(*page, "SHAPE");
+    for (auto* sp : {&m_radius, &m_trap_w, &m_trap_d}) {
+        spin_setup(*sp, 1, 5000);
+        sp->set_width_chars(4);
+    }
+    m_radius.set_tooltip_text("Corner radius, font units -- how far each edge is cut back (remembered)");
+    m_trap_w.set_tooltip_text("Ink trap width, font units -- how far each edge is cut back from the corner (remembered)");
+    m_trap_d.set_tooltip_text("Ink trap depth, font units -- how far the notch reaches into the ink (remembered)");
+    m_round.set_icon_name("granjon-corner-round-symbolic");
+    m_round.set_tooltip_text("Round corners: the picked corner nodes (a whole path picked = all its corners) become "
+                             "arcs of this radius, tangent to both edges -- one undo step. Smooth nodes are left alone.");
+    m_round.signal_clicked().connect([this] { round_picked(m_ctx); });
+    m_trap.set_icon_name("granjon-ink-trap-symbolic");
+    m_trap.set_tooltip_text("Ink trap: a V notch into the ink at each picked crotch -- a corner where the ink wraps round "
+                            "the white (n's arch into its stem, inside v's point). Keeps a dense join open when printed "
+                            "small. One undo step.");
+    m_trap.signal_clicked().connect([this] { ink_trap_picked(m_ctx); });
+    const auto remember = [this](widgets::SpinButton& sp, int core::Settings::*field) {
+        sp.signal_value_changed().connect([this, &sp, field] {
+            if (m_shape_quiet) return;
+            m_ctx.settings.*field = static_cast<int>(std::lround(sp.get_value()));
+            if (m_ctx.save_settings) m_ctx.save_settings();
+        });
+    };
+    remember(m_radius, &core::Settings::corner_radius);
+    remember(m_trap_w, &core::Settings::trap_width);
+    remember(m_trap_d, &core::Settings::trap_depth);
+    {
+        auto r1 = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::HORIZONTAL, 6);
+        r1->append(m_radius);
+        r1->append(m_round);
+        shape.icon_field("granjon-corner-round-symbolic", "Round corners -- radius, then round the picked corners", *r1);
+        auto r2 = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::HORIZONTAL, 6);
+        r2->append(m_trap_w);
+        r2->append(m_trap_d);
+        r2->append(m_trap);
+        shape.icon_field("granjon-ink-trap-symbolic", "Ink trap -- width, depth, then cut the picked crotches", *r2);
+    }
+    // Offset path / expand stroke (M15b)
+    spin_setup(m_off_d, 1, 5000);
+    spin_setup(m_stroke_w, 1, 5000);
+    m_off_d.set_width_chars(4);
+    m_stroke_w.set_width_chars(4);
+    m_off_d.set_tooltip_text("Offset distance, font units -- how far every edge moves (remembered)");
+    m_stroke_w.set_tooltip_text("Stroke width, font units -- the band Expand stroke draws (shared with the Line tool's Stroke)");
+    m_join.set_model(Gtk::StringList::create({"Miter", "Round", "Bevel"}));
+    m_join.set_tooltip_text("Corners where the offset opens a gap: mitred (sharp; a bevel past 4 x the distance), round, or bevelled");
+    m_cap.set_model(Gtk::StringList::create({"Butt", "Round", "Square"}));
+    m_cap.set_tooltip_text("Expand stroke's ends on an open path: cut square at the end (butt), round, or square past the end");
+    m_lighter.set_icon_name("list-remove-symbolic");
+    m_lighter.set_tooltip_text("Offset lighter: every edge of the picked paths (none picked = the whole glyph) moves INTO the "
+                               "ink by the distance -- stems thin, counters open. One undo step.");
+    m_lighter.signal_clicked().connect([this] { offset_picked(m_ctx, false); });
+    m_bolder.set_icon_name("granjon-offset-symbolic");
+    m_bolder.set_tooltip_text("Offset bolder: every edge moves OUT of the ink by the distance -- stems thicken, counters "
+                              "close. Curves are refitted (within half a unit) and overlaps merged. One undo step.");
+    m_bolder.signal_clicked().connect([this] { offset_picked(m_ctx, true); });
+    m_expand.set_icon_name("granjon-expand-stroke-symbolic");
+    m_expand.set_tooltip_text("Expand stroke: each picked path -- open or closed -- becomes the outline of a stroke this wide "
+                              "centred on it (a pen skeleton into a monoline letter; a closed path into a ring). One undo step.");
+    m_expand.signal_clicked().connect([this] { stroke_picked(m_ctx); });
+    remember(m_off_d, &core::Settings::offset_distance);
+    m_stroke_w.signal_value_changed().connect([this] {
+        if (m_shape_quiet) return;
+        m_ctx.settings.line_width = static_cast<int>(std::lround(m_stroke_w.get_value()));
+        if (m_ctx.save_settings) m_ctx.save_settings();
+        m_ctx.settings_changed.emit();
+    });
+    m_join.property_selected().signal_changed().connect([this] {
+        if (m_shape_quiet) return;
+        m_ctx.settings.offset_join = static_cast<int>(std::min<guint>(m_join.get_selected(), 2));
+        if (m_ctx.save_settings) m_ctx.save_settings();
+    });
+    m_cap.property_selected().signal_changed().connect([this] {
+        if (m_shape_quiet) return;
+        m_ctx.settings.stroke_cap = static_cast<int>(std::min<guint>(m_cap.get_selected(), 2));
+        if (m_ctx.save_settings) m_ctx.save_settings();
+    });
+    {
+        auto r3 = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::HORIZONTAL, 6);
+        r3->append(m_off_d);
+        r3->append(m_join);
+        auto pair = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::HORIZONTAL, 0);
+        pair->add_css_class("linked");
+        pair->append(m_lighter);
+        pair->append(m_bolder);
+        r3->append(*pair);
+        shape.icon_field("granjon-offset-symbolic", "Offset path -- distance, corner style, then lighter / bolder", *r3);
+        auto r4 = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::HORIZONTAL, 6);
+        r4->append(m_stroke_w);
+        r4->append(m_cap);
+        r4->append(m_expand);
+        shape.icon_field("granjon-expand-stroke-symbolic", "Expand stroke -- width, end style, then expand the picked paths", *r4);
+    }
+    m_shape_hint.set_xalign(0.0f);
+    m_shape_hint.set_wrap(true);
+    m_shape_hint.add_css_class("hint");
+    shape.wide(m_shape_hint);
 
     // ── IMAGE: the background image (M13) ───────────────────────────────────
     Card image(*page, "IMAGE");
@@ -1321,10 +1427,17 @@ void Inspector::refresh_parts(const model::Glyph& g) {
         if (!g.contours.empty())
             t += wrong.empty() ? ", all running the right way"
                                : ", " + std::to_string(wrong.size()) + " the wrong way (red on the canvas)";
+        // s10: overlaps are their own line
+        const auto ov = geom::overlapping(g.contours);
+        if (!ov.empty())
+            t += "\n" + std::to_string(ov.size()) + (ov.size() == 1 ? " overlap" : " overlaps") +
+                 " (amber on the canvas) -- Remove overlaps, or a boolean";
         m_outline_info.set_text(t);
         m_correct.set_sensitive(!wrong.empty());
         m_overlaps.set_sensitive(g.contours.size() > 0);
+        m_extremes.set_sensitive(g.contours.size() > 0);
         refresh_booleans();
+        refresh_shape();
     }
     using Part = geom::PointRef::Part;
     auto pick = [this](geom::PointRef r) {
@@ -1852,6 +1965,36 @@ void Inspector::on_note() {
     const model::Glyph* g = m_ctx.doc.font.glyph(m_ctx.selected);
     const std::string v = m_note.get_text();
     if (g && v != g->note) command::set_note(m_ctx.doc.journal, m_ctx.doc.font, m_ctx.selected, v);
+}
+
+// M15b: the SHAPE card follows the pick (which corners / crotches it holds)
+// and shows the remembered amounts (a share of the em until set).
+void Inspector::refresh_shape() {
+    m_shape_quiet = true;
+    for (auto [sp, v] : {std::pair{&m_radius, corner_radius(m_ctx)}, {&m_trap_w, trap_width(m_ctx)}, {&m_trap_d, trap_depth(m_ctx)},
+                         {&m_off_d, offset_distance(m_ctx)}, {&m_stroke_w, stroke_width(m_ctx)}})
+        if (!sp->has_focus() && std::lround(sp->get_value()) != std::lround(v)) sp->set_value(v);
+    if (m_join.get_selected() != static_cast<guint>(m_ctx.settings.offset_join)) m_join.set_selected(m_ctx.settings.offset_join);
+    if (m_cap.get_selected() != static_cast<guint>(m_ctx.settings.stroke_cap)) m_cap.set_selected(m_ctx.settings.stroke_cap);
+    m_shape_quiet = false;
+    int corners = 0, crotches = 0;
+    if (const model::Glyph* g = m_ctx.doc.font.glyph(m_ctx.selected)) {
+        const auto wrong = geom::wrong_way(g->contours);
+        for (const auto& p : m_ctx.pick) {
+            if (p.part != geom::PointRef::Part::Node || p.contour < 0 || p.contour >= static_cast<int>(g->contours.size())) continue;
+            const auto& c = g->contours[static_cast<std::size_t>(p.contour)];
+            if (geom::is_corner(c, p.index)) ++corners;
+            const bool left = std::find(wrong.begin(), wrong.end(), p.contour) == wrong.end();
+            if (geom::is_crotch(c, p.index, left)) ++crotches;
+        }
+    }
+    m_round.set_sensitive(corners > 0);
+    m_trap.set_sensitive(crotches > 0);
+    if (m_ctx.pick.empty())
+        m_shape_hint.set_text("Pick corners (A) or whole paths (V).");
+    else
+        m_shape_hint.set_text(std::to_string(corners) + (corners == 1 ? " corner, " : " corners, ") + std::to_string(crotches) +
+                              (crotches == 1 ? " crotch picked." : " crotches picked."));
 }
 
 }  // namespace granjon::views

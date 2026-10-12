@@ -120,7 +120,8 @@ double polygon_area(const PathD& p) {
 // "nothing crossed, every contour back whole -> the input untouched"; the
 // booleans never take the shortcut (a hole punched without a crossing still
 // changes direction, and the cutter goes).
-OverlapResult run(const std::vector<Contour>& in, std::size_t clip_from, Clipper2Lib::ClipType op, bool shortcut) {
+OverlapResult run(const std::vector<Contour>& in, std::size_t clip_from, Clipper2Lib::ClipType op, bool shortcut,
+                  Clipper2Lib::FillRule rule = Clipper2Lib::FillRule::NonZero) {
     OverlapResult res;
     res.contours = in;
     std::vector<int> closed_ix;
@@ -164,7 +165,7 @@ OverlapResult run(const std::vector<Contour>& in, std::size_t clip_from, Clipper
     if (!subject.empty()) clip.AddSubject(subject);
     if (!clipping.empty()) clip.AddClip(clipping);
     PathsD out;
-    if (!clip.Execute(op, Clipper2Lib::FillRule::NonZero, out)) return res;
+    if (!clip.Execute(op, rule, out)) return res;
 
     double clip_area = 0;
     for (const auto& p : out) clip_area += polygon_area(p);
@@ -370,6 +371,10 @@ OverlapResult remove_overlaps(const std::vector<Contour>& in) {
     return run(in, in.size(), Clipper2Lib::ClipType::Union, true);
 }
 
+OverlapResult union_positive(const std::vector<Contour>& in) {
+    return run(in, in.size(), Clipper2Lib::ClipType::Union, true, Clipper2Lib::FillRule::Positive);
+}
+
 OverlapResult boolean_op(const std::vector<Contour>& subject, const std::vector<Contour>& clip, BoolOp op) {
     std::vector<Contour> in = subject;
     in.insert(in.end(), clip.begin(), clip.end());
@@ -382,6 +387,133 @@ OverlapResult boolean_op(const std::vector<Contour>& subject, const std::vector<
     // change: `changed` with no closed contours.)
     if (!r.changed && !r.fallback) { r.fallback = true; r.why = "no closed contours to work on"; }
     return r;
+}
+
+// ── relations (s10) ────────────────────────────────────────────────────────
+
+namespace {
+
+// One closed contour, flattened and filled on its own (nonzero), ready for
+// area tests. `raw` is the flattened outline as drawn; `fill` its nonzero
+// fill (a self-crossing contour comes back as several loops).
+struct Filled {
+    bool   ok = false;
+    PathsD fill;
+    double area = 0;          // the fill's area
+    double raw_area = 0;      // |signed area| of the outline as drawn
+    double x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+};
+
+Filled filled(const Contour& c) {
+    Filled f;
+    if (!c.closed || c.nodes.size() < 2) return f;
+    const int n = segment_count(c);
+    PathD path;
+    for (int si = 0; si < n; ++si) {
+        const Node& a = c.nodes[static_cast<std::size_t>(si)];
+        path.push_back(PointD(a.x, a.y, 0));
+        const CubicSegment s = segment(c, si);
+        if (!a.has_out() && !c.nodes[static_cast<std::size_t>((si + 1) % c.nodes.size())].has_in()) continue;
+        std::vector<std::pair<Vec2, double>> pts;
+        flatten(s, 0, 1, 0, pts, true);
+        for (const auto& pt : pts) path.push_back(PointD(pt.first.x, pt.first.y, 0));
+    }
+    if (path.size() < 3) return f;
+    f.raw_area = std::abs(polygon_area(path));
+    f.x0 = f.x1 = path[0].x;
+    f.y0 = f.y1 = path[0].y;
+    for (const auto& v : path) {
+        f.x0 = std::min(f.x0, v.x); f.x1 = std::max(f.x1, v.x);
+        f.y0 = std::min(f.y0, v.y); f.y1 = std::max(f.y1, v.y);
+    }
+    f.fill = Clipper2Lib::Union(PathsD{path}, Clipper2Lib::FillRule::NonZero, kPrecision);
+    for (const auto& p : f.fill) f.area += polygon_area(p);
+    f.area = std::abs(f.area);
+    f.ok = f.area > 1e-9;
+    return f;
+}
+
+double slack(double a, double b) { return std::max(1.0, 5e-4 * std::min(a, b)); }
+
+bool boxes_meet(const Filled& a, const Filled& b) {
+    return a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
+}
+
+Relation relate(const Filled& a, const Filled& b, PathsD* shared = nullptr) {
+    if (!a.ok || !b.ok || !boxes_meet(a, b)) return Relation::Apart;
+    PathsD both = Clipper2Lib::Intersect(a.fill, b.fill, Clipper2Lib::FillRule::NonZero, kPrecision);
+    double i = 0;
+    for (const auto& p : both) i += polygon_area(p);
+    i = std::abs(i);
+    const double e = slack(a.area, b.area);
+    if (shared) *shared = std::move(both);
+    if (i <= e) return Relation::Apart;
+    const bool a_in = i >= a.area - e, b_in = i >= b.area - e;
+    if (a_in && b_in) return Relation::Same;
+    if (a_in) return Relation::Inside;
+    if (b_in) return Relation::Contains;
+    return Relation::Overlap;
+}
+
+// A contour crossing itself: its nonzero fill is not the simple area the
+// outline encloses (a loop doubled over, or a figure eight split in two).
+bool self_crossing(const Filled& f) {
+    if (!f.ok) return false;
+    return f.fill.size() > 1 || std::abs(f.area - f.raw_area) > slack(f.area, f.area);
+}
+
+std::vector<Vec2> to_poly(const PathD& p) {
+    std::vector<Vec2> out;
+    out.reserve(p.size());
+    for (const auto& v : p) out.push_back({v.x, v.y});
+    return out;
+}
+
+}  // namespace
+
+Relation relation(const Contour& a, const Contour& b) { return relate(filled(a), filled(b)); }
+
+std::vector<int> nest_depths(const std::vector<Contour>& cs) {
+    const int n = static_cast<int>(cs.size());
+    std::vector<int> d(static_cast<std::size_t>(n), 0);
+    std::vector<Filled> fs;
+    fs.reserve(cs.size());
+    for (const auto& c : cs) fs.push_back(filled(c));
+    for (int i = 0; i < n; ++i)
+        for (int k = i + 1; k < n; ++k) {
+            const Relation r = relate(fs[static_cast<std::size_t>(i)], fs[static_cast<std::size_t>(k)]);
+            if (r == Relation::Inside) ++d[static_cast<std::size_t>(i)];
+            else if (r == Relation::Contains) ++d[static_cast<std::size_t>(k)];
+        }
+    return d;
+}
+
+std::vector<OverlapPair> overlapping(const std::vector<Contour>& cs, bool want_region) {
+    std::vector<OverlapPair> out;
+    const int n = static_cast<int>(cs.size());
+    std::vector<Filled> fs;
+    fs.reserve(cs.size());
+    for (const auto& c : cs) fs.push_back(filled(c));
+    for (int i = 0; i < n; ++i) {
+        const Filled& fi = fs[static_cast<std::size_t>(i)];
+        if (self_crossing(fi)) {
+            OverlapPair x;
+            x.a = x.b = i;
+            out.push_back(std::move(x));
+        }
+        for (int k = i + 1; k < n; ++k) {
+            PathsD shared;
+            const Relation r = relate(fi, fs[static_cast<std::size_t>(k)], want_region ? &shared : nullptr);
+            if (r != Relation::Overlap && r != Relation::Same) continue;
+            OverlapPair x;
+            x.a = i;
+            x.b = k;
+            x.same = r == Relation::Same;
+            for (const auto& p : shared) x.region.push_back(to_poly(p));
+            out.push_back(std::move(x));
+        }
+    }
+    return out;
 }
 
 }  // namespace granjon::geom

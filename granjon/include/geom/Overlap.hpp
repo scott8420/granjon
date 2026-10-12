@@ -15,6 +15,7 @@
 //   * open contours pass through untouched
 //   * a safety net: if the rebuilt area strays from Clipper2's polygon area
 //     (more than 0.2 % + 2 units), the input comes back and `fallback` is set
+#include "geom/Vec2.hpp"
 #include "model/Outline.hpp"
 
 #include <string>
@@ -32,6 +33,12 @@ struct OverlapResult {
 
 OverlapResult remove_overlaps(const std::vector<model::Contour>& in);
 
+// M15b: the union under the POSITIVE fill rule -- only area wound
+// counter-clockwise (more than clockwise) is ink. The offset's clean-up: a
+// path turned inside out (a stem thinned past nothing), or the little loops
+// an offset makes at its corners, wind the other way and drop out.
+OverlapResult union_positive(const std::vector<model::Contour>& in);
+
 // M14b: the booleans on the same engine and rebuild. `subject` and `clip`
 // each fill nonzero; Union = either, Subtract = subject minus clip,
 // Intersect = both. The result is the rebuilt loops (curves kept, crossings
@@ -41,5 +48,33 @@ OverlapResult remove_overlaps(const std::vector<model::Contour>& in);
 // clip) comes back with the reason, as remove_overlaps.
 enum class BoolOp { Union, Subtract, Intersect };
 OverlapResult boolean_op(const std::vector<model::Contour>& subject, const std::vector<model::Contour>& clip, BoolOp op);
+
+// s10: how closed contours sit against each other, judged by FILLED area --
+// each contour filled on its own (nonzero), flattened as above, the shared
+// area from Clipper2. A sliver under max(1, 0.05 % of the smaller area)
+// counts as none, so a counter touching its outer, or two shapes meeting
+// along an edge, are not overlaps.
+//   Apart     no shared area
+//   Inside    a lies wholly inside b (b is larger) -- nesting: a counter
+//   Contains  b lies wholly inside a
+//   Same      each covers the other: the same shape twice (a duplicate)
+//   Overlap   they share some area, neither holds the other
+enum class Relation { Apart, Inside, Contains, Same, Overlap };
+Relation relation(const model::Contour& a, const model::Contour& b);
+
+// Nesting depth of every contour: how many others hold it wholly (Inside).
+// Overlapping or duplicated contours do not count -- they are overlaps, not
+// counters. Open / degenerate contours: 0.
+std::vector<int> nest_depths(const std::vector<model::Contour>& cs);
+
+// The overlaps among the closed contours: pairs that overlap or duplicate
+// each other (a < b), and contours that cross themselves (a == b). `region`
+// (when asked) is the shared area as polygons, for the canvas.
+struct OverlapPair {
+    int  a = -1, b = -1;
+    bool same = false;                              // Relation::Same
+    std::vector<std::vector<Vec2>> region;
+};
+std::vector<OverlapPair> overlapping(const std::vector<model::Contour>& cs, bool want_region = false);
 
 }  // namespace granjon::geom

@@ -1,6 +1,8 @@
 #include "model/Checks.hpp"
 
 #include "geom/Edit.hpp"
+#include "geom/Overlap.hpp"
+#include "geom/Corners.hpp"
 #include "model/Bounds.hpp"
 #include "model/Spacing.hpp"
 #include "unicode/UcdTable.hpp"
@@ -57,6 +59,13 @@ const std::vector<CheckInfo>& checks() {
         {CheckId::Open, "open", "Open contours",
          "A glyph outline has to enclose its shape. An open contour has no inside: it draws nothing, or "
          "draws unpredictably, once the font is compiled."},
+        {CheckId::Overlap, "overlaps", "Overlapping paths",
+         "Paths that overlap fill twice where they meet: some printers and rasterisers show the seam or a "
+         "dark double, and hinting and the contour direction can't be judged. Remove overlaps, or combine "
+         "them with a boolean."},
+        {CheckId::Extremes, "extremes", "Extreme points",
+         "A curve should have a node where it is furthest left, right, up or down. Without one, hinting has "
+         "nothing to hold the edge to, overshoots can't be measured, and small sizes lose the curve's edge."},
         {CheckId::Zones, "zones", "Near the metric lines",
          "A flat top or bottom a unit or three off the baseline, x-height or cap height reads as a mistake "
          "at text sizes and breaks hinting's alignment zones. Snap it to the line."},
@@ -116,6 +125,23 @@ std::vector<Finding> check_glyph(const Font& f, const std::string& name) {
     for (int c = 0; c < static_cast<int>(g->contours.size()); ++c)
         if (!g->contours[c].closed && g->contours[c].nodes.size() >= 2)
             add(CheckId::Open, "Contour " + std::to_string(c + 1) + " is open", std::to_string(c), true, c);
+
+    // Overlaps (s10): any shared area between two paths, a path drawn twice,
+    // a path crossing itself. Direction above judges nesting only.
+    for (const auto& o : geom::overlapping(g->contours)) {
+        std::string msg;
+        if (o.a == o.b) msg = "Contour " + std::to_string(o.a + 1) + " crosses itself";
+        else if (o.same) msg = "Contours " + std::to_string(o.a + 1) + " and " + std::to_string(o.b + 1) + " are the same shape, one on the other";
+        else msg = "Contours " + std::to_string(o.a + 1) + " and " + std::to_string(o.b + 1) + " overlap";
+        add(CheckId::Overlap, msg, std::to_string(o.a) + "+" + std::to_string(o.b), true, o.b);
+    }
+
+    // Extreme points (M15b): a curve bulging more than a unit past its nodes.
+    for (int c = 0; c < static_cast<int>(g->contours.size()); ++c)
+        if (const int k = geom::count_missing_extremes(g->contours[c]); k > 0)
+            add(CheckId::Extremes,
+                "Contour " + std::to_string(c + 1) + " lacks " + std::to_string(k) + (k == 1 ? " extreme point" : " extreme points"),
+                std::to_string(c), true, c);
 
     // Zones (flat nodes) and overshoot (round extremes).
     const auto lines = lines_of(m);
@@ -209,6 +235,16 @@ std::optional<Glyph> fix_glyph(const Font& f, const std::string& name, const std
     for (const auto& x : xs)
         if (x.glyph == name && x.check == CheckId::Open && x.contour >= 0 && x.contour < static_cast<int>(g.contours.size()))
             g.contours[x.contour].closed = true;
+    // 3b. extreme points (node indices change from here on), snapped
+    for (const auto& x : xs)
+        if (x.glyph == name && x.check == CheckId::Extremes && x.contour >= 0 &&
+            x.contour < static_cast<int>(g.contours.size()))
+            if (geom::add_extremes(g.contours[x.contour]) > 0) {
+                Glyph t;
+                t.contours = {g.contours[x.contour]};
+                t.snap();
+                g.contours[x.contour] = t.contours[0];
+            }
     // 4. reverse (each contour once)
     std::set<int> rev;
     for (const auto& x : xs)
@@ -216,6 +252,20 @@ std::optional<Glyph> fix_glyph(const Font& f, const std::string& name, const std
             x.contour < static_cast<int>(g.contours.size()))
             rev.insert(x.contour);
     for (int c : rev) geom::reverse(g.contours[c]);
+    // 5. overlaps (s10): the whole glyph's Remove overlaps -- only when every
+    // contour now runs the right way (the union reads nonzero), and only when
+    // the rebuild passed its own check (else the outline stays as drawn).
+    bool merge = false;
+    for (const auto& x : xs) merge = merge || (x.glyph == name && x.check == CheckId::Overlap);
+    if (merge && geom::wrong_way(g.contours).empty()) {
+        auto r = geom::remove_overlaps(g.contours);
+        if (r.changed && !r.fallback) {
+            Glyph t;
+            t.contours = std::move(r.contours);
+            t.snap();
+            g.contours = std::move(t.contours);
+        }
+    }
     if (g == *was) return std::nullopt;
     return g;
 }

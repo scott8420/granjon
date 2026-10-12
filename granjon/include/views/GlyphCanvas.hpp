@@ -36,6 +36,7 @@
 // The y-up flip lives here and nowhere else (ARCHITECTURE §3): screen x =
 // ox + x * s, screen y = oy - y * s.
 #include "geom/Edit.hpp"
+#include "geom/Overlap.hpp"
 #include "model/Bounds.hpp"
 #include "views/ViewContext.hpp"
 #include "widgets/Widgets.hpp"
@@ -191,6 +192,10 @@ private:
     void draw_user_guides(const Cairo::RefPtr<Cairo::Context>& cr, int w, int h, const model::Glyph& g);
     void draw_rulers(const Cairo::RefPtr<Cairo::Context>& cr, int w, int h);
     void draw_directions(const Cairo::RefPtr<Cairo::Context>& cr, const model::Glyph& g, int w);
+    // s10: overlapping paths -- the shared area tinted amber, a note at the top
+    const std::vector<geom::OverlapPair>& overlaps_of(const model::Glyph& g);
+    std::vector<model::Contour>   m_ov_for;          // the contours m_ov was computed from
+    std::vector<geom::OverlapPair> m_ov;
     void draw_neighbours(const Cairo::RefPtr<Cairo::Context>& cr, const model::Glyph& g);   // s09: dragging a node -- lines to its neighbours
     void draw_measure(const Cairo::RefPtr<Cairo::Context>& cr, const model::Glyph& g);
     std::optional<ViewContext::GuideRef> guide_at(double sx, double sy) const;

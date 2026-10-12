@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
+  <!-- Granjon inspector icon (M15b): add extreme points: a ring with nodes at its left, right, top, bottom. Symbolic: currentColor only. -->
+  <path fill="currentColor" fill-rule="evenodd" opacity="0.55" d="M8 2.2 A5.8 5.8 0 1 1 7.99 2.2 Z M8 3.4 A4.6 4.6 0 1 0 8.01 3.4 Z"/>
+  <path fill="currentColor" d="M6.3 0.8 H9.7 V4.2 H6.3 Z M6.3 11.8 H9.7 V15.2 H6.3 Z M0.8 6.3 H4.2 V9.7 H0.8 Z M11.8 6.3 H15.2 V9.7 H11.8 Z"/>
+</svg>

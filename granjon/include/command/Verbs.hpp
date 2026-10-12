@@ -12,6 +12,7 @@
 // gap the gate cannot see -- add it here in the same change that adds the
 // button. (CANON: "Undo is foundation, not a feature".)
 #include "geom/Overlap.hpp"
+#include "geom/Offset.hpp"
 #include "geom/Edit.hpp"
 #include "model/Checks.hpp"
 #include "model/Coverage.hpp"
@@ -241,6 +242,33 @@ void  pen_drag(FontJournal& j, Font& f, const std::string& glyph, const PenAt& a
 // the new contour's index.
 bool add_shape(FontJournal& j, Font& f, const std::string& glyph, const model::Contour& c, const std::string& label,
                int* index = nullptr, std::string* why = nullptr);
+// M15b: outline surgery (geom::Corners), each ONE step, the touched contours
+// snapped. `why` says why a call was refused (no step).
+// Add the missing extreme points to `contours` (empty = every contour).
+// Refused when none is missing.
+bool add_extremes(FontJournal& j, Font& f, const std::string& glyph, const std::vector<int>& contours,
+                  int* added = nullptr, std::string* why = nullptr);
+// Round the picked corner nodes by `radius` (a chord distance along each
+// edge). Refused when no picked node is a corner.
+bool round_corners(FontJournal& j, Font& f, const std::string& glyph, const geom::Points& pts, double radius,
+                   int* done = nullptr, std::string* why = nullptr);
+// Ink traps at the picked crotches (the ink the reflex side): edges cut back
+// by `width`, the apex `depth` into the ink. Refused when no picked node is a
+// crotch (a contour running the wrong way has its ink on the right -- handled).
+bool ink_traps(FontJournal& j, Font& f, const std::string& glyph, const geom::Points& pts, double width,
+               double depth, int* done = nullptr, std::string* why = nullptr);
+// M15b: offset the `contours` (empty = every closed one) by d (> 0 bolder,
+// < 0 lighter) -- geom::offset_contours. The result takes the place of the
+// first one, snapped; ONE step. Refused: a contour running the wrong way, a
+// result that would be empty (thinned past nothing), a rebuild that failed.
+// `result` gets the new contours' indices.
+bool offset_contours(FontJournal& j, Font& f, const std::string& glyph, const std::vector<int>& contours, double d,
+                     geom::Join join, std::vector<int>* result = nullptr, std::string* why = nullptr);
+// M15b: expand stroke -- each of `contours` (open or closed; empty = all)
+// becomes the outline of a stroke `width` wide centred on it. Same placing,
+// refusals and step as offset_contours.
+bool expand_stroke(FontJournal& j, Font& f, const std::string& glyph, const std::vector<int>& contours, double width,
+                   geom::Join join, geom::Cap cap, std::vector<int>* result = nullptr, std::string* why = nullptr);
 // Make this node its contour's start (M5e). ONE step. Refused on an open
 // contour, on the start itself, on a bad index; `why` says which.
 bool make_first(FontJournal& j, Font& f, const std::string& glyph, int contour, int index,

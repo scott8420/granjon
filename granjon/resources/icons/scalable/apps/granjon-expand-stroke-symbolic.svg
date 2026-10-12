@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
+  <!-- Granjon inspector icon (M15b): expand stroke: a thin open path becomes a filled band. Symbolic: currentColor only. -->
+  <path fill="currentColor" opacity="0.55" d="M1 6.4 C4 1.4 7 1.4 9 4 L8.2 4.6 C6.6 2.6 4.4 2.6 1.9 6.9 Z"/>
+  <path fill="currentColor" d="M5 15 C7.5 9.5 10.5 8 15 9 V12.4 C11.6 11.6 9.6 12.6 8.4 15 Z"/>
+</svg>

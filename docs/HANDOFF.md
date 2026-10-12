@@ -1,12 +1,44 @@
-# Granjon handoff — s09 -> s10
+# Granjon handoff — s10 -> s11
 
-# s10_m15b_corners
+# s11_m16_marks_features
 
 ## Files to upload
-- `s09_m15a_transform_r2.zip` (the one zip to install -- M15a + r1 steps / pivot + r2 icons; everything in s09: the "first" items, arrange, guides, Duplicate / Clone, path align, the context menu, M15a transform. Earlier s09 zips are superseded. Or a fresh `scripts/granjon_backup.sh -o s10_m15b_corners`)
+- `s10_m15b_offset.zip` (the one zip to install -- everything in s10: the overlaps flag, M15b corners / ink traps / extreme points, offset path / expand stroke. `s10_overlaps.zip` and `s10_m15b_corners.zip` are superseded. Or a fresh `scripts/granjon_backup.sh -o s11_m16_marks_features`)
 - `RULES.md`, `HANDOFF.md`, `ARCHITECTURE.md`, `ARC.md`, `CANON.md`
 
 ---
+
+## Status — s10
+- Scott at the open: "continue with minimal interaction with me, pls" -- working through the list, shipping a zip at each green build, one report at the end.
+- **M15b offset -- offset path, expand stroke: sandbox green, not crc** (`s10_m15b_offset.zip`, the one zip to install). Selftest **1216 / 0** (18 more: geometry, every preset +/-12, 2 verb-table gates). No new warnings, no new package. **M15b is complete in the sandbox.**
+  - geom `Offset` (GTK-free): each segment's offset refitted as cubics -- end tangents kept, the two handle lengths by least squares on five points of the true offset, reparameterised three times (Schneider), split until within 0.5 unit (64 pieces max). Joins where the offset opens a gap: Miter (a bevel past 4 x the distance), Round, Bevel; where the sides cross, straight across -- the loop left behind winds backwards. Then the M10c engine's union under the POSITIVE fill rule (new `union_positive`): loops, inside-out pieces (a stem thinned past nothing) and overlaps drop out, curves exact, crossings corners; collinear leftovers dropped (a mitred square stays 4 nodes).
+  - `offset_contours(cs, d, join)`: d > 0 bolder (out of the ink: outers grow, counters shrink), d < 0 lighter. `expand_stroke(cs, width, join, cap)`: an open path -> a band (Butt / Round / Square ends), a closed one -> a ring.
+  - Tested: square +/-10 (miter / round / bevel areas exact), thinned past nothing -> empty, circle +20 / -30 within 0.3 %, outer + counter, an L both ways (the inner corner's loop drops out, 6 nodes), line / bend / curve / closed-square strokes, every preset's n o H O p v at +12 and -12 (clean, right way, no overlaps, area up / down) and round corners on all of them.
+  - Verbs (one step, snapped, in the verb table): `offset_contours(glyph, contours, d, join)` ("Offset +20"), `expand_stroke(glyph, contours, width, join, cap)` ("Expand stroke 88"). The result takes the first target's place and comes picked. Refusals: wrong-way path (offset), nothing closed (offset: "an open one wants Expand stroke"), thinned to nothing, rebuild failed.
+  - **SHAPE card**, two more rows: Offset -- distance, Miter / Round / Bevel, lighter (-) / bolder; Stroke -- width (the SAME setting as the Line tool's Stroke: the font's stem until set), Butt / Round / Square, Expand. Nothing picked = the whole glyph. Remembered: `editor.offset_distance` (0 = 2 % em), `offset_join`, `stroke_cap`.
+  - **Context menu** Shape >: Offset Bolder, Offset Lighter, Expand Stroke.
+  - Shots (Sans n): V, Shape > Offset Bolder -> the n heavier by 20 all round, one path, "Offset +20 -- 1 path."; pen-drawn open arch -> Expand Stroke -> a monoline arch 88 wide, butt ends; the SHAPE card.
+  - Note: Offset moves EVERY edge, so bolder also drops the baseline by the distance and lifts the x-height. Glyphs' Offset Curve takes horizontal and vertical amounts separately (vertical 0 keeps the heights) -- asked below.
+- **M15b corners -- extreme points, round corners, ink traps: sandbox green, not crc** (`s10_m15b_corners.zip`). Selftest **1190 / 0** (26 more in `selftest_shape.cpp` + 3 verb-table gates). No new warnings, no new package.
+  - geom `Corners` (GTK-free): `missing_extremes / count_missing_extremes / add_extremes` (roots of the derivative per axis; only extremes standing > 1 unit past both of the segment's ends, t in 0.01..0.99; the new node smooth, its handles EXACTLY level / plumb), `is_corner` (tangents differ > 3 deg), `is_crotch` (a corner turning right with the ink on the left -- the reflex side is ink), `round_corners(c, nodes, radius)`, `ink_traps(c, nodes, width, depth, ink_left)`.
+  - Round: each edge cut back by the radius (chord distance; lines exactly, curves by de Casteljau at the solved t), a cubic arc tangent to both edges (h = 4/3 tan(phi/4) R: a 90-degree line corner is a true quarter circle -- area test within 2 units). Cut clamped: under half an edge when both its ends are cut, else 95 %. Ends are smooth nodes.
+  - Ink trap: a V notch -- the edges cut back by Width, an apex Depth into the ink along the corner's bisector (away from the white wedge). Only crotches qualify; a contour running the wrong way has its ink on the right (handled, not refused).
+  - Verbs (one step each, touched contours snapped, all in the verb table): `add_extremes(glyph, contours)` (empty = all), `round_corners(glyph, pts, radius)`, `ink_traps(glyph, pts, width, depth)`. Refusals: nothing missing / no corner picked / no crotch picked / bad amounts.
+  - **Checks: "Extreme points"** (tag `extremes`): "Contour 2 lacks 4 extreme points", fixable (added and snapped -- no new grid finding). Every preset's Checks report still empty.
+  - Fixture: a new unencoded glyph `lens` -- an ellipse turned 45 degrees (4 missing extremes), for the verb table.
+  - **Inspector**: OUTLINE's first group gains **Add extreme points** (picked paths, or the whole glyph with nothing picked). New **SHAPE** card (after OUTLINE): Radius + Round; Width + Depth + Ink trap; a hint "2 corners, 1 crotch picked." -- buttons grey when the pick has none. Amounts remembered (`editor.corner_radius / trap_width / trap_depth`; 0 = 2 % / 1.5 % / 2.5 % of the em -- 20 / 15 / 25 at 1000).
+  - **Context menu**: a **Shape >** submenu -- Round Corners, Ink Trap, Add Extreme Points (greyed by the pick). Remove Overlaps now enabled with one path (it can cross itself).
+  - After the op: a whole-path pick (V) stays picked on the new nodes; a node pick (A) is cleared (those nodes were replaced).
+  - 5 new icons: `granjon-corner-round`, `granjon-ink-trap`, `granjon-path-extremes`, `granjon-offset`, `granjon-expand-stroke` (the last two for the offset to come). Mine -- say which don't read.
+  - Shots (Sans preset n): A, the inner crotch node -> Shape > Ink Trap -> a notch into the stem, "1 Ink trap -- 15 wide, 25 deep."; Ctrl+Z; V on the n -> Shape > Round Corners -> every corner and both crotches filleted at 20, the curve-to-stem tangent joins left alone.
+- **s10 first -- overlaps get their own flag: sandbox green, not crc** (`s10_overlaps.zip`). Selftest **1152 / 0** (26 new, `src/selftest_shape.cpp` -- the s10 / M15b file). Ubuntu 24.04, g++ 13.3, gtkmm 4.10 / GTK 4.14, RelWithDebInfo; no new warnings (the known GCC 13 memmove x3). No new package.
+  - geom (Overlap.cpp, on Clipper2): `relation(a, b)` by FILLED area -- each contour filled nonzero on its own, the shared area from Clipper2's Intersect; a sliver under max(1, 0.05 % of the smaller) counts as none (a counter touching its outer, shapes meeting along an edge are not overlaps). Apart / Inside / Contains / Same / Overlap. `nest_depths`, `overlapping(cs, want_region)` -- pairs that overlap or are the same shape twice, plus a contour crossing itself (its nonzero fill isn't the simple area it encloses).
+  - **Direction judges nesting only**: `geom::depth` / `wrong_way` count only contours that WHOLLY hold this one (Inside). An overlapping path is an outer; a duplicate is an outer. Fixes s09 r4's clone shot ("wrong way" on the original). Open contours keep the old point test.
+  - **Checks: "Overlapping paths"** (tag `overlaps`, after Open): "Contours 1 and 3 overlap" / "Contours 2 and 4 are the same shape, one on the other" / "Contour 2 crosses itself". Fixable: the fix is the glyph's Remove overlaps (only when every contour runs the right way after the direction fixes in the same batch; a rebuild that fails its safety net leaves it as drawn). Fix all N = one step.
+  - **Canvas**: the shared area tinted amber with an amber outline; a self-crossing path a dashed amber outline; a note at the top "N overlaps (amber) -- Remove overlaps, or a boolean" (under the red wrong-way note when both). Cached per contour set (no Clipper work while nothing changes).
+  - **OUTLINE card**: a second line "N overlaps (amber on the canvas) -- Remove overlaps, or a boolean".
+  - Presets: the whole Checks report is still empty on every preset.
+  - Shots (sample n): an ellipse across both stems -> two amber lenses, "2 overlaps", no red; Report -> "Overlapping paths . 2", "Contours 1 and 3 overlap" / "2 and 3"; Fix all 2 -> one outline, "Fix 2 findings."
 
 ## Status — s09
 - **M15a r2 -- icons for words: crc** (Scott: "crc. pls give git push" -- s09 closed here). (`s09_m15a_transform_r2.zip`; Scott, on r1 with a shot of PICK + TRANSFORM: "great! can we reclain real estate by using icons with hints instead of words"). Selftest 1126 / 0. No new package.
@@ -69,6 +101,14 @@
 - **Item 4 -- opens on Select (V)**: the tool panel starts on the solid arrow.
 - **Item 3 -- undo restores the pick**: `core::Journal` gained a DETAIL channel beside the selection (an opaque string; `set_detail_source`, Step `detail_before / after`, `Result::detail`, `redetail()` like `reselect()`). The Shell feeds it the editor's pick as text (`geom::pick_to_text / pick_from_text`: "glyph\n" + "c i part;" per point). A pick change in the same main-loop turn as a new step amends that step's "after" (so Subtract's picked result is what redo hands back); an idle callback closes that window. Undo / redo put the pick back only on the glyph it was made in, only points that still exist (`Shell::restore_pick`). Fixes s08's "Known: the pick is not part of undo" (stale in-range refs after Ctrl+Z).
 - **Item 2 -- preset fonts start with parts**: `model::starter_parts` -- `_part.stem` (lowercase stem, head serif + foot slab on serif presets), `_part.serif` (the foot slab; Serif only), `_part.bowl` (o's ring), from the preset's own Kit pieces. Each starts where its glyph starts (stem / serif at n's left edge, bowl at o's -- Mono too), unmapped, `skip_export`. Added even with "@none" (control glyphs only). Presets selftest: whole Checks report still empty on every preset.
+
+## What to look at in s10
+- Report (Ctrl+5) on your real fonts: "Overlapping paths" and "Extreme points" sections -- do they find real defects, any false ones? Fix all in each.
+- Editor: draw an ellipse across a stem -> amber lens + the note; no red. Clone a stem (Alt+D) -> amber, NOT "wrong way". OUTLINE's second line.
+- A (Pick) a crotch node of n -> SHAPE card says "1 crotch picked" -> Ink trap. V on a path -> Round (radius field). Smooth nodes are skipped.
+- OUTLINE -> Add extreme points on a glyph from an imported font that lacks them.
+- V, nothing picked -> SHAPE Offset bolder / lighter (try Round join) on n and o; then a pen-drawn open path -> Expand. Ctrl+Z after each: one step.
+- Right-click > Shape: the six items.
 
 ## What to look at in M15a (r1)
 - TRANSFORM card: press turn-right a few times (1 deg each) -> Ctrl+Z once takes the run back. Grow / shrink at 101 %. Type 0.25 in Rotate for fine turns.
@@ -228,8 +268,9 @@ Primitives (rectangle, ellipse -- Shift square / circle, Alt from centre; line =
 Then: M15 transform panel + corner tools + extreme points + offset stroke; M16 mark positioning, features editor, italic angle / font info. Later: print proof, ttfautohint, weight masters (v3).
 
 ## Still open
-- M15 remainder (s10): **M15b** round corner + ink trap, add extreme points, offset / expand stroke. Transform follow-ons: Transform Each (each path about its own centre), a remembered origin, a free-transform 'perspective' (no -- fonts don't), handles in Pick mode for a node selection (now Select only).
-- **Overlap vs direction check (s09 r4)**: a duplicate / clone overlapping its original can flag the original "runs the wrong way". Options asked: leave (Remove overlaps / Union resolves it), or have the direction check ignore partial overlaps.
+- **s10 asks (answer at the s11 open):** (1) Offset: separate horizontal / vertical amounts so bolder can keep the heights? (2) Ink trap shape: V notch now -- a rounded slot end wanted? (3) Font-wide passes for extreme points / ink traps (like Remove overlaps in every glyph)? (4) The 5 new icons -- which don't read?
+- M15 done in the sandbox (s10). Transform follow-ons: Transform Each (each path about its own centre), a remembered origin, a free-transform 'perspective' (no -- fonts don't), handles in Pick mode for a node selection (now Select only).
+- Overlap vs direction check: built in s10 (overlaps finding; direction judges nesting only).
 - M14 questions (s08): answered at the close -- see "s09 first" at the top.
 - Not done in M14 (follow-ons): booleans on components (decompose first today); a parts preview strip (the list is names only); drag a part from the navigator onto the canvas; rounded rectangle / polygon primitives.
 - **Font-wide image sheet** (M13): wanted? (one scan of an alphabet, sliced per glyph). Asked in s07, no answer yet.
@@ -242,7 +283,7 @@ Then: M15 transform panel + corner tools + extreme points + offset stroke; M16 m
 - Editor follow-ons (now behind M12-M16): Shift-constrained point drags (the pen has 45 degrees; picking-mode drags don't yet), node type by key, a delete-without-refit modifier, pen snapping to metrics / nodes, composite follow-ons (Greek tonos, stacking, ogonek anchor, rebuild), overview follow-ons -- all in the ARC backlog.
 - Profiles follow-ons: a profile cache + font-wide kern-to-gap over a pair list, per-class targets, collision check on proof strings.
 - Spacing follow-ons: kerning groups editor (create / assign public.kern1 / kern2 from the UI), a strip text history / presets.
-- Checks follow-ons (ARCHITECTURE §6): missing extreme points, overlaps, sidebearing consistency, stem drift, kerning class audit and outliers, collisions.
+- Checks follow-ons (ARCHITECTURE §6): (extreme points and overlaps: done in s10) sidebearing consistency, stem drift, kerning class audit and outliers, collisions.
 - Import follow-ons: WOFF / WOFF2 in (zlib / brotli), font collections, GSUB -> features.fea, glyph/group kerning kept as exceptions (now expanded to glyph pairs), seac accents, variable fonts (v3).
 - Export follow-ons: italic angle / caret slope (no field in FontInfo yet), panose / family class, CFF subroutinization (size), PostScript blue zones from the metrics.
 - M12 follow-ons: more presets (a slab, a humanist sans, an italic -- once italic angle exists, M16); preset numbers editable before Create (an 'Advanced' fold); starter glyphs for figures (zero, one) and a starter mark (acutecomb) so composites show something at once; isFixedPitch / panose for Mono on export; notes on more topics (diagonals and v/w apex overshoot, S-curves, figure heights, accents) -- they are just text + SVG in resources/primer/.

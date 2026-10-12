@@ -156,6 +156,23 @@ private:
     widgets::Button      m_subtract;
     widgets::Button      m_intersect;
     widgets::Button      m_reverse;
+    widgets::Button      m_extremes{"inspector.add_extremes"};   // M15b
+    // M15b: SHAPE -- round corners, ink traps (amounts remembered in Settings)
+    widgets::SpinButton  m_radius{"inspector.corner_radius"};
+    widgets::Button      m_round{"inspector.round_corners"};
+    widgets::SpinButton  m_trap_w{"inspector.trap_width"};
+    widgets::SpinButton  m_trap_d{"inspector.trap_depth"};
+    widgets::Button      m_trap{"inspector.ink_trap"};
+    widgets::SpinButton  m_off_d{"inspector.offset_distance"};
+    widgets::DropDown    m_join{"inspector.offset_join"};
+    widgets::Button      m_lighter{"inspector.offset_lighter"};
+    widgets::Button      m_bolder{"inspector.offset_bolder"};
+    widgets::SpinButton  m_stroke_w{"inspector.stroke_width"};
+    widgets::DropDown    m_cap{"inspector.stroke_cap"};
+    widgets::Button      m_expand{"inspector.expand_stroke"};
+    widgets::Label       m_shape_hint{"inspector.shape_hint"};
+    bool                 m_shape_quiet = false;
+    void refresh_shape();
     // M15a: TRANSFORM -- scale / rotate / skew about a 3 x 3 origin, flips, quarter turns.
     widgets::Label       m_tf_info;
     widgets::SpinButton  m_tf_sx;

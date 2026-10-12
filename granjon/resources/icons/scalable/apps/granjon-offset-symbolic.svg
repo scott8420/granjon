@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
+  <!-- Granjon inspector icon (M15b): offset path: a shape and its outline grown around it. Symbolic: currentColor only. -->
+  <path fill="currentColor" d="M5 5 H11 V11 H5 Z"/>
+  <path fill="currentColor" fill-rule="evenodd" opacity="0.6" d="M4 1 H12 A3 3 0 0 1 15 4 V12 A3 3 0 0 1 12 15 H4 A3 3 0 0 1 1 12 V4 A3 3 0 0 1 4 1 Z M4 2.3 A1.7 1.7 0 0 0 2.3 4 V12 A1.7 1.7 0 0 0 4 13.7 H12 A1.7 1.7 0 0 0 13.7 12 V4 A1.7 1.7 0 0 0 12 2.3 Z"/>
+</svg>

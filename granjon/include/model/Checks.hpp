@@ -11,6 +11,10 @@
 //
 //   Direction    a contour running the wrong way for CFF (M5d's rule)
 //   Open         an open contour (fonts want them closed)
+//   Overlap      (s10) two paths sharing area, the same path twice, or a path
+//                crossing itself -> Remove overlaps (or a boolean)
+//   Extremes     (M15b) a curve bulging past its nodes with no node at its
+//                horizontal / vertical extreme -> add it
 //   Zones        a flat node a unit or three off a metric line -> snap to it
 //   Overshoot    a round top / bottom with no overshoot, or one off the font's
 //                overshoot -> move the extreme to the overshoot line
@@ -24,7 +28,7 @@
 
 namespace granjon::model {
 
-enum class CheckId { Direction, Open, Zones, Overshoot, Origin, Keys };
+enum class CheckId { Direction, Open, Zones, Overshoot, Origin, Keys, Overlap, Extremes };
 
 struct CheckInfo {
     CheckId     id;

@@ -5,6 +5,8 @@
 #include "model/Checks.hpp"
 #include "model/Profiles.hpp"
 #include "geom/NodeEdit.hpp"
+#include "geom/Corners.hpp"
+#include "geom/Offset.hpp"
 #include "geom/Overlap.hpp"
 #include "geom/Shapes.hpp"
 #include "model/Bounds.hpp"
@@ -1001,6 +1003,173 @@ void grow(Bx& b, const model::Contour& c) {   // the control hull: every node an
 bool meets(const Bx& a, const Bx& b) { return a.x0 <= b.x1 && b.x0 <= a.x1 && a.y0 <= b.y1 && b.y0 <= a.y1; }
 }  // namespace
 
+// ── M15b: extremes, corners, ink traps ─────────────────────────────────────
+
+namespace {
+
+// Commit `g`'s contours in `touched` snapped to units (the rest as they are).
+void put_snapped(Font& f, const std::string& glyph, Glyph g, const std::set<int>& touched) {
+    for (int i : touched) {
+        Glyph t;
+        t.contours = {g.contours[static_cast<std::size_t>(i)]};
+        t.snap();
+        g.contours[static_cast<std::size_t>(i)] = std::move(t.contours[0]);
+    }
+    f.put(glyph, Record{g});
+}
+
+std::map<int, std::set<int>> picked_nodes(const Glyph& g, const geom::Points& pts) {
+    std::map<int, std::set<int>> by;
+    for (const auto& p : pts)
+        if (p.part == geom::PointRef::Part::Node && p.contour >= 0 && p.contour < static_cast<int>(g.contours.size()) &&
+            p.index >= 0 && p.index < static_cast<int>(g.contours[static_cast<std::size_t>(p.contour)].nodes.size()))
+            by[p.contour].insert(p.index);
+    return by;
+}
+
+std::string plural(int n, const char* one, const char* many) {
+    return std::to_string(n) + " " + (n == 1 ? one : many);
+}
+
+}  // namespace
+
+bool add_extremes(FontJournal& j, Font& f, const std::string& glyph, const std::vector<int>& contours, int* added,
+                  std::string* why) {
+    auto refuse = [&](const std::string& r) { if (why) *why = r; return false; };
+    const Glyph* was = f.glyph(glyph);
+    if (!was) return refuse("No glyph.");
+    std::set<int> want;
+    for (int i : contours) if (i >= 0 && i < static_cast<int>(was->contours.size())) want.insert(i);
+    if (contours.empty()) for (int i = 0; i < static_cast<int>(was->contours.size()); ++i) want.insert(i);
+    Glyph g = *was;
+    int n = 0;
+    std::set<int> touched;
+    for (int i : want)
+        if (const int k = geom::add_extremes(g.contours[static_cast<std::size_t>(i)]); k > 0) { n += k; touched.insert(i); }
+    if (added) *added = n;
+    if (n == 0) return refuse("No extreme points missing.");
+    return j.run("Add extreme points (" + std::to_string(n) + ")", {glyph}, [&] { put_snapped(f, glyph, g, touched); });
+}
+
+bool round_corners(FontJournal& j, Font& f, const std::string& glyph, const geom::Points& pts, double radius,
+                   int* done, std::string* why) {
+    auto refuse = [&](const std::string& r) { if (why) *why = r; return false; };
+    const Glyph* was = f.glyph(glyph);
+    if (!was) return refuse("No glyph.");
+    if (!(radius >= 1)) return refuse("Round corners: the radius must be 1 unit or more.");
+    Glyph g = *was;
+    int n = 0;
+    std::set<int> touched;
+    for (const auto& [ci, nodes] : picked_nodes(*was, pts))
+        if (const int k = geom::round_corners(g.contours[static_cast<std::size_t>(ci)], nodes, radius); k > 0) {
+            n += k;
+            touched.insert(ci);
+        }
+    if (done) *done = n;
+    if (n == 0) return refuse("Round corners: pick one or more corner nodes (smooth nodes have no corner).");
+    return j.run("Round " + plural(n, "corner", "corners"), {glyph}, [&] { put_snapped(f, glyph, g, touched); });
+}
+
+bool ink_traps(FontJournal& j, Font& f, const std::string& glyph, const geom::Points& pts, double width, double depth,
+               int* done, std::string* why) {
+    auto refuse = [&](const std::string& r) { if (why) *why = r; return false; };
+    const Glyph* was = f.glyph(glyph);
+    if (!was) return refuse("No glyph.");
+    if (!(width >= 1) || !(depth >= 1)) return refuse("Ink trap: width and depth must be 1 unit or more.");
+    // The ink is on the left of travel on a contour running the right way, on
+    // the right of one running the wrong way.
+    const auto wrong = geom::wrong_way(was->contours);
+    Glyph g = *was;
+    int n = 0;
+    std::set<int> touched;
+    for (const auto& [ci, nodes] : picked_nodes(*was, pts)) {
+        const bool ink_left = std::find(wrong.begin(), wrong.end(), ci) == wrong.end();
+        if (const int k = geom::ink_traps(g.contours[static_cast<std::size_t>(ci)], nodes, width, depth, ink_left); k > 0) {
+            n += k;
+            touched.insert(ci);
+        }
+    }
+    if (done) *done = n;
+    if (n == 0) return refuse("Ink trap: pick a crotch -- a corner where the ink wraps round the white (n's arch into its stem).");
+    return j.run(plural(n, "Ink trap", "Ink traps"), {glyph}, [&] { put_snapped(f, glyph, g, touched); });
+}
+
+namespace {
+
+// Replace `targets` with `made` (at the first target's place), snapped.
+bool replace_contours(FontJournal& j, Font& f, const std::string& glyph, const std::set<int>& targets,
+                      std::vector<model::Contour> made, const std::string& label, std::vector<int>* result) {
+    const Glyph* was = f.glyph(glyph);
+    Glyph t;
+    t.contours = std::move(made);
+    t.snap();
+    Glyph g = *was;
+    std::vector<model::Contour> out;
+    std::vector<int> at;
+    const int first = *targets.begin();
+    for (int i = 0; i < static_cast<int>(g.contours.size()); ++i) {
+        if (i == first)
+            for (auto& c : t.contours) { at.push_back(static_cast<int>(out.size())); out.push_back(c); }
+        if (!targets.count(i)) out.push_back(g.contours[static_cast<std::size_t>(i)]);
+    }
+    g.contours = std::move(out);
+    if (result) *result = at;
+    return j.run(label, {glyph}, [&] { f.put(glyph, Record{g}); });
+}
+
+std::string signed_units(double d) {
+    const long v = std::lround(d);
+    return (v > 0 ? "+" : "") + std::to_string(v);
+}
+
+}  // namespace
+
+bool offset_contours(FontJournal& j, Font& f, const std::string& glyph, const std::vector<int>& contours, double d,
+                     geom::Join join, std::vector<int>* result, std::string* why) {
+    auto refuse = [&](const std::string& r) { if (why) *why = r; return false; };
+    const Glyph* was = f.glyph(glyph);
+    if (!was) return refuse("No glyph.");
+    if (std::abs(d) < 0.5) return refuse("Offset: the distance must be at least 1 unit, either way.");
+    std::set<int> tg;
+    const int n = static_cast<int>(was->contours.size());
+    for (int i : contours) if (i >= 0 && i < n) tg.insert(i);
+    if (contours.empty()) for (int i = 0; i < n; ++i) tg.insert(i);
+    for (auto it = tg.begin(); it != tg.end();) {
+        const auto& c = was->contours[static_cast<std::size_t>(*it)];
+        if (!c.closed || c.nodes.size() < 2) it = tg.erase(it); else ++it;
+    }
+    if (tg.empty()) return refuse("Offset: no closed path to offset (an open one wants Expand stroke).");
+    const auto wrong = geom::wrong_way(was->contours);
+    for (int i : wrong) if (tg.count(i)) return refuse("Offset: a path runs the wrong way -- correct directions first.");
+    std::vector<model::Contour> in;
+    for (int i : tg) in.push_back(was->contours[static_cast<std::size_t>(i)]);
+    auto r = geom::offset_contours(in, d, join);
+    if (r.fallback) return refuse("Offset: the outline couldn't be rebuilt cleanly (" + r.why + "); left as drawn.");
+    if (r.contours.empty()) return refuse("Offset " + signed_units(d) + " would leave nothing -- the shape is thinner than that.");
+    return replace_contours(j, f, glyph, tg, std::move(r.contours), "Offset " + signed_units(d), result);
+}
+
+bool expand_stroke(FontJournal& j, Font& f, const std::string& glyph, const std::vector<int>& contours, double width,
+                   geom::Join join, geom::Cap cap, std::vector<int>* result, std::string* why) {
+    auto refuse = [&](const std::string& r) { if (why) *why = r; return false; };
+    const Glyph* was = f.glyph(glyph);
+    if (!was) return refuse("No glyph.");
+    if (width < 1) return refuse("Expand stroke: the width must be 1 unit or more.");
+    std::set<int> tg;
+    const int n = static_cast<int>(was->contours.size());
+    for (int i : contours) if (i >= 0 && i < n && was->contours[static_cast<std::size_t>(i)].nodes.size() >= 2) tg.insert(i);
+    if (contours.empty())
+        for (int i = 0; i < n; ++i) if (was->contours[static_cast<std::size_t>(i)].nodes.size() >= 2) tg.insert(i);
+    if (tg.empty()) return refuse("Expand stroke: pick a path (two nodes or more).");
+    std::vector<model::Contour> in;
+    for (int i : tg) in.push_back(was->contours[static_cast<std::size_t>(i)]);
+    auto r = geom::expand_stroke(in, width, join, cap);
+    if (r.fallback) return refuse("Expand stroke: the outline couldn't be rebuilt cleanly (" + r.why + ").");
+    if (r.contours.empty()) return refuse("Expand stroke: nothing came of it.");
+    return replace_contours(j, f, glyph, tg, std::move(r.contours),
+                            "Expand stroke " + std::to_string(std::lround(width)), result);
+}
+
 bool boolean_contours(FontJournal& j, Font& f, const std::string& glyph, const std::vector<int>& picked,
                       geom::BoolOp op, std::vector<int>* result, std::string* why) {
     auto refuse = [&](const std::string& r) { if (why) *why = r; return false; };
@@ -1596,6 +1765,21 @@ void make_fixture(Font& f) {
         ps.skip_export = true;
         f.put(ps.name, Record{ps});
     }
+    // M15b: an ellipse turned 45 degrees -- its nodes off the extremes, so
+    // every quarter lacks an x and a y extreme -- for add_extremes.
+    {
+        model::Contour e = geom::shape_ellipse({{100, 100}, {300, 400}});
+        const auto m = geom::make_transform(1, 1, 45, 0, 0, {200, 250});
+        for (auto& p : e.nodes) {
+            const auto a = m.apply({p.x, p.y}), h1 = m.apply({p.cx1, p.cy1}), h2 = m.apply({p.cx2, p.cy2});
+            p.x = std::round(a.x); p.y = std::round(a.y);
+            p.cx1 = std::round(h1.x); p.cy1 = std::round(h1.y);
+            p.cx2 = std::round(h2.x); p.cy2 = std::round(h2.y);
+        }
+        Glyph lg = add("lens", 0, 400, {e});
+        lg.unicodes.clear();
+        f.put(lg.name, Record{lg});
+    }
     Glyph od = add("Odotbelow", U'Ọ', 760, {});
     od.components = {{"O"}};
     od.anchors = {{"bottom", 380, 0}};
@@ -1661,6 +1845,13 @@ const std::vector<Verb>& verbs() {
         {"add_shape", [](FontJournal& j, Font& f) {
              add_shape(j, f, "n", geom::shape_ellipse({{600.3, 100}, {800, 299.6}}), "Ellipse"); }},
         {"boolean_contours", [](FontJournal& j, Font& f) { boolean_contours(j, f, "H", {0, 2}, geom::BoolOp::Union); }},
+        {"add_extremes", [](FontJournal& j, Font& f) { add_extremes(j, f, "lens", {}); }},
+        {"offset_contours", [](FontJournal& j, Font& f) { offset_contours(j, f, "n", {}, 10, geom::Join::Miter); }},
+        {"expand_stroke", [](FontJournal& j, Font& f) { expand_stroke(j, f, "H", {2}, 20, geom::Join::Round, geom::Cap::Round); }},
+        {"round_corners", [](FontJournal& j, Font& f) {
+             round_corners(j, f, "H", {{0, 0, geom::PointRef::Part::Node}, {0, 1, geom::PointRef::Part::Node}}, 20); }},
+        {"ink_traps", [](FontJournal& j, Font& f) {   // O's square counter: four crotches
+             ink_traps(j, f, "O", geom::whole_contours(*f.glyph("O"), {{1, 0, geom::PointRef::Part::Node}}), 15, 25); }},
         {"transform_points", [](FontJournal& j, Font& f) {
              transform_points(j, f, "H", {}, geom::make_transform(1.2, 1, 10, 5, 0, {300, 350}), "Transform"); }},
         {"transform_from", [](FontJournal& j, Font& f) {

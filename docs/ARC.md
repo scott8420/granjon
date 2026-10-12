@@ -349,4 +349,18 @@ Newest session at the bottom.
 - Duplicate (Ctrl+D, exact place) and Clone (Alt+D, offset 2 % em) -- Scott: "duplicate is a copy exact placement and clone is slightly offset copy". Ctrl+D's old diagnostic moved to Ctrl+Shift+D. crc.
 - Path align / distribute (rigid shapes; one path to the glyph's box) and the canvas right-click menu with every path tool (Scott: "align tools ... a context menu and easy to find"). r6: the menu wouldn't close on Wayland -- press claimed + a window-level click-outside fallback. crc.
 - M15a transform (Scott: "One tool missing so far is scale/skew/rotate"): Affine + transform_points in geom, live handle drags, TRANSFORM card, Transform submenu. r1 (Scott: incremental precision; Curvz origin; edge middles skew): step buttons (runs rounded once, one undo step), a draggable pivot shared with the card's origin grid / x / y, Curvz handle roles. r2 (Scott: "icons with hints instead of words"): 27 icons, PICK / TRANSFORM / OUTLINE compacted. crc. s09 closed.
-- Open: overlap vs direction check (asked); M15b corners / ink trap / extreme points / offset stroke next.
+- Scott at the close: "if paths overlap at all then it should be flagged to remove overlap or use a boolean" -> s10 first: an overlaps finding; the direction check judges nesting only. Then M15b corners / ink trap / extreme points / offset stroke.
+
+
+## s10 -- overlaps flag, M15b (corners, ink traps, extreme points, offset, stroke)
+- Scott at the open: "continue with minimal interaction with me, pls" -- one report at the end, zips at each green build.
+- s10 first, the overlaps flag (Scott, s09 close): `geom::relation` by FILLED area (Clipper2 Intersect of each contour's own nonzero fill; a sliver under max(1, 0.05 %) is none): Apart / Inside / Contains / Same / Overlap; `overlapping` (pairs + a contour crossing itself); `nest_depths`. Direction (`depth` / `wrong_way`) now judges NESTING only -- a contour wholly inside another -- so an overlapping clone is no longer "wrong way". Checks "Overlapping paths" (fixable: Remove overlaps), canvas amber tint on the shared area + a note, OUTLINE line.
+- M15b `geom/Corners`: extreme points (derivative roots per axis, > 1 unit past the segment's ends; new nodes smooth, handles exactly level / plumb) + a Checks "Extreme points" finding; round corners (chord cut-back, cubic arc tangent to both edges, h = 4/3 tan(phi/4) R); ink traps (V notch at crotches -- right turns with the ink on the left -- apex along the bisector into the ink).
+- M15b `geom/Offset`: per segment, the offset refitted as cubics (end tangents kept, handle lengths by least squares on five points of the true offset, Schneider reparameterisation x3, split until within 0.5 unit); joins miter (bevel past 4 x) / round / bevel where the offset opens; straight across where it closes (the loop winds backwards); then the M10c engine's union under the POSITIVE fill rule (`union_positive`) -- loops, inside-out pieces and overlaps drop out, curves exact. Offset bolder / lighter; expand stroke (open path -> band with butt / round / square caps; closed -> ring). Verified on every preset's n o H O p v at +/-12.
+- UI: SHAPE card (radius; trap width / depth; offset distance + join + lighter / bolder; stroke width (= the Line tool's Stroke) + cap + expand), OUTLINE gains Add extreme points, context menu Shape >. Amounts remembered in settings.json. 5 icons.
+
+## Backlog notes (s10)
+- Offset: separate horizontal / vertical amounts (Glyphs' Offset Curve) so a bolder pass can keep the x-height and baseline -- today every edge moves, tops and bottoms too.
+- Ink trap: a rounded slot end (today a V), and traps on a whole font's crotches in one go (a font-wide pass like Correct directions).
+- Round corners: a per-corner radius handle on the canvas (drag to set); "inverse" (concave) rounding.
+- Extreme points: a font-wide pass (menu, like Remove overlaps in every glyph).
